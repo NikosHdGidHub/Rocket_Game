@@ -275,44 +275,93 @@ function terrainHeight(x, z) {
   return terrainBase(x, z) * flat;
 }
 
+/* ================================================================
+   3a. HEIGHT-BASED TERRAIN COLOR
+================================================================ */
+
+// Палитра по высоте. h — метры над «уровнем моря» (y=0 у равнины).
+// Между соседними стопами цвет плавно интерполируется.
+const TERRAIN_STOPS = [
+  { h: -20, color: new THREE.Color(0x1f3f15) },  // мокрые низины
+  { h: -10, color: new THREE.Color(0x3f6e2a) },  // низко — тёмно-зелёный
+  { h:  0, color: new THREE.Color(0x6cbf4a) },  // как сейчас (равнина)
+  { h: 50, color: new THREE.Color(0x89EC6A) },  // ещё чистая трава
+  { h: 150, color: new THREE.Color(0x91CE7E) },  // ещё чистая трава
+  { h: 250, color: new THREE.Color(0x8a8068) },  // трава + камень
+  { h: 300, color: new THREE.Color(0x55504a) },  // тёмный камень
+  { h: 400, color: new THREE.Color(0xeef3f8) },  // линия снега
+  { h: 620, color: new THREE.Color(0xffffff) },  // чистейший снег
+];
+
+const _terrCol = new THREE.Color();
+function heightToTerrainColor(h, out) {
+  const st = TERRAIN_STOPS;
+  if (h <= st[0].h) { out.copy(st[0].color); return; }
+
+  const last = st.length - 1;
+  if (h >= st[last].h) { out.copy(st[last].color); return; }
+
+  for (let i = 0; i < last; i++) {
+    const a = st[i], b = st[i + 1];
+    if (h >= a.h && h <= b.h) {
+      const t = (h - a.h) / (b.h - a.h);
+      out.copy(a.color).lerp(b.color, t);
+      return;
+    }
+  }
+}
+
 // --- Общая текстура земли (используется всеми чанками) ---
 const TILE = 6;
+
 function makeGroundTexture() {
   const s = 256;
   const c = document.createElement('canvas');
   c.width = c.height = s;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#6cbf4a';
+
+  // Нейтральная база: hue задаёт vertex color, текстура — только фактура
+  ctx.fillStyle = '#e8e8e8';
   ctx.fillRect(0, 0, s, s);
+
   for (let i = 0; i < 420; i++) {
-    ctx.fillStyle = Math.random() > .5 ? 'rgba(0,0,0,0.045)' : 'rgba(255,255,255,0.06)';
+    const v = Math.random() > .5 ? 0 : 255;
+    const a = 0.04 + Math.random() * 0.05;
+    ctx.fillStyle = `rgba(${v},${v},${v},${a})`;
     ctx.beginPath();
     ctx.arc(Math.random() * s, Math.random() * s, 3 + Math.random() * 16, 0, 6.284);
     ctx.fill();
   }
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.07)';
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(0, 1.5); ctx.lineTo(s, 1.5);
   ctx.moveTo(1.5, 0); ctx.lineTo(1.5, s);
   ctx.stroke();
+
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return t;
 }
 const groundTex = makeGroundTexture();
-const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1, metalness: 0 });
+const groundMat = new THREE.MeshStandardMaterial({
+  map: groundTex, vertexColors: true, roughness: 1, metalness: 0,
+});
+
+
+
 
 /* ================================================================
    3b. CHUNK SYSTEM — 3D мир
 ================================================================ */
 const CHUNK_SIZE        = 200; //Размер чанка в метрах. Один меш земли + его пропсы.
-const CHUNK_SEG         = 20; //Сколько квадов на сторону чанка. Детализация рельефа.
+const CHUNK_SEG         = 40; //Сколько квадов на сторону чанка. Детализация рельефа.
 const LOAD_RADIUS       = 500;
 const UNLOAD_RADIUS     = 700;
 const CHUNKS_PER_FRAME  = 2;
-const COUNT = 300; //Плотность леса
+const COUNT = 30; //Плотность леса
 
 const chunks     = new Map();   // "cx,cz" -> { mesh, props }
 let   showing3D  = true;        // флаг для управления видимостью пропсов из updateLOD
@@ -326,14 +375,26 @@ function makeChunkMesh(cx, cz) {
 
   const pos = geo.attributes.position;
   const uv  = geo.attributes.uv;
+
+  const colArr = new Float32Array(pos.count * 3);
+  const col    = new THREE.Color();
+
   for (let i = 0; i < pos.count; i++) {
     const wx = cxw + pos.getX(i);
     const wz = czw + pos.getZ(i);
-    pos.setY(i, terrainHeight(wx, wz));
+    const h  = terrainHeight(wx, wz);
+
+    pos.setY(i, h);
     uv.setXY(i, wx / TILE, wz / TILE);
+
+    heightToTerrainColor(h, col);
+    colArr[i * 3    ] = col.r;
+    colArr[i * 3 + 1] = col.g;
+    colArr[i * 3 + 2] = col.b;
   }
   pos.needsUpdate = true;
   uv.needsUpdate  = true;
+  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
   geo.computeVertexNormals();
 
   const mesh = new THREE.Mesh(geo, groundMat);
@@ -427,14 +488,14 @@ function updateChunks(camX, camZ, initial = false) {
    3c. FAR GROUND TILES — грубый ландшафт для 2D-режима
 ================================================================ */
 const FAR_TILE_SIZE  = 1600;   // 1600×1600 м на тайл — совпадает с overlay
-const FAR_TILE_SEG   = 60;     // 40 м на квад — грубо, но издалека не видно
+const FAR_TILE_SEG   = 120;     // 40 м на квад — грубо, но издалека не видно
 const FAR_LOAD_R     = 2;      // 5×5 тайлов → ~±3200 м от центрального тайла
 const FAR_UNLOAD_R   = 3;
 const FAR_PER_FRAME  = 3;
 
 // Свой материал — нужен отдельный opacity для плавного перехода
 const farGroundMat = new THREE.MeshStandardMaterial({
-  map: groundTex, roughness: 1, metalness: 0,
+  map: groundTex, vertexColors: true, roughness: 1, metalness: 0,
   transparent: true, opacity: 0,
 });
 
@@ -449,14 +510,26 @@ function makeFarTileGeometry(fx, fz) {
 
   const pos = geo.attributes.position;
   const uv  = geo.attributes.uv;
+
+  const colArr = new Float32Array(pos.count * 3);
+  const col    = new THREE.Color();
+
   for (let i = 0; i < pos.count; i++) {
     const wx = cxw + pos.getX(i);
     const wz = czw + pos.getZ(i);
-    pos.setY(i, terrainHeight(wx, wz));
+    const h  = terrainHeight(wx, wz);
+
+    pos.setY(i, h);
     uv.setXY(i, wx / TILE, wz / TILE);
+
+    heightToTerrainColor(h, col);
+    colArr[i * 3    ] = col.r;
+    colArr[i * 3 + 1] = col.g;
+    colArr[i * 3 + 2] = col.b;
   }
   pos.needsUpdate = true;
   uv.needsUpdate  = true;
+  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
   geo.computeVertexNormals();
   return geo;
 }
@@ -687,7 +760,7 @@ scene.add(boss);
 const OVERLAY_SIZE     = 1600;
 // = OVERLAY_SIZE / (CHUNK_SIZE / CHUNK_SEG) — совпадает с разрешением земли,
 // иначе overlay «проваливается» под рельеф на пиках, и туман рисуется пятнами.
-const OVERLAY_SEG      = 80;
+const OVERLAY_SEG      = 120;
 const OVERLAY_CANVAS   = 1024;   // 1.6 м/пиксель — точки чётче, без «каши»
 const OVERLAY_LOAD_R   = 2;
 const OVERLAY_UNLOAD_R = 3;
@@ -828,8 +901,8 @@ function updateOverlayChunks(camX, camZ, initial = false) {
 let in2DMode = false;
 let lodFade  = 0;
 
-const FOG_3D_NEAR = 100,  FOG_3D_FAR  = 500;
-const FOG_2D_NEAR = 400, FOG_2D_FAR  = 2200;
+const FOG_3D_NEAR = 150,  FOG_3D_FAR  = 700;
+const FOG_2D_NEAR = 700, FOG_2D_FAR  = 2200;
 
 
 /* ================================================================
@@ -1374,14 +1447,30 @@ function updateScenery() {
 
 /* ---------- LOD: 3D-пропсы ↔ 2D-точки деревьев с плавным переходом ---------- */
 function updateLOD(dt) {
-  //Высота смены отображения
-  const CHANGE_OVERLAY = 400
-
+  // Высота смены отображения (м над рельефом)
+  const CHANGE_OVERLAY = 400;
 
   const p = rocketState.pos;
-  const gY = terrainHeight(p.x, p.z);
-  const alt = p.y - gY;
   const flying = (G.phase === 'fly');
+
+  // --- Высота до земли ---
+  // Раньше брали только точку СТРОГО под ракетой. Над долиной это давало
+  // большие «alt», и 2D-режим держался, даже если рядом (в 100–200 м)
+  // возвышается гора. Теперь сэмплируем рельеф по кольцу вокруг ракеты
+  // и берём САМУЮ ВЫСОКУЮ точку → минимальную высоту до земли.
+  const SAMPLE_R = 200;      // радиус сканирования, м
+  const SAMPLES  = 8;        // точек по кольцу
+
+  let alt = p.y - terrainHeight(p.x, p.z);   // под ракетой
+
+  for (let i = 0; i < SAMPLES; i++) {
+    const a  = (i / SAMPLES) * Math.PI * 2;
+    const gx = p.x + Math.cos(a) * SAMPLE_R;
+    const gz = p.z + Math.sin(a) * SAMPLE_R;
+    const a2 = p.y - terrainHeight(gx, gz);
+    if (a2 < alt) alt = a2;
+  }
+  if (alt < 0) alt = 0;
 
   if (!in2DMode) {
     if (flying && alt > CHANGE_OVERLAY) in2DMode = true;
