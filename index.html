@@ -308,11 +308,11 @@ const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1,
    3b. CHUNK SYSTEM — 3D мир
 ================================================================ */
 const CHUNK_SIZE        = 200; //Размер чанка в метрах. Один меш земли + его пропсы.
-const CHUNK_SEG         = 40; //Сколько квадов на сторону чанка. Детализация рельефа.
-const LOAD_RADIUS       = 400;
-const UNLOAD_RADIUS     = 500;
+const CHUNK_SEG         = 20; //Сколько квадов на сторону чанка. Детализация рельефа.
+const LOAD_RADIUS       = 500;
+const UNLOAD_RADIUS     = 700;
 const CHUNKS_PER_FRAME  = 2;
-const COUNT = 500; //Плотность леса
+const COUNT = 300; //Плотность леса
 
 const chunks     = new Map();   // "cx,cz" -> { mesh, props }
 let   showing3D  = true;        // флаг для управления видимостью пропсов из updateLOD
@@ -420,6 +420,98 @@ function updateChunks(camX, camZ, initial = false) {
     if (Math.abs(+cs - cxi) > ur || Math.abs(+czs - czi) > ur) toUnload.push(key);
   }
   for (const k of toUnload) unloadChunk(k);
+}
+
+
+/* ================================================================
+   3c. FAR GROUND TILES — грубый ландшафт для 2D-режима
+================================================================ */
+const FAR_TILE_SIZE  = 1600;   // 1600×1600 м на тайл — совпадает с overlay
+const FAR_TILE_SEG   = 60;     // 40 м на квад — грубо, но издалека не видно
+const FAR_LOAD_R     = 2;      // 5×5 тайлов → ~±3200 м от центрального тайла
+const FAR_UNLOAD_R   = 3;
+const FAR_PER_FRAME  = 3;
+
+// Свой материал — нужен отдельный opacity для плавного перехода
+const farGroundMat = new THREE.MeshStandardMaterial({
+  map: groundTex, roughness: 1, metalness: 0,
+  transparent: true, opacity: 0,
+});
+
+const farTiles = new Map();
+
+function makeFarTileGeometry(fx, fz) {
+  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, FAR_TILE_SEG, FAR_TILE_SEG);
+  geo.rotateX(-Math.PI / 2);
+
+  const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2;
+  const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2;
+
+  const pos = geo.attributes.position;
+  const uv  = geo.attributes.uv;
+  for (let i = 0; i < pos.count; i++) {
+    const wx = cxw + pos.getX(i);
+    const wz = czw + pos.getZ(i);
+    pos.setY(i, terrainHeight(wx, wz));
+    uv.setXY(i, wx / TILE, wz / TILE);
+  }
+  pos.needsUpdate = true;
+  uv.needsUpdate  = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function loadFarTile(fx, fz) {
+  const key = fx + ',' + fz;
+  if (farTiles.has(key)) return;
+  const geo  = makeFarTileGeometry(fx, fz);
+  const mesh = new THREE.Mesh(geo, farGroundMat);
+  mesh.position.set(
+    fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2, 0,
+    fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+  );
+  mesh.receiveShadow = false;   // издалека тени не нужны
+  mesh.visible = false;         // покажем через updateLOD
+  scene.add(mesh);
+  farTiles.set(key, { mesh, geo });
+}
+
+function unloadFarTile(key) {
+  const c = farTiles.get(key);
+  if (!c) return;
+  scene.remove(c.mesh);
+  c.geo.dispose();
+  farTiles.delete(key);
+}
+
+function updateFarTiles(camX, camZ, initial = false) {
+  const fxi = Math.floor(camX / FAR_TILE_SIZE);
+  const fzi = Math.floor(camZ / FAR_TILE_SIZE);
+
+  const toLoad = [];
+  for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
+    for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
+      const fx = fxi + dx, fz = fzi + dz;
+      if (!farTiles.has(fx + ',' + fz)) toLoad.push([fx, fz]);
+    }
+  }
+
+  if (initial) {
+    for (const [fx, fz] of toLoad) loadFarTile(fx, fz);
+  } else {
+    const n = Math.min(FAR_PER_FRAME, toLoad.length);
+    for (let i = 0; i < n; i++) loadFarTile(toLoad[i][0], toLoad[i][1]);
+  }
+
+  const toUnload = [];
+  for (const key of farTiles.keys()) {
+    const [fxs, fzs] = key.split(',');
+    if (Math.abs(+fxs - fxi) > FAR_UNLOAD_R ||
+        Math.abs(+fzs - fzi) > FAR_UNLOAD_R) {
+      toUnload.push(key);
+    }
+  }
+  for (const k of toUnload) unloadFarTile(k);
 }
 
 
@@ -1056,6 +1148,7 @@ function update(dt) {
   updateCamera(dt);
   updateScenery();
   updateChunks(camera.position.x, camera.position.z);
+  updateFarTiles(camera.position.x, camera.position.z);
   updateOverlayChunks(camera.position.x, camera.position.z);
   updateLOD(dt);
 
@@ -1302,13 +1395,23 @@ function updateLOD(dt) {
   if (lodFade < 0.005) lodFade = 0;
   if (lodFade > 0.995) lodFade = 1;
 
-  // Все overlay-чанки — общая прозрачность
+  // --- Overlay: прозрачность ---
   for (const c of overlayChunks.values()) {
     c.mat.opacity = lodFade;
     c.mesh.visible = lodFade > 0.005;
   }
 
-  // 3D-пропсы прячем только когда overlay уже почти погас (или наоборот)
+  // --- Дальние тайлы: прозрачность ---
+  farGroundMat.opacity = lodFade;
+  const farVisible = lodFade > 0.005;
+  for (const c of farTiles.values()) c.mesh.visible = farVisible;
+
+  // --- Тонкие 3D-чанки: скрываем, когда дальние тайлы полностью проявились ---
+  // Иначе на пиках гор z-fight между 40 м и 10 м сеткой.
+  const showFine = lodFade < 0.95;
+  for (const c of chunks.values()) c.mesh.visible = showFine;
+
+  // --- 3D-пропсы: прячем раньше, чем меши (уже логика) ---
   const want3D = lodFade < 0.15;
   if (want3D !== showing3D) {
     for (const c of chunks.values()) {
@@ -1318,10 +1421,10 @@ function updateLOD(dt) {
     showing3D = want3D;
   }
 
+  // --- Туман ---
   scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade;
   scene.fog.far  = FOG_3D_FAR  + (FOG_2D_FAR  - FOG_3D_FAR ) * lodFade;
 }
-
 
 
 /* ================================================================
@@ -1350,6 +1453,7 @@ renderShop();
 
 // Первичная прогрузка — без неё первый кадр будет пустым
 updateChunks(camera.position.x, camera.position.z, true);
+updateFarTiles(camera.position.x, camera.position.z, true);
 updateOverlayChunks(camera.position.x, camera.position.z, true);
 
 
