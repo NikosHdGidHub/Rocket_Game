@@ -891,35 +891,21 @@ function updateRocket(dt) {
     rocket.rotation.z += p.angVel * dt;
   }
 
-  // --- Обновление индикатора скорости ---
+  // --- Индикатор соосности носа и вектора скорости ---
   if (G.phase === 'fly') {
-    const speed = p.vel.length();
-
-    // Угол между носом и вектором скорости считаем один раз — нужен и линии, и пламени
     let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x);
     while (diff >  Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     const deg = Math.abs(diff) * 180 / Math.PI;
 
-    if (speed > 1) {
-      velDirLine.visible = true;
-      velDirLine.position.copy(p.pos);
-      velDirLine.rotation.z = Math.atan2(p.vel.y, p.vel.x);
-      velDirLine.scale.set(Math.min(18, 0.28 * speed), 1, 1);
-
-      if      (deg <  8) { $alignText.textContent = '🎯 0°';   $alignText.style.color = '#7dffa0'; }
-      else if (deg < 25) { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ffd75e'; }
-      else               { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ff7a7a'; }
-    } else {
-      velDirLine.visible = false;
-    }
+    if      (deg <  8) { $alignText.textContent = '🎯 0°';   $alignText.style.color = '#7dffa0'; }
+    else if (deg < 25) { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ffd75e'; }
+    else               { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ff7a7a'; }
 
     // Цвет пламени: соосно = голубое, мимо = оранжевое
     if (boosting) {
       flameMat.color.setHex(deg < 15 ? 0x9fe8ff : 0xffb703);
     }
-  } else {
-    velDirLine.visible = false;
   }
 
 
@@ -944,54 +930,44 @@ function updateCamera(dt) {
 
   // Куда стремимся: сзади — только в полёте
   const wantBehind = (G.phase === 'fly') ? 1 : 0;
-
-  // Скорость перехода: в "сзади" быстрее (чтобы поймать старт),
-  // обратно в "сбоку" — медленнее, кинематографичнее
   const blendSpeed = wantBehind > camBlend ? 3.0 : 1.8;
   camBlend += (wantBehind - camBlend) * Math.min(1, dt * blendSpeed);
   if (camBlend < 0.001) camBlend = 0;
   if (camBlend > 0.999) camBlend = 1;
 
-  // ---------- Цель №1: вид сбоку (как было) ----------
-let sideTx, sideTy, sideTz, sideLx, sideLy;
-if (G.phase === 'fly' || (G.phase === 'landed' && p.x > 20)) {
-  sideTx = p.x + 5;
-  sideTy = Math.max(gY + 6, p.y * 0.72 + 5);
-  sideTz = 24 + Math.min(34, p.y * 0.12);
-  sideLx = p.x + 2;
-  sideLy = Math.max(gY + 1, p.y * 0.72 + 1);
-} else {
-  sideTx = 7;  sideTy = gY + 7.5; sideTz = 25;
-  sideLx = 0;  sideLy = gY + 3;
-}
+  // --- Угол возвышения камеры зависит от высоты над рельефом ---
+  // 0 м → 20° (смотрим почти сбоку), 400 м → 80° (почти вид сверху)
+  const alt   = Math.max(0, p.y - gY);
+  const altT  = Math.min(1, alt / 400);
+  const elev  = (20 + 60 * altT) * Math.PI / 180;
 
+  // --- Камера на сфере радиуса R вокруг ракеты ---
+  const R     = 22;
+  const hDist = R * Math.cos(elev);   // горизонтальное смещение
+  const vDist = R * Math.sin(elev);   // вертикальное смещение
 
-  // ---------- Цель №2: вид сзади ----------
-  // Ракета всегда летит в +X, поэтому "назад" — это -X.
-  const fwd = 1;
-  const behindDist = 17; // на сколько метров отстаёт камера. Больше — ракета мельче, больше обзора; меньше — ракета крупнее, но хуже видно траекторию. 12–20 — золотая середина.
-  const behindTx = p.x - fwd * behindDist;
-  const behindTy = Math.max(gY + 5, p.y * 0.6 + 7);
-  const behindTz = 0;
-  const behindLx = p.x + fwd * 14;
-  const behindLy = Math.max(gY + 1.5, p.y * 0.8 + 1.5);
+  // Позиция камеры относительно ракеты:
+  //   сбоку  (camBlend = 0): смещение по +Z
+  //   сзади  (camBlend = 1): смещение по -X
+  const camX = p.x - hDist * camBlend;
+  const camY = p.y + vDist;
+  const camZ = hDist * (1 - camBlend);
 
-  // ---------- Смешиваем цели ----------
-  const tx = sideTx + (behindTx - sideTx) * camBlend;
-  const ty = sideTy + (behindTy - sideTy) * camBlend;
-  const tz = sideTz + (behindTz - sideTz) * camBlend;
-  const lx = sideLx + (behindLx - sideLx) * camBlend;
-  const ly = sideLy + (behindLy - sideLy) * camBlend;
-
-  // Плавное доведение позиции камеры
+  // Плавное доведение
   const s = 1 - Math.exp(-7 * dt);
-  camera.position.x += (tx - camera.position.x) * s;
-  camera.position.y += (ty - camera.position.y) * s;
-  camera.position.z += (tz - camera.position.z) * s;
+  camera.position.x += (camX - camera.position.x) * s;
+  camera.position.y += (camY - camera.position.y) * s;
+  camera.position.z += (camZ - camera.position.z) * s;
 
-  camLook.x += (lx - camLook.x) * s;
-  camLook.y += (ly - camLook.y) * s;
-  camLook.z = 0;
+  // --- Точка обзора ---
+  // На низкой высоте слегка заглядываем вперёд, на высокой — смотрим прямо на ракету
+  const lookAhead = (5 + 10 * camBlend) * (1 - altT * 0.8);
+  const lookX = p.x + lookAhead;
+  const lookY = p.y;
+
+  camLook.x += (lookX - camLook.x) * s;
+  camLook.y += (lookY - camLook.y) * s;
+  camLook.z += (0 - camLook.z) * s;
 
   // Тряска
   if (shake > 0) {
@@ -1003,6 +979,7 @@ if (G.phase === 'fly' || (G.phase === 'landed' && p.x > 20)) {
 
   camera.lookAt(camLook);
 }
+
 /* ---------- Scenery recycling ---------- */
 function updateScenery() {
   // Пропсы теперь статичные — рецикл не нужен.
