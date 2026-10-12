@@ -1033,6 +1033,7 @@ let camBlend = 0;   // 0 = вид сбоку, 1 = вид сзади (плавн�
 function updateCamera(dt) {
   const p = rocketState.pos;
   const gY = terrainHeight(p.x, 0);
+  const speed = rocketState.vel.length();
 
   // Куда стремимся: сзади — только в полёте
   const wantBehind = (G.phase === 'fly') ? 1 : 0;
@@ -1042,34 +1043,38 @@ function updateCamera(dt) {
   if (camBlend > 0.999) camBlend = 1;
 
   // --- Угол возвышения камеры зависит от высоты над рельефом ---
-  // 0 м → 20° (смотрим почти сбоку), 400 м → 80° (почти вид сверху)
   const alt   = Math.max(0, p.y - gY);
   const altT  = Math.min(1, alt / 500);
   const elev  = (20 + 45 * altT) * Math.PI / 180;
 
   // --- Камера на сфере радиуса R вокруг ракеты ---
-  const R     = 22;
-  const hDist = R * Math.cos(elev);   // горизонтальное смещение
-  const vDist = R * Math.sin(elev);   // вертикальное смещение
+  // На высокой скорости чуть отъезжаем — ракета не «упирается» в верх экрана
+  const R     = 22 + Math.min(20, speed * 0.12);
+  const hDist = R * Math.cos(elev);
+  const vDist = R * Math.sin(elev);
 
-  // Позиция камеры относительно ракеты:
-  //   сбоку  (camBlend = 0): смещение по +Z
-  //   сзади  (camBlend = 1): смещение по -X
-  const camX = p.x - hDist * camBlend;
-  const camY = p.y + vDist;
+  // --- Feed-forward: целимся туда, где ракета будет через 0.1 с ---
+  // Компенсирует инерцию сглаживания при разгоне.
+  const lead = -0.10;
+  const px = p.x + rocketState.vel.x * lead;
+  const py = p.y + rocketState.vel.y * lead;
+
+  const camX = px - hDist * camBlend;
+  const camY = py + vDist;
   const camZ = hDist * (1 - camBlend);
 
-  // Плавное доведение
-  const s = 1 - Math.exp(-7 * dt);
+  // --- Адаптивная жёсткость: чем быстрее ракета, тем цепче камера ---
+  const follow = 7 + Math.min(18, speed * 0.15);
+  const s = 1 - Math.exp(-follow * dt);
+
   camera.position.x += (camX - camera.position.x) * s;
   camera.position.y += (camY - camera.position.y) * s;
   camera.position.z += (camZ - camera.position.z) * s;
 
-  // --- Точка обзора ---
-  // На низкой высоте слегка заглядываем вперёд, на высокой — смотрим прямо на ракету
+  // --- Точка обзора (тоже с feed-forward) ---
   const lookAhead = (5 + 10 * camBlend) * (1 - altT * 0.8);
-  const lookX = p.x + lookAhead;
-  const lookY = p.y;
+  const lookX = px + lookAhead;
+  const lookY = py;
 
   camLook.x += (lookX - camLook.x) * s;
   camLook.y += (lookY - camLook.y) * s;
