@@ -125,7 +125,7 @@
 
 <div id="hud">
   <div class="stat">📏 <b id="dist">0</b> м</div>
-  <div class="stat">🪙 <b id="coins">0</b></div>
+  <div class="stat">💥 <b id="coins">0</b></div>
   <div class="stat">🏆 <b id="best">0</b> м</div>
 </div>
 
@@ -199,38 +199,59 @@ scene.add(sun);
 scene.add(sun.target);
 
 /* ================================================================
-   3. TERRAIN HEIGHT FUNCTION + GROUND MESH
+   3. TERRAIN
 ================================================================ */
-
-// Высотная функция: сумма синусов = пологие холмы + низины
 function terrainBase(x, z) {
   let h = 0;
-  h += Math.sin(x * 0.016 + 0.4) * 5.5;          // крупные холмы
-  h += Math.sin(x * 0.041 + 1.9) * 2.4;          // средние
-  h += Math.cos(z * 0.020 + 0.8) * 3.0;          // поперёк трассы
-  h += Math.sin((x + z * 0.8) * 0.011 + 2.5) * 4.0; // диагональные волны
-  h += Math.sin(x * 0.085 + 3.1) * 0.9;          // мелкие бугры
+
+  // --- Базовые пологие холмы (до 1000 м) ---
+  h += Math.sin(x * 0.016 + 0.4) * 5.5;
+  h += Math.sin(x * 0.041 + 1.9) * 2.4;
+  h += Math.cos(z * 0.020 + 0.8) * 3.0;
+  h += Math.sin((x + z * 0.8) * 0.011 + 2.5) * 4.0;
+  h += Math.sin(x * 0.085 + 3.1) * 0.9;
   h += Math.cos(z * 0.10 + 1.4) * 0.7;
   const dip = Math.max(0, Math.sin(x * 0.0075 + 1.2));
-  h -= dip * dip * 5.5;                          // редкие низины
+  h -= dip * dip * 5.5;
+
+  // --- Горы после 1000 м (ridged noise, как было) ---
+  const start_mountains = 1000;
+  const mt  = Math.min(1, Math.max(0, (x - start_mountains) / 1800));
+  const mt2 = mt * mt;
+
+  function ridge(u, v, freq, seed, sharp) {
+    const s = Math.sin(u * freq + v * freq * 0.55 + seed);
+    return Math.pow(1 - Math.abs(s), sharp);
+  }
+
+  const r =
+      ridge(x,  z, 0.00085, 0.4, 5.2) * 300   // главные пики  (период ~7400м)
+    + ridge(x,  z, 0.0022,  1.1, 4.0) * 130   // средние       (период ~2850м)
+    + ridge(x,  z, 0.0055,  2.9, 2.4) *  45   // мелкие скалы  (период ~1140м)
+    + ridge(x,  z, 0.0135,  3.6, 1.3) *  15   // микрорельеф   (период ~465м)
+    + ridge(z, -x, 0.0013, 5.2, 3.5) * 180   // поперечный хребет
+    + ridge(z, -x, 0.0041, 6.8, 1.4) *  60;  // поперечный мелкий
+
+  // Базовый подъём плато + сами хребты.
+  // 80 — «пол» долин: горы стоят на плато высотой ~80 м.
+  // 0.65 — общий масштаб, чтобы редкий пик достигал ~550 м.
+  h += mt2 * (80 + r * 0.65);
   return h;
 }
 
-// Плоская площадка вокруг босса, дальше — рельеф
 function terrainHeight(x, z) {
   const d = Math.hypot(x + 2.6, z);
   const flat = Math.min(1, Math.max(0, (d - 6) / 14));
   return terrainBase(x, z) * flat;
 }
 
-// --- Земля ---
+// --- Границы мира (в чанках) ---
 const TILE = 6;
-// Широкие границы: чтобы на высоте 400 м и с fog 3200 м не было видно «края мира»
 const GX0 = -1500, GX1 = 5500, GZ0 = -800, GZ1 = 800;
-const GW = GX1 - GX0, GH = GZ1 - GZ0;      // 7000 × 1600 м
-const GSEG_X = 700, GSEG_Z = 100;          // ~10м × 16м на сегмент
-const GCX = (GX0 + GX1) / 2, GCZ = (GZ0 + GZ1) / 2;   // центр земли (для позиционирования меша)
+const GW = GX1 - GX0, GH = GZ1 - GZ0;
+const GCX = (GX0 + GX1) / 2, GCZ = (GZ0 + GZ1) / 2;
 
+// --- Текстура земли (одна на все чанки) ---
 function makeGroundTexture() {
   const s = 256;
   const c = document.createElement('canvas');
@@ -257,33 +278,141 @@ function makeGroundTexture() {
 }
 
 const groundTex = makeGroundTexture();
-groundTex.repeat.set(GW / TILE, GH / TILE);
+groundTex.repeat.set(1, 1);   // UV чанков будут в единицах world/TILE
 
-const groundGeo = new THREE.PlaneGeometry(GW, GH, GSEG_X, GSEG_Z);
-groundGeo.rotateX(-Math.PI / 2);
-{
-  const pos = groundGeo.attributes.position;
+const groundMat = new THREE.MeshStandardMaterial({
+  map: groundTex, roughness: 1, metalness: 0,
+});
+
+/* ================================================================
+   3b. CHUNK SYSTEM
+================================================================ */
+const CHUNK_SIZE    = 400;    // метров на сторону чанка
+const CHUNK_SEG     = 40;     // 10 м на квад
+const LOAD_RADIUS   = 1200;   // м — радиус прогрузки вокруг камеры
+const UNLOAD_RADIUS = 1600;   // м — гистерезис, чтобы не мигало на границе
+const CHUNKS_PER_FRAME = 2;   // сколько чанков грузим за кадр (кроме init)
+
+const MIN_CX = Math.floor(GX0 / CHUNK_SIZE);
+const MAX_CX = Math.floor((GX1 - 1) / CHUNK_SIZE);
+const MIN_CZ = Math.floor(GZ0 / CHUNK_SIZE);
+const MAX_CZ = Math.floor((GZ1 - 1) / CHUNK_SIZE);
+
+const chunks = new Map();   // "cx,cz" -> { mesh, props: [] }
+
+function makeChunkMesh(cx, cz) {
+  const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEG, CHUNK_SEG);
+  geo.rotateX(-Math.PI / 2);
+
+  const cxWorld = cx * CHUNK_SIZE + CHUNK_SIZE / 2;
+  const czWorld = cz * CHUNK_SIZE + CHUNK_SIZE / 2;
+
+  const pos = geo.attributes.position;
+  const uv  = geo.attributes.uv;
   for (let i = 0; i < pos.count; i++) {
-    const wx = pos.getX(i) + GCX;
-    const wz = pos.getZ(i) + GCZ;
+    const wx = cxWorld + pos.getX(i);
+    const wz = czWorld + pos.getZ(i);
     pos.setY(i, terrainHeight(wx, wz));
+    // UV = мировая координата / TILE → текстура тайлится сквозь все чанки
+    uv.setXY(i, wx / TILE, wz / TILE);
   }
   pos.needsUpdate = true;
-  groundGeo.computeVertexNormals();
+  uv.needsUpdate = true;
+  geo.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geo, groundMat);
+  mesh.position.set(cxWorld, 0, czWorld);
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
-const ground = new THREE.Mesh(
-  groundGeo,
-  new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1, metalness: 0 })
-);
-ground.position.set(GCX, 0, GCZ);
-ground.receiveShadow = true;
-scene.add(ground);
+function spawnChunkProps(cx, cz) {
+  const arr = [];
+  const baseX = cx * CHUNK_SIZE;
+  const baseZ = cz * CHUNK_SIZE;
+  const COUNT = 22;      // ~22 объекта на 400×400 м
+
+  for (let i = 0; i < COUNT; i++) {
+    const wx = baseX + Math.random() * CHUNK_SIZE;
+    const wz = baseZ + Math.random() * CHUNK_SIZE;
+
+    // Не сажаем ничего в 16 м от босса
+    if (Math.hypot(wx + 2.6, wz) < 16) continue;
+
+    const r = Math.random();
+    let m;
+    if      (r < 0.45) m = makePine();
+    else if (r < 0.60) m = makeOak();
+    else if (r < 0.82) m = makeBush();
+    else                m = makeRock();
+
+    m.position.set(wx, terrainHeight(wx, wz), wz);
+    scene.add(m);
+    arr.push(m);
+  }
+  return arr;
+}
+
+function loadChunk(cx, cz) {
+  const key = cx + ',' + cz;
+  if (chunks.has(key)) return;
+
+  const mesh  = makeChunkMesh(cx, cz);
+  const props = spawnChunkProps(cx, cz);
+  scene.add(mesh);
+
+  // Если мы в 2D-режиме — пропсы сразу скрыты
+  if (!showing3D) for (const p of props) p.visible = false;
+
+  chunks.set(key, { mesh, props });
+}
+
+function unloadChunk(key) {
+  const c = chunks.get(key);
+  if (!c) return;
+  scene.remove(c.mesh);
+  c.mesh.geometry.dispose();
+  for (const p of c.props) scene.remove(p);
+  chunks.delete(key);
+}
+
+function updateChunks(camX, camZ, initial = false) {
+  const cxi = Math.floor(camX / CHUNK_SIZE);
+  const czi = Math.floor(camZ / CHUNK_SIZE);
+  const r   = Math.ceil(LOAD_RADIUS / CHUNK_SIZE);
+
+  // Что нужно загрузить
+  const toLoad = [];
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dz = -r; dz <= r; dz++) {
+      const cx = cxi + dx, cz = czi + dz;
+      if (cx < MIN_CX || cx > MAX_CX) continue;
+      if (cz < MIN_CZ || cz > MAX_CZ) continue;
+      if (!chunks.has(cx + ',' + cz)) toLoad.push([cx, cz]);
+    }
+  }
+
+  if (initial) {
+    for (const [cx, cz] of toLoad) loadChunk(cx, cz);
+  } else {
+    for (let i = 0; i < Math.min(CHUNKS_PER_FRAME, toLoad.length); i++) {
+      loadChunk(toLoad[i][0], toLoad[i][1]);
+    }
+  }
+
+  // Выгрузка далёких
+  const ur = Math.ceil(UNLOAD_RADIUS / CHUNK_SIZE);
+  const toUnload = [];
+  for (const key of chunks.keys()) {
+    const [cs, czs] = key.split(',');
+    if (Math.abs(+cs - cxi) > ur || Math.abs(+czs - czi) > ur) toUnload.push(key);
+  }
+  for (const key of toUnload) unloadChunk(key);
+}
 
 /* ================================================================
    4. PROPS: деревья, кусты, камни
 ================================================================ */
-const props = [];
 
 const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x7a4a24, roughness: .95 });
 const treeLeafMats = [
@@ -363,26 +492,7 @@ function makeRock() {
   return g;
 }
 
-function spawnProps(factory, count, xSpan = [-100, 1900]) {
-  for (let i = 0; i < count; i++) {
-    const m = factory();
-    m.position.x = xSpan[0] + Math.random() * (xSpan[1] - xSpan[0]);
-    m.position.z = (Math.random() - .5) * 200;
 
-    // Не сажаем ничего в радиусе 16 м от босса
-    const d = Math.hypot(m.position.x + 2.6, m.position.z);
-    if (d < 16) continue;
-
-    m.position.y = terrainHeight(m.position.x, m.position.z);
-    scene.add(m);
-    props.push(m);
-  }
-}
-
-spawnProps(makePine, 400, [-100, 2600]);
-spawnProps(makeOak,  190, [-100, 2600]);
-spawnProps(makeBush, 320, [-100, 2600]);
-spawnProps(makeRock, 400, [-100, 2600]);
 
 /* ================================================================
    5. BOSS (босс из коробок)
@@ -467,55 +577,24 @@ scene.add(boss);
 /* ================================================================
    5b. VEG OVERLAY — 2D-точки деревьев поверх 3D-рельефа
 ================================================================ */
-
 function makeVegTexture() {
   const W = 4096, H = 500;
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, W, H);   // фон прозрачный — земля видна сквозь
+  ctx.clearRect(0, 0, W, H);
 
-  // 1) Отпечатки существующих 3D-пропсов — чтобы 2D-точки совпадали
-  //    с реальными деревьями в момент перехода 2D→3D.
-  for (const p of props) {
-    const px = (p.position.x - GX0) / GW * W;
-    const py = (p.position.z - GZ0) / GH * H;
-    if (px < 0 || px >= W || py < 0 || py >= H) continue;
-
-    const firstMat = p.children[0] && p.children[0].material;
-    const isRock = (firstMat === rockMatA || firstMat === rockMatB);
-
-    if (isRock) {
-      ctx.fillStyle = 'rgba(110, 102, 90, 0.85)';
-      ctx.beginPath();
-      ctx.arc(px, py, 1.0, 0, 6.283);
-      ctx.fill();
-    } else {
-      const isBig = p.scale.x > 1.05;
-      ctx.fillStyle = isBig
-        ? 'rgba(18, 55, 16, 0.92)'
-        : 'rgba(28, 75, 22, 0.80)';
-      ctx.beginPath();
-      ctx.arc(px, py, isBig ? 1.5 : 1.0, 0, 6.283);
-      ctx.fill();
-    }
-  }
-
-  // 2) Процедурные точки по ВСЕЙ карте — заполняют пространство
-  //    за пределами области пропсов, чтобы не было видно «проплешин».
+  // Только процедурные точки — реальные пропсы теперь в чанках и нам не известны
   const N = 28000;
   for (let i = 0; i < N; i++) {
     const wx = GX0 + Math.random() * GW;
     const wz = GZ0 + Math.random() * GH;
-
-    // Не сажаем ничего рядом с боссом (плоская площадка)
     if (Math.hypot(wx + 2.6, wz) < 16) continue;
 
     const px = (wx - GX0) / GW * W;
     const py = (wz - GZ0) / GH * H;
 
-    // ~18% — камни, остальное — деревья разных размеров
     const isRock = Math.random() < 0.18;
     if (isRock) {
       ctx.fillStyle = 'rgba(110, 102, 90, 0.7)';
@@ -542,32 +621,44 @@ function makeVegTexture() {
 
 const vegTex = makeVegTexture();
 
-// Оверлей использует ТУ ЖЕ геометрию, что и земля — поэтому идеально ложится на холмы
+// Оверлей — один большой грубый меш по всему миру.
+// Сегментов хватит, чтобы он «ложился» на рельеф издалека.
+const VEG_SEG_X = 280, VEG_SEG_Z = 80;
+const vegGeo = new THREE.PlaneGeometry(GW, GH, VEG_SEG_X, VEG_SEG_Z);
+vegGeo.rotateX(-Math.PI / 2);
+{
+  const pos = vegGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i) + GCX;
+    const wz = pos.getZ(i) + GCZ;
+    pos.setY(i, terrainHeight(wx, wz));
+  }
+  pos.needsUpdate = true;
+}
+
 const vegOverlay = new THREE.Mesh(
-  groundGeo,
+  vegGeo,
   new THREE.MeshBasicMaterial({
     map: vegTex,
     transparent: true,
-    depthWrite: false,                     // не мешает сортировке
-    polygonOffset: true,                   // против z-fighting с землёй
+    depthWrite: false,
+    polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
   })
 );
-vegOverlay.position.copy(ground.position);
-vegOverlay.renderOrder = 2;                // поверх земли
-vegOverlay.material.opacity = 0;           // начинаем прозрачным
-vegOverlay.visible = true;                 // видим всегда, управляем только opacity
+vegOverlay.position.set(GCX, 0, GCZ);
+vegOverlay.renderOrder = 2;
+vegOverlay.material.opacity = 0;
+vegOverlay.visible = false;
 scene.add(vegOverlay);
 
 // Флаги режима и плавного перехода
-let in2DMode = false;
-let lodFade  = 0;      // 0 = только 3D-пропсы, 1 = только 2D-точки
-let showing3D = true;  // текущее состояние видимости 3D-пропсов
+let in2DMode  = false;
+let lodFade   = 0;
+let showing3D = true;
 
-// Базовые настройки тумана для двух режимов
 const FOG_3D_NEAR = 55,  FOG_3D_FAR  = 260;
-// В высоком режиме туман плотнее — прячем края земли (x = 5500) за 2000 м
 const FOG_2D_NEAR = 100, FOG_2D_FAR  = 2200;
 
 /* ================================================================
@@ -659,11 +750,11 @@ const ANG_MAX  = 18.0;    // рад/с — предохранитель от р�
 const G = {
   phase: 'ready',        // ready | windup | strike | fly | landed
   timer: 0,
-  coins: 10000,
+  coins: 0,
   best: 0,
   lastDist: 0,
   fuel: 0,
-  upgrades: { power: 10, aero: 10, fuel: 10, thrust: 10 },
+  upgrades: { power: 1, aero: 1, fuel: 100, thrust: 100 },
 };
 
 const rocketState = {
@@ -736,7 +827,7 @@ function renderShop() {
         <div class="u-name">${u.name} <span class="u-lvl">Lv.${lvl}</span></div>
         <div class="u-desc">${u.desc}</div>
       </div>
-      <div class="u-cost">🪙 ${cost}</div>`;
+      <div class="u-cost">💥 ${cost}</div>`;
     btn.addEventListener('click', () => buy(u));
     $shop.appendChild(btn);
   }
@@ -869,7 +960,7 @@ function land() {
   $shop.style.display = '';
   $launch.textContent = 'Пнуть снова! 🦵';
 
-  showToast(`${Math.floor(dist)} м  +${earned} 🪙`, '#7dffa0');
+  showToast(`${Math.floor(dist)} м  +${earned} 💥`, '#7dffa0');
 
   // Тряска камеры
   shake = 0.9;
@@ -885,6 +976,7 @@ function update(dt) {
   updateRocket(dt);
   updateCamera(dt);
   updateScenery();
+  updateChunks(camera.position.x, camera.position.z);
   updateLOD(dt);
 
   // Топливный бар
@@ -1043,9 +1135,13 @@ function updateCamera(dt) {
   if (camBlend > 0.999) camBlend = 1;
 
   // --- Угол возвышения камеры зависит от высоты над рельефом ---
+
+  const MAX_VIEW_HEIGHT = 1000
+  const BASE_VIEW_HEIGHT_ANGLE = 20
+  const MAX_VIEW_HEIGHT_ANGLE = 60 - BASE_VIEW_HEIGHT_ANGLE
   const alt   = Math.max(0, p.y - gY);
-  const altT  = Math.min(1, alt / 500);
-  const elev  = (20 + 45 * altT) * Math.PI / 180;
+  const altT  = Math.min(1, alt / MAX_VIEW_HEIGHT);
+  const elev  = (BASE_VIEW_HEIGHT_ANGLE + MAX_VIEW_HEIGHT_ANGLE * altT) * Math.PI / 180;
 
   // --- Камера на сфере радиуса R вокруг ракеты ---
   // На высокой скорости чуть отъезжаем — ракета не «упирается» в верх экрана
@@ -1055,7 +1151,7 @@ function updateCamera(dt) {
 
   // --- Feed-forward: целимся туда, где ракета будет через 0.1 с ---
   // Компенсирует инерцию сглаживания при разгоне.
-  const lead = -0.10;
+  const lead = -0.02;
   const px = p.x + rocketState.vel.x * lead;
   const py = p.y + rocketState.vel.y * lead;
 
@@ -1108,34 +1204,31 @@ function updateLOD(dt) {
   const alt = p.y - gY;
   const flying = (G.phase === 'fly');
 
-  // --- Гистерезис: без мигания на границе ---
   if (!in2DMode) {
     if (flying && alt > 200) in2DMode = true;
   } else {
     if (!flying || alt < 160) in2DMode = false;
   }
 
-  // --- Плавная интерполяция fade ---
   const targetFade = in2DMode ? 1 : 0;
   const speed      = in2DMode ? 1.4 : 2.0;
   lodFade += (targetFade - lodFade) * Math.min(1, dt * speed);
   if (lodFade < 0.005) lodFade = 0;
   if (lodFade > 0.995) lodFade = 1;
 
-  // --- Оверлей: прозрачность вместо visible ---
   vegOverlay.material.opacity = lodFade;
   vegOverlay.visible = lodFade > 0.005;
 
-  // --- 3D-пропсы показываем только когда оверлей уже почти исчез ---
-  // Иначе при спуске видно и 2D-точки, и 3D-деревья одновременно — «двойной лес».
+  // Скрываем/показываем пропсы во ВСЕХ загруженных чанках
   const want3D = lodFade < 0.15;
   if (want3D !== showing3D) {
-    for (const pr of props) pr.visible = want3D;
+    for (const c of chunks.values()) {
+      for (const pr of c.props) pr.visible = want3D;
+    }
     boss.visible = want3D;
     showing3D = want3D;
   }
 
-  // --- Туман плавно едет между двумя наборами значений ---
   scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade;
   scene.fog.far  = FOG_3D_FAR  + (FOG_2D_FAR  - FOG_3D_FAR ) * lodFade;
 }
@@ -1163,6 +1256,10 @@ rocket.position.copy(rocketState.pos);
 G.fuel = maxFuel();
 updateHUD();
 renderShop();
+
+// Первичная прогрузка — без неё первый кадр будет пустым
+updateChunks(camera.position.x, camera.position.z, true);
+
 requestAnimationFrame(loop);
 
 // Приветствие
