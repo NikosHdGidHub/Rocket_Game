@@ -747,26 +747,33 @@ function updateCamera(dt) {
 
 /* ---------- Scenery recycling ---------- */
 function updateScenery() {
-  // Земля движется вместе с камерой (текстура «прибита» к миру)
   ground.position.x = camera.position.x;
   ground.position.z = 0;
   groundTex.offset.x = ground.position.x / TILE;
 
   const camX = camera.position.x;
+  const BAND_BACK  = -180;  // если дерево левее camX-180 — завернуть вперёд
+  const BAND_FRONT =  340;  // если дерево правее camX+340 — завернуть назад
 
   for (const t of trees) {
-    if (t.position.x < camX - 90) {
-      t.position.x = camX + 160 + Math.random() * 140;
+    const rel = t.position.x - camX;
+
+    if (rel < BAND_BACK) {
+      // Уехало назад (летим вперёд) — перебрасываем вперёд
+      t.position.x = camX + 180 + Math.random() * 120;
+      t.position.z = (Math.random() - .5) * 150;
+    }
+    else if (rel > BAND_FRONT) {
+      // Уехало вперёд (камера вернулась) — перебрасываем назад
+      t.position.x = camX - 160 + Math.random() * 60;
       t.position.z = (Math.random() - .5) * 150;
     }
   }
 
-  // Солнце и тени следуют за камерой
   sun.position.set(camX + 20, 45, 25);
   sun.target.position.set(camX, 0, 0);
   sun.target.updateMatrixWorld();
 }
-
 /* ================================================================
    12. MAIN LOOP
 ================================================================ */
