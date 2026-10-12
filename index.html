@@ -223,14 +223,13 @@ const rnd = () => currentRng();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
-
-const SKY = 0x8ec9f2;
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 55, 260);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 3000);
 camera.position.set(6, 8, 26);
@@ -242,11 +241,156 @@ addEventListener('resize', () => {
 });
 
 /* ================================================================
+   1b. НЕБО — градиентный купол + солнце (шейдер)
+================================================================ */
+// Три ключевых цвета. Меняй — небо меняется целиком.
+const SKY_ZENITH  = new THREE.Color(0x2f6fce);   // зенит — глубокий синий
+const SKY_HORIZON = new THREE.Color(0xd9ebf8);   // горизонт — дымчатый, тёплый
+const SUN_COLOR   = new THREE.Color(0xfff0c0);   // солнце — тёплый жёлтый
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(SKY_HORIZON.getHex(), 80, 300);
+
+// Направление солнца — совпадает с sun.position ниже.
+// Низкое солнце = красивее диск и длинные градиенты. Пусть будет ~35°.
+const SUN_DIR = new THREE.Vector3(28, 32, 22).normalize();
+
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  fog: false,
+  uniforms: {
+    topColor:    { value: SKY_ZENITH.clone() },
+    bottomColor: { value: SKY_HORIZON.clone() },
+    sunColor:    { value: SUN_COLOR.clone() },
+    sunDir:      { value: SUN_DIR.clone() },
+    exponent:    { value: 0.85 },
+  },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3  topColor;
+    uniform vec3  bottomColor;
+    uniform vec3  sunColor;
+    uniform vec3  sunDir;
+    uniform float exponent;
+    varying vec3 vWorldPos;
+
+    void main() {
+      vec3 dir = normalize(vWorldPos - cameraPosition);
+
+      // Основной градиент: горизонт → зенит
+      float h = max(dir.y, 0.0);
+      float t = pow(h, exponent);
+      vec3 col = mix(bottomColor, topColor, t);
+
+      // Дополнительная подсветка у горизонта «с другой стороны» —
+      // создаёт ощущение глубины, как будто свет рассеивается.
+      float haze = exp(-h * 4.0);
+      col = mix(col, col + vec3(0.06, 0.04, 0.0), haze);
+
+      // Солнце: широкое свечение + яркое ядро
+      float d    = max(dot(dir, normalize(sunDir)), 0.0);
+      float glow = pow(d, 6.0)   * 0.40;
+      float core = pow(d, 240.0) * 1.20;
+      col += sunColor * (glow + core);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+});
+
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(1400, 32, 16),
+  skyMat
+);
+skyDome.frustumCulled = false;
+skyDome.renderOrder = -1;   // рисуется первым, всегда под всем
+scene.add(skyDome);
+
+
+/* ---------- Sky-matching fog ----------
+   Заменяем стандартный THREE.Fog на шейдер, который считает цвет
+   тумана как цвет неба в направлении луча взгляда.
+   Дальняя геометрия растворяется в точный оттенок купола — без силуэтов.
+*/
+function applySkyFog(mat) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.skyTop      = { value: SKY_ZENITH };
+    shader.uniforms.skyBottom   = { value: SKY_HORIZON };
+    shader.uniforms.skyExponent = { value: 0.85 };
+    shader.uniforms.sunColorF   = { value: SUN_COLOR };
+    shader.uniforms.sunDirF     = { value: SUN_DIR };
+
+    // --- Вершинный: пробрасываем мировую позицию ---
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <fog_pars_vertex>',
+      `#include <fog_pars_vertex>
+       varying vec3 vSkyWorldPos;`
+    );
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <fog_vertex>',
+      `#include <fog_vertex>
+       vSkyWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+    );
+
+    // --- Фрагментный: объявляем функцию цвета неба ---
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <fog_pars_fragment>',
+      `#include <fog_pars_fragment>
+       uniform vec3  skyTop;
+       uniform vec3  skyBottom;
+       uniform float skyExponent;
+       uniform vec3  sunColorF;
+       uniform vec3  sunDirF;
+       varying vec3  vSkyWorldPos;
+
+       vec3 skyColorAtDir(vec3 dir) {
+         float h = max(dir.y, 0.0);
+         float t = pow(h, skyExponent);
+         vec3 col = mix(skyBottom, skyTop, t);
+         float haze = exp(-h * 4.0);
+         col = mix(col, col + vec3(0.06, 0.04, 0.0), haze);
+         float d    = max(dot(dir, normalize(sunDirF)), 0.0);
+         float glow = pow(d, 6.0)   * 0.40;
+         float core = pow(d, 240.0) * 1.20;
+         col += sunColorF * (glow + core);
+         return col;
+       }`
+    );
+
+    // --- Фрагментный: заменяем сам расчёт тумана ---
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <fog_fragment>',
+      `#ifdef USE_FOG
+         vec3  fogDir    = normalize(vSkyWorldPos - cameraPosition);
+         vec3  fogCol    = skyColorAtDir(fogDir);
+         float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+         gl_FragColor.rgb = mix(gl_FragColor.rgb, fogCol, fogFactor);
+       #endif`
+    );
+  };
+  mat.needsUpdate = true;
+}
+
+
+/* ================================================================
    2. LIGHTS
 ================================================================ */
-scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x4a7a35, 1.15));
+// Полусферический свет: верх — цвет неба, низ — цвет земли.
+// Верх теперь совпадает с горизонтом купола → мягкая интеграция.
+scene.add(new THREE.HemisphereLight(0xb8d8f0, 0x4a7a35, 1.05));
 
-const sun = new THREE.DirectionalLight(0xfff3d6, 2.0);
+// Направленный свет — тёплый, чуть холоднее чем солнце в шейдере,
+// чтобы тени/склоны читались отдельно от диска.
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.9);
+sun.position.set(28, 32, 22);
 sun.position.set(20, 45, 25);
 sun.castShadow = false;
 sun.shadow.mapSize.set(2048, 2048);
@@ -410,12 +554,12 @@ const CHUNK_SIZE        = 200; //Размер чанка в метрах. Оди
 const CHUNK_SEG         = 40; //Сколько квадов на сторону чанка. Детализация рельефа.
 // Асимметричная зона: вперёд дальше, назад и по бокам — ближе.
 // Камера/ракета всегда движется в +X, поэтому выигрыш реальный.
-const LOAD_FWD_CHUNKS  = 4;   // 800 м вперёд
+const LOAD_FWD_CHUNKS  = 5;   // 1000 м вперёд
 const LOAD_BACK_CHUNKS = 1;   // 200 м назад
 const LOAD_SIDE_CHUNKS = 3;   // 600 м по бокам Z
 const UNLOAD_MARGIN    = 1;   // чанк выгружается через 1 «лишний» ряд
 const CHUNKS_PER_FRAME = 3;
-const COUNT = 2500; //Плотность леса
+const COUNT = 2000; //Плотность леса
 
 const chunks     = new Map();   // "cx,cz" -> { mesh, props }
 let   showing3D  = true;        // флаг для управления видимостью пропсов из updateLOD
@@ -1044,8 +1188,8 @@ function updateOverlayChunks(camX, camZ, initial = false) {
 let in2DMode = false;
 let lodFade  = 0;
 
-const FOG_3D_NEAR = 150,  FOG_3D_FAR  = 700;
-const FOG_2D_NEAR = 700, FOG_2D_FAR  = 2200;
+const FOG_3D_NEAR = 90,  FOG_3D_FAR  = 620;
+const FOG_2D_NEAR = 500, FOG_2D_FAR  = 2000;
 
 
 /* ================================================================
@@ -1583,9 +1727,14 @@ function updateScenery() {
   // Пропсы теперь статичные — рецикл не нужен.
   // Оставляем только переезд солнца, чтобы тени всегда были рядом с камерой.
   const camX = camera.position.x;
-  sun.position.set(camX + 20, 65, 25);
+
+  sun.position.set(camX + 28, 32, 22);   // ← двигаем солнце в такт куполу
   sun.target.position.set(camX, 0, 0);
   sun.target.updateMatrixWorld();
+
+  // Купол всегда вокруг камеры — бесконечное небо
+  skyDome.position.copy(camera.position);   // ← добавили
+
 }
 
 /* ---------- LOD: 3D-пропсы ↔ 2D-точки деревьев с плавным переходом ---------- */
@@ -1677,6 +1826,12 @@ function loop(now) {
 /* ================================================================
    13. INIT
 ================================================================ */
+
+applySkyFog(groundMat);
+applySkyFog(farGroundMat);
+applySkyFog(propMat);
+
+
 resetRocket();
 rocket.position.copy(rocketState.pos);
 G.fuel = maxFuel();
