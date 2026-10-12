@@ -100,6 +100,25 @@
     #launch { font-size:17px; padding:14px 40px; }
     #boostUI { bottom:150px; }
   }
+
+  #touchControls {
+  position:fixed; left:0; right:0; bottom:20px; padding:0 20px;
+  display:flex; justify-content:flex-start; z-index:11;
+  pointer-events:none;
+}
+#touchControls.hidden { display:none; }
+#rotBtns { display:flex; flex-direction:column; gap:10px; pointer-events:auto; }
+.tbtn {
+  width:66px; height:66px; border-radius:50%;
+  border:1px solid rgba(255,255,255,.22);
+  background:rgba(12,18,32,.72); backdrop-filter:blur(10px);
+  color:#eaf2ff; font-size:24px; font-weight:900;
+  font-family:inherit; cursor:pointer;
+  touch-action:none; user-select:none;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+  transition:.1s;
+}
+.tbtn:active { transform:scale(.92); background:rgba(255,215,94,.3); }
 </style>
 </head>
 <body>
@@ -112,12 +131,22 @@
 
 <div id="boostUI">
   <div id="fuelTrack"><div id="fuelFill"></div></div>
-  <div id="boostHint">🔥 <span id="fuelText">0.0</span> с · ПРОБЕЛ / ТАП — УСКОРЕНИЕ</div>
+  <div id="boostHint">
+  🔥 <span id="fuelText">0.0</span> с
+  · <span id="alignText">—</span>
+  · <span style="opacity:.55">W/S — ПОВОРОТ · ПРОБЕЛ — ТЯГА</span>
+</div>
 </div>
 
 <div id="panel">
   <div id="shop"></div>
   <button id="launch">Пнуть! 🦵</button>
+</div>
+<div id="touchControls" class="hidden">
+  <div id="rotBtns">
+    <button id="rotUp"   class="tbtn">▲</button>
+    <button id="rotDown" class="tbtn">▼</button>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -506,12 +535,19 @@ rocket.add(exhaustLight);
 
 scene.add(rocket);
 
+
+
 /* ================================================================
    7. GAME STATE
 ================================================================ */
 const GRAVITY = 9.8;                                       // м/с² — как в реальности
 const REST_Y  = 0.95;
-const LAUNCH_ANGLE = 20 * Math.PI / 180;                  // ~38° — оптимальный угол старта
+const LAUNCH_ANGLE = 20 * Math.PI / 180;                  // ~20° — оптимальный угол старта
+
+// --- Угловая динамика (поворот носа W/S) ---
+const ANG_ACC  = 8.0;   // рад/с² — угловое ускорение от клавиши
+const ANG_DAMP = 0.8;    // 1/с   — вязкое затухание (чем больше — тем «гуще»)
+const ANG_MAX  = 18.0;    // рад/с — предохранитель от разгона
 
 const G = {
   phase: 'ready',        // ready | windup | strike | fly | landed
@@ -526,6 +562,7 @@ const G = {
 const rocketState = {
   pos: new THREE.Vector3(0, REST_Y, 0),
   vel: new THREE.Vector3(),
+  angVel: 0,   // угловая скорость носа, рад/с
 };
 
 let boosting = false;
@@ -569,6 +606,8 @@ const $launch  = document.getElementById('launch');
 const $boostUI = document.getElementById('boostUI');
 const $fuelFill= document.getElementById('fuelFill');
 const $fuelText= document.getElementById('fuelText');
+const $alignText = document.getElementById('alignText');
+const $touchUI = document.getElementById('touchControls');
 const $toast   = document.getElementById('toast');
 
 function updateHUD() {
@@ -621,6 +660,8 @@ function showToast(text, color = '#fff') {
    9. INPUT
 ================================================================ */
 const input = { boost: false };
+const keys       = { W: false, S: false };  // клавиатура
+const touchKeys  = { W: false, S: false };  // тач-кнопки
 
 addEventListener('keydown', e => {
   if (e.code === 'Space') {
@@ -628,10 +669,27 @@ addEventListener('keydown', e => {
     input.boost = true;
     if (G.phase === 'ready' || G.phase === 'landed') startKick();
   }
+  if (e.code === 'KeyW') { keys.W = true; e.preventDefault(); }
+  if (e.code === 'KeyS') { keys.S = true; e.preventDefault(); }
 });
 addEventListener('keyup', e => {
   if (e.code === 'Space') input.boost = false;
+  if (e.code === 'KeyW') keys.W = false;
+  if (e.code === 'KeyS') keys.S = false;
 });
+
+// --- Тач-кнопки поворота ---
+const $rotUp    = document.getElementById('rotUp');
+const $rotDown  = document.getElementById('rotDown');
+
+function bindHold(el, setter) {
+  el.addEventListener('pointerdown', e => { e.preventDefault(); setter(true); });
+  el.addEventListener('pointerup',   () => setter(false));
+  el.addEventListener('pointerleave',() => setter(false));
+  el.addEventListener('pointercancel',() => setter(false));
+}
+bindHold($rotUp,   v => touchKeys.W = v);
+bindHold($rotDown, v => touchKeys.S = v);
 
 // Тап/клик по сцене
 renderer.domElement.addEventListener('pointerdown', e => {
@@ -654,9 +712,8 @@ function startKick() {
   resetRocket();
   G.phase = 'windup';
   G.timer = 0;
-  $launch.classList.add('hidden');
-  $shop.style.opacity = '.25';
-  $shop.style.pointerEvents = 'none';
+    $launch.classList.add('hidden');
+  $shop.style.display = 'none';
 }
 
 function resetRocket() {
@@ -664,6 +721,7 @@ function resetRocket() {
   rocketState.pos.set(0, gY + REST_Y, 0);
   rocketState.vel.set(0, 0, 0);
   rocket.rotation.z = 0;
+  rocketState.angVel = 0;
   rocket.position.copy(rocketState.pos);
   G.fuel = maxFuel();
   input.boost = false;
@@ -678,6 +736,7 @@ function launch() {
   );
   // Мгновенно ставим ракету под угол старта — она «вылетает из-под ноги» как надо
   rocket.rotation.z = LAUNCH_ANGLE;
+  rocketState.angVel = 0;
   G.phase = 'fly';
   G.timer = 0;
   boosting = false;
@@ -687,6 +746,7 @@ function launch() {
 function land() {
   G.phase = 'landed';
   G.timer = 0;
+  rocketState.angVel = 0;
   const gY = terrainHeight(rocketState.pos.x, rocketState.pos.z);
   rocketState.pos.y = gY + REST_Y;
   rocketState.vel.set(0, 0, 0);
@@ -701,8 +761,7 @@ function land() {
   renderShop();
 
   $launch.classList.remove('hidden');
-  $shop.style.opacity = '1';
-  $shop.style.pointerEvents = 'auto';
+  $shop.style.display = '';
   $launch.textContent = 'Пнуть снова! 🦵';
 
   showToast(`${Math.floor(dist)} м  +${earned} 🪙`, '#7dffa0');
@@ -725,10 +784,12 @@ function update(dt) {
   // Топливный бар
   if (G.phase === 'fly') {
     $boostUI.classList.add('on');
+    $touchUI.classList.remove('hidden');
     $fuelFill.style.width = (G.fuel / maxFuel() * 100) + '%';
     $fuelText.textContent = G.fuel.toFixed(1);
   } else {
     $boostUI.classList.remove('on');
+    $touchUI.classList.add('hidden');
   }
 
   if (G.phase === 'fly') updateHUD();
@@ -817,17 +878,50 @@ function updateRocket(dt) {
 
   rocket.position.copy(p.pos);
 
-  // Ориентация по вектору скорости
+  // --- Угловая динамика: игрок управляет носом, вязкое затухание ---
+  if (G.phase === 'fly') {
+    const rotInput =
+      ((keys.W || touchKeys.W) ? 1 : 0) -
+      ((keys.S || touchKeys.S) ? 1 : 0);
+
+    p.angVel += rotInput * ANG_ACC * dt;
+    p.angVel -= p.angVel * ANG_DAMP * dt;              // вязкое трение
+    p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel));
+
+    rocket.rotation.z += p.angVel * dt;
+  }
+
+  // --- Обновление индикатора скорости ---
   if (G.phase === 'fly') {
     const speed = p.vel.length();
-    if (speed > 0.5) {
-      const target = Math.atan2(p.vel.y, p.vel.x);
-      let diff = target - rocket.rotation.z;
-      while (diff >  Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      rocket.rotation.z += diff * Math.min(1, dt * 5);
+
+    // Угол между носом и вектором скорости считаем один раз — нужен и линии, и пламени
+    let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x);
+    while (diff >  Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const deg = Math.abs(diff) * 180 / Math.PI;
+
+    if (speed > 1) {
+      velDirLine.visible = true;
+      velDirLine.position.copy(p.pos);
+      velDirLine.rotation.z = Math.atan2(p.vel.y, p.vel.x);
+      velDirLine.scale.set(Math.min(18, 0.28 * speed), 1, 1);
+
+      if      (deg <  8) { $alignText.textContent = '🎯 0°';   $alignText.style.color = '#7dffa0'; }
+      else if (deg < 25) { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ffd75e'; }
+      else               { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ff7a7a'; }
+    } else {
+      velDirLine.visible = false;
     }
+
+    // Цвет пламени: соосно = голубое, мимо = оранжевое
+    if (boosting) {
+      flameMat.color.setHex(deg < 15 ? 0x9fe8ff : 0xffb703);
+    }
+  } else {
+    velDirLine.visible = false;
   }
+
 
   // Пламя
   const boostAmt = boosting ? 1 : (G.phase === 'fly' ? 0.35 : 0);
