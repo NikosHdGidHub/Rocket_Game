@@ -152,11 +152,15 @@
 <div id="toast"></div>
 
 <script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
 </script>
 
 <script type="module">
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ================================================================
    0. SEEDED RNG — детерминированная генерация по seed
@@ -244,7 +248,7 @@ scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x4a7a35, 1.15));
 
 const sun = new THREE.DirectionalLight(0xfff3d6, 2.0);
 sun.position.set(20, 45, 25);
-sun.castShadow = true;
+sun.castShadow = false;
 sun.shadow.mapSize.set(2048, 2048);
 const sc = sun.shadow.camera;
 sc.left = -45; sc.right = 45; sc.top = 45; sc.bottom = -45;
@@ -404,10 +408,14 @@ const groundMat = new THREE.MeshStandardMaterial({
 ================================================================ */
 const CHUNK_SIZE        = 200; //Размер чанка в метрах. Один меш земли + его пропсы.
 const CHUNK_SEG         = 40; //Сколько квадов на сторону чанка. Детализация рельефа.
-const LOAD_RADIUS       = 500;
-const UNLOAD_RADIUS     = 700;
-const CHUNKS_PER_FRAME  = 2;
-const COUNT = 30; //Плотность леса
+// Асимметричная зона: вперёд дальше, назад и по бокам — ближе.
+// Камера/ракета всегда движется в +X, поэтому выигрыш реальный.
+const LOAD_FWD_CHUNKS  = 4;   // 800 м вперёд
+const LOAD_BACK_CHUNKS = 1;   // 200 м назад
+const LOAD_SIDE_CHUNKS = 3;   // 600 м по бокам Z
+const UNLOAD_MARGIN    = 1;   // чанк выгружается через 1 «лишний» ряд
+const CHUNKS_PER_FRAME = 3;
+const COUNT = 2500; //Плотность леса
 
 const chunks     = new Map();   // "cx,cz" -> { mesh, props }
 let   showing3D  = true;        // флаг для управления видимостью пропсов из updateLOD
@@ -445,20 +453,22 @@ function makeChunkMesh(cx, cz) {
 
   const mesh = new THREE.Mesh(geo, groundMat);
   mesh.position.set(cxw, 0, czw);
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = false;
   return mesh;
 }
 
+const _dummyObj = new THREE.Object3D();
+
 function spawnChunkProps(cx, cz) {
-  // Детерминированный seed — тот же чанк всегда даёт тот же лес
   const seed = hash2i(cx + 0x9E37, cz + 0x79B9) ^ WORLD_SEED;
   const old  = currentRng;
   currentRng = mulberry32(seed);
 
-  const arr   = [];
   const baseX = cx * CHUNK_SIZE;
   const baseZ = cz * CHUNK_SIZE;
-  
+
+  // Группируем по типу — по одной InstancedMesh на каждый
+  const groups = { pine: [], oak: [], bush: [], rock: [] };
 
   for (let i = 0; i < COUNT; i++) {
     const wx = baseX + rnd() * CHUNK_SIZE;
@@ -466,19 +476,72 @@ function spawnChunkProps(cx, cz) {
     if (Math.hypot(wx + 2.6, wz) < 16) continue;
 
     const r = rnd();
-    let m;
-    if      (r < 0.45) m = makePine();
-    else if (r < 0.60) m = makeOak();
-    else if (r < 0.82) m = makeBush();
-    else                m = makeRock();
+    let kind;
+    if      (r < 0.45) kind = 'pine';
+    else if (r < 0.60) kind = 'oak';
+    else if (r < 0.82) kind = 'bush';
+    else               kind = 'rock';
 
-    m.position.set(wx, terrainHeight(wx, wz), wz);
-    scene.add(m);
-    arr.push(m);
+    const scale = (kind === 'rock') ? (0.6 + rnd() * 1.4) : (0.75 + rnd() * 0.7);
+    const rotY  = rnd() * 6.28;
+    const y     = terrainHeight(wx, wz);
+
+    groups[kind].push({ x: wx, y, z: wz, scale, rotY });
   }
 
   currentRng = old;
-  return arr;
+
+  // Собираем InstancedMesh-ы
+  const meshes = [];
+  const allShadows = [];
+
+  for (const kind of ['pine', 'oak', 'bush', 'rock']) {
+    const items = groups[kind];
+    if (items.length === 0) continue;
+
+    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, items.length);
+    inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    inst.castShadow    = false;   // ← ключ: без shadow pass
+    inst.receiveShadow = false;
+    inst.frustumCulled = true;
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      _dummyObj.position.set(it.x, it.y, it.z);
+      _dummyObj.rotation.set(0, it.rotY, 0);
+      _dummyObj.scale.setScalar(it.scale);
+      _dummyObj.updateMatrix();
+      inst.setMatrixAt(i, _dummyObj.matrix);
+
+      allShadows.push(it);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    scene.add(inst);
+    meshes.push(inst);
+  }
+
+  // --- Запечённые тени: один InstancedMesh на все деревья чанка ---
+  if (allShadows.length > 0) {
+    const shadowInst = new THREE.InstancedMesh(shadowDiskGeo, shadowDiskMat, allShadows.length);
+    shadowInst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    shadowInst.renderOrder = 1;
+    shadowInst.castShadow = false;
+    shadowInst.receiveShadow = false;
+
+    for (let i = 0; i < allShadows.length; i++) {
+      const p = allShadows[i];
+      _dummyObj.position.set(p.x, p.y + 0.12, p.z);
+      _dummyObj.rotation.set(0, 0, 0);
+      _dummyObj.scale.set(p.scale * 1.6, 1, p.scale * 1.6);
+      _dummyObj.updateMatrix();
+      shadowInst.setMatrixAt(i, _dummyObj.matrix);
+    }
+    shadowInst.instanceMatrix.needsUpdate = true;
+    scene.add(shadowInst);
+    meshes.push(shadowInst);
+  }
+
+  return meshes;
 }
 
 function loadChunk(cx, cz) {
@@ -503,11 +566,10 @@ function unloadChunk(key) {
 function updateChunks(camX, camZ, initial = false) {
   const cxi = Math.floor(camX / CHUNK_SIZE);
   const czi = Math.floor(camZ / CHUNK_SIZE);
-  const r   = Math.ceil(LOAD_RADIUS / CHUNK_SIZE);
 
   const toLoad = [];
-  for (let dx = -r; dx <= r; dx++) {
-    for (let dz = -r; dz <= r; dz++) {
+  for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
+    for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
       const cx = cxi + dx, cz = czi + dz;
       if (!chunks.has(cx + ',' + cz)) toLoad.push([cx, cz]);
     }
@@ -520,14 +582,20 @@ function updateChunks(camX, camZ, initial = false) {
     for (let i = 0; i < n; i++) loadChunk(toLoad[i][0], toLoad[i][1]);
   }
 
-  const ur = Math.ceil(UNLOAD_RADIUS / CHUNK_SIZE);
+  // Выгрузка — с запасом, чтобы не мигало на границе
   const toUnload = [];
   for (const key of chunks.keys()) {
     const [cs, czs] = key.split(',');
-    if (Math.abs(+cs - cxi) > ur || Math.abs(+czs - czi) > ur) toUnload.push(key);
+    const dx = +cs - cxi, dz = +czs - czi;
+    if (dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
+        dx >  (LOAD_FWD_CHUNKS  + UNLOAD_MARGIN) ||
+        Math.abs(dz) > (LOAD_SIDE_CHUNKS + UNLOAD_MARGIN)) {
+      toUnload.push(key);
+    }
   }
   for (const k of toUnload) unloadChunk(k);
 }
+
 
 
 /* ================================================================
@@ -635,86 +703,115 @@ function updateFarTiles(camX, camZ, initial = false) {
 
 
 /* ================================================================
-   4. PROPS: деревья, кусты, камни
+   4. PROPS: единые templates + InstancedMesh
+   Вместо Group из десятков Mesh — одна merged geometry на тип.
 ================================================================ */
 
-const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x7a4a24, roughness: .95 });
-const treeLeafMats = [
-  new THREE.MeshStandardMaterial({ color: 0x2f7d32, roughness: .9 }),
-  new THREE.MeshStandardMaterial({ color: 0x3f9440, roughness: .9 }),
-  new THREE.MeshStandardMaterial({ color: 0x256b2a, roughness: .9 }),
-];
-const rockMatA = new THREE.MeshStandardMaterial({ color: 0x8a8479, roughness: 1, flatShading: true });
-const rockMatB = new THREE.MeshStandardMaterial({ color: 0x6e6a63, roughness: 1, flatShading: true });
-const rockGeo  = new THREE.IcosahedronGeometry(1, 0);
+// Один материал на все пропсы. Цвет задаётся vertex colors.
+const propMat = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 0.92,
+  metalness: 0,
+  flatShading: false,
+});
 
-function makePine() {
-  const g = new THREE.Group();
-  const h = 2 + rnd() * 3;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.18, .26, h, 6), treeTrunkMat);
-  trunk.position.y = h / 2; trunk.castShadow = true; g.add(trunk);
-  const leafMat = treeLeafMats[(rnd() * 3) | 0];
-  const layers = 2 + ((rnd() * 2) | 0);
+// Плоский диск для запечённой тени. Один на всю сцену.
+const shadowDiskGeo = new THREE.CircleGeometry(1, 8);
+shadowDiskGeo.rotateX(-Math.PI / 2);
+const shadowDiskMat = new THREE.MeshBasicMaterial({
+  color: 0x0a1a10,
+  transparent: true,
+  opacity: 0.32,
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
+});
+
+// Утилита: красит все вершины geometry в hex.
+function setGeoColor(geo, hex) {
+  const c = new THREE.Color(hex);
+  const n = geo.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    arr[i * 3    ] = c.r;
+    arr[i * 3 + 1] = c.g;
+    arr[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return geo;
+}
+
+// --- Шаблоны. Строятся один раз при инициализации. ---
+
+function buildPineTemplate() {
+  const geos = [];
+  const h = 3.6;
+  const trunk = new THREE.CylinderGeometry(0.18, 0.28, h, 6);
+  trunk.translate(0, h / 2, 0);
+  geos.push(setGeoColor(trunk, 0x7a4a24));
+
+  const layers = 3;
   for (let i = 0; i < layers; i++) {
-    const r = (1.5 - i * 0.35) * (0.8 + rnd() * 0.4);
-    const lh = 1.7 - i * 0.15;
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, lh, 7), leafMat);
-    cone.position.y = h + i * (lh * 0.5) + lh * 0.3;
-    cone.castShadow = true; g.add(cone);
+    const r  = 1.55 - i * 0.32;
+    const lh = 1.8  - i * 0.15;
+    const cone = new THREE.ConeGeometry(r, lh, 7);
+    cone.translate(0, h + i * (lh * 0.5) + lh * 0.3, 0);
+    geos.push(setGeoColor(cone, 0x2f7d32));
   }
-  g.scale.setScalar(0.75 + rnd() * 0.8);
-  return g;
+  return mergeGeometries(geos);
 }
 
-function makeOak() {
-  const g = new THREE.Group();
-  const th = 1.8 + rnd() * 1.2;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.22, .34, th, 6), treeTrunkMat);
-  trunk.position.y = th / 2; trunk.castShadow = true; g.add(trunk);
-  const mat = treeLeafMats[(rnd() * 3) | 0];
-  const blobs = 3 + ((rnd() * 3) | 0);
-  for (let i = 0; i < blobs; i++) {
-    const r = 0.85 + rnd() * 0.7;
-    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
-    s.position.set((rnd() - .5) * 1.4, th + 0.6 + rnd() * 1.1, (rnd() - .5) * 1.4);
-    s.castShadow = true; g.add(s);
+function buildOakTemplate() {
+  const geos = [];
+  const th = 2.2;
+  const trunk = new THREE.CylinderGeometry(0.22, 0.34, th, 6);
+  trunk.translate(0, th / 2, 0);
+  geos.push(setGeoColor(trunk, 0x7a4a24));
+
+  // Фиксированный набор блобов, но при желании можно рандомить.
+  const blobs = [
+    [ 0.0, th + 0.9,  0.0, 1.15],
+    [ 0.6, th + 1.3, -0.4, 0.95],
+    [-0.5, th + 1.4,  0.5, 0.90],
+    [ 0.2, th + 1.9, -0.1, 0.85],
+  ];
+  for (const [x, y, z, r] of blobs) {
+    const s = new THREE.SphereGeometry(r, 8, 6);
+    s.translate(x, y, z);
+    geos.push(setGeoColor(s, 0x3f9440));
   }
-  g.scale.setScalar(0.85 + rnd() * 0.6);
-  return g;
+  return mergeGeometries(geos);
 }
 
-function makeBush() {
-  const g = new THREE.Group();
-  const mat = treeLeafMats[(rnd() * 3) | 0];
-  const blobs = 2 + ((rnd() * 2) | 0);
-  for (let i = 0; i < blobs; i++) {
-    const r = 0.5 + rnd() * 0.4;
-    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), mat);
-    s.position.set((rnd() - .5) * 0.9, r * 0.8, (rnd() - .5) * 0.9);
-    s.castShadow = true; g.add(s);
+function buildBushTemplate() {
+  const geos = [];
+  const blobs = [
+    [ 0.0, 0.55,  0.0, 0.65],
+    [ 0.4, 0.45, -0.3, 0.55],
+    [-0.35, 0.50, 0.35, 0.55],
+  ];
+  for (const [x, y, z, r] of blobs) {
+    const s = new THREE.SphereGeometry(r, 7, 5);
+    s.translate(x, y, z);
+    geos.push(setGeoColor(s, 0x2f7d32));
   }
-  g.scale.setScalar(0.8 + rnd() * 0.7);
-  return g;
+  return mergeGeometries(geos);
 }
 
-function makeRock() {
-  const g = new THREE.Group();
-  const mat = rnd() > 0.5 ? rockMatA : rockMatB;
-  const m = new THREE.Mesh(rockGeo, mat);
-  m.scale.set(1, 0.7 + rnd() * 0.5, 1);
-  m.rotation.set(rnd() * 6.28, rnd() * 6.28, rnd() * 6.28);
-  m.castShadow = true; m.receiveShadow = true;
-  g.add(m);
-  if (rnd() > 0.5) {
-    const m2 = new THREE.Mesh(rockGeo, mat);
-    m2.scale.setScalar(0.4 + rnd() * 0.4);
-    m2.position.set(0.9 + rnd() * 0.6, 0, 0.3);
-    m2.rotation.set(rnd() * 6.28, rnd() * 6.28, rnd() * 6.28);
-    m2.castShadow = true; g.add(m2);
-  }
-  g.scale.setScalar(0.6 + rnd() * 1.4);
-  return g;
+function buildRockTemplate() {
+  const g = new THREE.IcosahedronGeometry(1, 0);
+  g.scale(1, 0.75, 1);
+  return setGeoColor(g, 0x8a8479);
 }
+
+// Строим все шаблоны один раз
+const TEMPLATES = {
+  pine: buildPineTemplate(),
+  oak:  buildOakTemplate(),
+  bush: buildBushTemplate(),
+  rock: buildRockTemplate(),
+};
 
 
 
