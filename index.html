@@ -225,10 +225,11 @@ function terrainHeight(x, z) {
 
 // --- Земля ---
 const TILE = 6;
-const GX0 = -200, GX1 = 4000, GZ0 = -150, GZ1 = 150;
-const GW = GX1 - GX0, GH = GZ1 - GZ0;
-const GSEG_X = 600, GSEG_Z = 60;
-const GCX = (GX0 + GX1) / 2, GCZ = (GZ0 + GZ1) / 2;
+// Широкие границы: чтобы на высоте 400 м и с fog 3200 м не было видно «края мира»
+const GX0 = -1500, GX1 = 5500, GZ0 = -800, GZ1 = 800;
+const GW = GX1 - GX0, GH = GZ1 - GZ0;      // 7000 × 1600 м
+const GSEG_X = 700, GSEG_Z = 100;          // ~10м × 16м на сегмент
+const GCX = (GX0 + GX1) / 2, GCZ = (GZ0 + GZ1) / 2;   // центр земли (для позиционирования меша)
 
 function makeGroundTexture() {
   const s = 256;
@@ -378,10 +379,10 @@ function spawnProps(factory, count, xSpan = [-100, 1900]) {
   }
 }
 
-spawnProps(makePine, 200, [-100, 1900]);
-spawnProps(makeOak,  150, [-100, 1900]);
-spawnProps(makeBush, 250, [-100, 1900]);
-spawnProps(makeRock, 180, [-100, 1900]);
+spawnProps(makePine, 400, [-100, 2600]);
+spawnProps(makeOak,  190, [-100, 2600]);
+spawnProps(makeBush, 320, [-100, 2600]);
+spawnProps(makeRock, 400, [-100, 2600]);
 
 /* ================================================================
    5. BOSS (босс из коробок)
@@ -462,6 +463,112 @@ legKick.position.set(0, 2.6, 0.5);
 boss.add(legKick);
 
 scene.add(boss);
+
+/* ================================================================
+   5b. VEG OVERLAY — 2D-точки деревьев поверх 3D-рельефа
+================================================================ */
+
+function makeVegTexture() {
+  const W = 4096, H = 500;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);   // фон прозрачный — земля видна сквозь
+
+  // 1) Отпечатки существующих 3D-пропсов — чтобы 2D-точки совпадали
+  //    с реальными деревьями в момент перехода 2D→3D.
+  for (const p of props) {
+    const px = (p.position.x - GX0) / GW * W;
+    const py = (p.position.z - GZ0) / GH * H;
+    if (px < 0 || px >= W || py < 0 || py >= H) continue;
+
+    const firstMat = p.children[0] && p.children[0].material;
+    const isRock = (firstMat === rockMatA || firstMat === rockMatB);
+
+    if (isRock) {
+      ctx.fillStyle = 'rgba(110, 102, 90, 0.85)';
+      ctx.beginPath();
+      ctx.arc(px, py, 1.0, 0, 6.283);
+      ctx.fill();
+    } else {
+      const isBig = p.scale.x > 1.05;
+      ctx.fillStyle = isBig
+        ? 'rgba(18, 55, 16, 0.92)'
+        : 'rgba(28, 75, 22, 0.80)';
+      ctx.beginPath();
+      ctx.arc(px, py, isBig ? 1.5 : 1.0, 0, 6.283);
+      ctx.fill();
+    }
+  }
+
+  // 2) Процедурные точки по ВСЕЙ карте — заполняют пространство
+  //    за пределами области пропсов, чтобы не было видно «проплешин».
+  const N = 28000;
+  for (let i = 0; i < N; i++) {
+    const wx = GX0 + Math.random() * GW;
+    const wz = GZ0 + Math.random() * GH;
+
+    // Не сажаем ничего рядом с боссом (плоская площадка)
+    if (Math.hypot(wx + 2.6, wz) < 16) continue;
+
+    const px = (wx - GX0) / GW * W;
+    const py = (wz - GZ0) / GH * H;
+
+    // ~18% — камни, остальное — деревья разных размеров
+    const isRock = Math.random() < 0.18;
+    if (isRock) {
+      ctx.fillStyle = 'rgba(110, 102, 90, 0.7)';
+      ctx.beginPath();
+      ctx.arc(px, py, 0.8, 0, 6.283);
+      ctx.fill();
+    } else {
+      const isBig = Math.random() < 0.35;
+      ctx.fillStyle = isBig
+        ? 'rgba(18, 55, 16, 0.85)'
+        : 'rgba(28, 75, 22, 0.72)';
+      ctx.beginPath();
+      ctx.arc(px, py, isBig ? 1.4 : 0.9, 0, 6.283);
+      ctx.fill();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+const vegTex = makeVegTexture();
+
+// Оверлей использует ТУ ЖЕ геометрию, что и земля — поэтому идеально ложится на холмы
+const vegOverlay = new THREE.Mesh(
+  groundGeo,
+  new THREE.MeshBasicMaterial({
+    map: vegTex,
+    transparent: true,
+    depthWrite: false,                     // не мешает сортировке
+    polygonOffset: true,                   // против z-fighting с землёй
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  })
+);
+vegOverlay.position.copy(ground.position);
+vegOverlay.renderOrder = 2;                // поверх земли
+vegOverlay.material.opacity = 0;           // начинаем прозрачным
+vegOverlay.visible = true;                 // видим всегда, управляем только opacity
+scene.add(vegOverlay);
+
+// Флаги режима и плавного перехода
+let in2DMode = false;
+let lodFade  = 0;      // 0 = только 3D-пропсы, 1 = только 2D-точки
+let showing3D = true;  // текущее состояние видимости 3D-пропсов
+
+// Базовые настройки тумана для двух режимов
+const FOG_3D_NEAR = 55,  FOG_3D_FAR  = 260;
+// В высоком режиме туман плотнее — прячем края земли (x = 5500) за 2000 м
+const FOG_2D_NEAR = 100, FOG_2D_FAR  = 2200;
 
 /* ================================================================
    6. ROCKET
@@ -552,11 +659,11 @@ const ANG_MAX  = 18.0;    // рад/с — предохранитель от р�
 const G = {
   phase: 'ready',        // ready | windup | strike | fly | landed
   timer: 0,
-  coins: 0,
+  coins: 10000,
   best: 0,
   lastDist: 0,
   fuel: 0,
-  upgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
+  upgrades: { power: 10, aero: 10, fuel: 10, thrust: 10 },
 };
 
 const rocketState = {
@@ -589,9 +696,7 @@ const thrustAcc= () => 12 + (G.upgrades.thrust - 1) * 4;    // Lv1: 12, Lv10: 48
 // Сопротивление воздуха: a_drag = k · v²  (квадратичное, как в аэродинамике)
 const dragCoef = () => 0.0025 / (1 + (G.upgrades.aero - 1) * 0.40);  // 1/м
 
-// Плотность воздуха падает с высотой — на высоте 400 м она уже 37% от земной.
-// Это даёт ощущение «выше забрался — меньше тормозит».
-const airDensity = (y) => Math.exp(-Math.max(0, y) / 400);
+const airDensity = (y) => Math.exp(-Math.max(0, y) / 20000);
 
 
 
@@ -780,6 +885,7 @@ function update(dt) {
   updateRocket(dt);
   updateCamera(dt);
   updateScenery();
+  updateLOD(dt);
 
   // Топливный бар
   if (G.phase === 'fly') {
@@ -938,8 +1044,8 @@ function updateCamera(dt) {
   // --- Угол возвышения камеры зависит от высоты над рельефом ---
   // 0 м → 20° (смотрим почти сбоку), 400 м → 80° (почти вид сверху)
   const alt   = Math.max(0, p.y - gY);
-  const altT  = Math.min(1, alt / 400);
-  const elev  = (20 + 60 * altT) * Math.PI / 180;
+  const altT  = Math.min(1, alt / 500);
+  const elev  = (20 + 45 * altT) * Math.PI / 180;
 
   // --- Камера на сфере радиуса R вокруг ракеты ---
   const R     = 22;
@@ -988,6 +1094,45 @@ function updateScenery() {
   sun.position.set(camX + 20, 65, 25);
   sun.target.position.set(camX, 0, 0);
   sun.target.updateMatrixWorld();
+}
+
+/* ---------- LOD: 3D-пропсы ↔ 2D-точки деревьев с плавным переходом ---------- */
+function updateLOD(dt) {
+  const p = rocketState.pos;
+  const gY = terrainHeight(p.x, p.z);
+  const alt = p.y - gY;
+  const flying = (G.phase === 'fly');
+
+  // --- Гистерезис: без мигания на границе ---
+  if (!in2DMode) {
+    if (flying && alt > 200) in2DMode = true;
+  } else {
+    if (!flying || alt < 160) in2DMode = false;
+  }
+
+  // --- Плавная интерполяция fade ---
+  const targetFade = in2DMode ? 1 : 0;
+  const speed      = in2DMode ? 1.4 : 2.0;
+  lodFade += (targetFade - lodFade) * Math.min(1, dt * speed);
+  if (lodFade < 0.005) lodFade = 0;
+  if (lodFade > 0.995) lodFade = 1;
+
+  // --- Оверлей: прозрачность вместо visible ---
+  vegOverlay.material.opacity = lodFade;
+  vegOverlay.visible = lodFade > 0.005;
+
+  // --- 3D-пропсы показываем только когда оверлей уже почти исчез ---
+  // Иначе при спуске видно и 2D-точки, и 3D-деревья одновременно — «двойной лес».
+  const want3D = lodFade < 0.15;
+  if (want3D !== showing3D) {
+    for (const pr of props) pr.visible = want3D;
+    boss.visible = want3D;
+    showing3D = want3D;
+  }
+
+  // --- Туман плавно едет между двумя наборами значений ---
+  scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade;
+  scene.fog.far  = FOG_3D_FAR  + (FOG_2D_FAR  - FOG_3D_FAR ) * lodFade;
 }
 
 /* ================================================================
