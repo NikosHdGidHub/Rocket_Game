@@ -1,0 +1,1497 @@
+/* ================================================================
+   main.js — точка входа игры.
+   Здесь: рендерер, сцена, камера, чанки, пропсы, босс, ракета,
+   игровая логика, ввод, главный цикл.
+
+   Настройки — в config.js.
+   Математика мира — в world.js.
+   Шаблоны пропсов — в props.js.
+================================================================ */
+
+import * as THREE from 'three'
+import * as CFG from './config.js'
+import {
+  WORLD_SEED,
+  hash2i,
+  mulberry32,
+  terrainBase,
+  terrainHeight,
+  heightToTerrainColor,
+  makeGroundTexture,
+  GROUND_TILE,
+} from './world.js'
+import { TEMPLATES } from './props.js'
+
+/* ================================================================
+   0. RNG state
+================================================================ */
+let currentRng = Math.random
+const rnd = () => currentRng()
+
+/* ================================================================
+   1. RENDERER / SCENE / CAMERA
+================================================================ */
+const renderer = new THREE.WebGLRenderer({
+  antialias: CFG.RENDERER.antialias,
+})
+renderer.setPixelRatio(Math.min(devicePixelRatio, CFG.RENDERER.pixelRatioCap))
+renderer.setSize(innerWidth, innerHeight)
+
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = CFG.RENDERER.toneMappingExposure
+
+renderer.shadowMap.enabled = CFG.LIGHTS.shadow.enabled
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+
+const camera = new THREE.PerspectiveCamera(
+  CFG.CAMERA.fov,
+  innerWidth / innerHeight,
+  CFG.CAMERA.near,
+  CFG.CAMERA.far
+)
+camera.position.set(...CFG.CAMERA.initial)
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+/* ================================================================
+   1b. НЕБО — градиентный купол + солнце (шейдер)
+================================================================ */
+const SKY_ZENITH = new THREE.Color(CFG.SKY.zenith)
+const SKY_HORIZON = new THREE.Color(CFG.SKY.horizon)
+const SUN_COLOR = new THREE.Color(CFG.SKY.sun)
+
+const scene = new THREE.Scene()
+scene.fog = new THREE.Fog(
+  CFG.SKY.horizon,
+  CFG.FOG.initialNear,
+  CFG.FOG.initialFar
+)
+
+const SUN_DIR = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
+
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  fog: false,
+  uniforms: {
+    topColor: { value: SKY_ZENITH.clone() },
+    bottomColor: { value: SKY_HORIZON.clone() },
+    sunColor: { value: SUN_COLOR.clone() },
+    sunDir: { value: SUN_DIR.clone() },
+    exponent: { value: CFG.SKY.exponent },
+    hazeColor: { value: new THREE.Vector3(...CFG.SKY.hazeColor) },
+    hazePow: { value: CFG.SKY.hazePow },
+    glowPow: { value: CFG.SKY.glowPow },
+    glowAmt: { value: CFG.SKY.glowAmt },
+    corePow: { value: CFG.SKY.corePow },
+    coreAmt: { value: CFG.SKY.coreAmt },
+  },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3  topColor;
+    uniform vec3  bottomColor;
+    uniform vec3  sunColor;
+    uniform vec3  sunDir;
+    uniform float exponent;
+    uniform vec3  hazeColor;
+    uniform float hazePow;
+    uniform float glowPow;
+    uniform float glowAmt;
+    uniform float corePow;
+    uniform float coreAmt;
+    varying vec3 vWorldPos;
+
+    void main() {
+      vec3 dir = normalize(vWorldPos - cameraPosition);
+      float h = max(dir.y, 0.0);
+      float t = pow(h, exponent);
+      vec3 col = mix(bottomColor, topColor, t);
+
+      float haze = exp(-h * hazePow);
+      col = mix(col, col + hazeColor, haze);
+
+      float d    = max(dot(dir, normalize(sunDir)), 0.0);
+      float glow = pow(d, glowPow) * glowAmt;
+      float core = pow(d, corePow) * coreAmt;
+      col += sunColor * (glow + core);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+})
+
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(
+    CFG.SKY.domeRadius,
+    CFG.SKY.domeSegW,
+    CFG.SKY.domeSegH
+  ),
+  skyMat
+)
+skyDome.frustumCulled = false
+skyDome.renderOrder = -1
+scene.add(skyDome)
+
+/* ---------- Sky-matching fog ---------- */
+function applySkyFog(mat) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.skyTop = { value: SKY_ZENITH }
+    shader.uniforms.skyBottom = { value: SKY_HORIZON }
+    shader.uniforms.skyExponent = { value: CFG.SKY.exponent }
+    shader.uniforms.sunColorF = { value: SUN_COLOR }
+    shader.uniforms.sunDirF = { value: SUN_DIR }
+    shader.uniforms.hazeColorF = {
+      value: new THREE.Vector3(...CFG.SKY.hazeColor),
+    }
+    shader.uniforms.hazePowF = { value: CFG.SKY.hazePow }
+    shader.uniforms.glowPowF = { value: CFG.SKY.glowPow }
+    shader.uniforms.glowAmtF = { value: CFG.SKY.glowAmt }
+    shader.uniforms.corePowF = { value: CFG.SKY.corePow }
+    shader.uniforms.coreAmtF = { value: CFG.SKY.coreAmt }
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <fog_pars_vertex>',
+      `#include <fog_pars_vertex>
+       varying vec3 vSkyWorldPos;`
+    )
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <fog_vertex>',
+      `#include <fog_vertex>
+       vSkyWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+    )
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <fog_pars_fragment>',
+      `#include <fog_pars_fragment>
+       uniform vec3  skyTop;
+       uniform vec3  skyBottom;
+       uniform float skyExponent;
+       uniform vec3  sunColorF;
+       uniform vec3  sunDirF;
+       uniform vec3  hazeColorF;
+       uniform float hazePowF;
+       uniform float glowPowF;
+       uniform float glowAmtF;
+       uniform float corePowF;
+       uniform float coreAmtF;
+       varying vec3  vSkyWorldPos;
+
+       vec3 skyColorAtDir(vec3 dir) {
+         float h = max(dir.y, 0.0);
+         float t = pow(h, skyExponent);
+         vec3 col = mix(skyBottom, skyTop, t);
+         float haze = exp(-h * hazePowF);
+         col = mix(col, col + hazeColorF, haze);
+         float d    = max(dot(dir, normalize(sunDirF)), 0.0);
+         float glow = pow(d, glowPowF) * glowAmtF;
+         float core = pow(d, corePowF) * coreAmtF;
+         col += sunColorF * (glow + core);
+         return col;
+       }`
+    )
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <fog_fragment>',
+      `#ifdef USE_FOG
+         vec3  fogDir    = normalize(vSkyWorldPos - cameraPosition);
+         vec3  fogCol    = skyColorAtDir(fogDir);
+         float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+         gl_FragColor.rgb = mix(gl_FragColor.rgb, fogCol, fogFactor);
+       #endif`
+    )
+  }
+  mat.needsUpdate = true
+}
+
+/* ================================================================
+   2. LIGHTS
+================================================================ */
+scene.add(
+  new THREE.HemisphereLight(
+    CFG.LIGHTS.hemiSky,
+    CFG.LIGHTS.hemiGround,
+    CFG.LIGHTS.hemiIntensity
+  )
+)
+
+const sun = new THREE.DirectionalLight(
+  CFG.LIGHTS.sunColor,
+  CFG.LIGHTS.sunIntensity
+)
+sun.position.set(...CFG.LIGHTS.sunOffset)
+sun.castShadow = CFG.LIGHTS.shadow.enabled
+sun.shadow.mapSize.set(CFG.LIGHTS.shadow.mapSize, CFG.LIGHTS.shadow.mapSize)
+const sc = sun.shadow.camera
+sc.left = -CFG.LIGHTS.shadow.cameraSize
+sc.right = CFG.LIGHTS.shadow.cameraSize
+sc.top = CFG.LIGHTS.shadow.cameraSize
+sc.bottom = -CFG.LIGHTS.shadow.cameraSize
+sc.near = CFG.LIGHTS.shadow.near
+sc.far = CFG.LIGHTS.shadow.far
+sun.shadow.bias = CFG.LIGHTS.shadow.bias
+scene.add(sun)
+scene.add(sun.target)
+
+/* ================================================================
+   3. Текстура земли + материал
+================================================================ */
+const TILE = GROUND_TILE
+const groundTex = makeGroundTexture(renderer.capabilities.getMaxAnisotropy())
+const groundMat = new THREE.MeshStandardMaterial({
+  map: groundTex,
+  vertexColors: true,
+  roughness: 1,
+  metalness: 0,
+})
+
+/* ================================================================
+   3b. CHUNK SYSTEM — 3D мир
+================================================================ */
+const CHUNK_SIZE = CFG.CHUNKS.size
+const CHUNK_SEG = CFG.CHUNKS.segments
+const LOAD_FWD_CHUNKS = CFG.CHUNKS.loadForward
+const LOAD_BACK_CHUNKS = CFG.CHUNKS.loadBack
+const LOAD_SIDE_CHUNKS = CFG.CHUNKS.loadSide
+const UNLOAD_MARGIN = CFG.CHUNKS.unloadMargin
+const CHUNKS_PER_FRAME = CFG.CHUNKS.perFrame
+const COUNT = CFG.PROPS.density
+
+const chunks = new Map()
+let showing3D = true
+
+function makeChunkMesh(cx, cz) {
+  const geo = new THREE.PlaneGeometry(
+    CHUNK_SIZE,
+    CHUNK_SIZE,
+    CHUNK_SEG,
+    CHUNK_SEG
+  )
+  geo.rotateX(-Math.PI / 2)
+
+  const cxw = cx * CHUNK_SIZE + CHUNK_SIZE / 2
+  const czw = cz * CHUNK_SIZE + CHUNK_SIZE / 2
+
+  const pos = geo.attributes.position
+  const uv = geo.attributes.uv
+
+  const colArr = new Float32Array(pos.count * 3)
+  const col = new THREE.Color()
+
+  for (let i = 0; i < pos.count; i++) {
+    const wx = cxw + pos.getX(i)
+    const wz = czw + pos.getZ(i)
+    const h = terrainHeight(wx, wz)
+
+    pos.setY(i, h)
+    uv.setXY(i, wx / TILE, wz / TILE)
+
+    heightToTerrainColor(h, col)
+    colArr[i * 3] = col.r
+    colArr[i * 3 + 1] = col.g
+    colArr[i * 3 + 2] = col.b
+  }
+  pos.needsUpdate = true
+  uv.needsUpdate = true
+  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
+  geo.computeVertexNormals()
+
+  const mesh = new THREE.Mesh(geo, groundMat)
+  mesh.position.set(cxw, 0, czw)
+  mesh.receiveShadow = false
+  return mesh
+}
+
+const _dummyObj = new THREE.Object3D()
+
+// Ссылки на prop-материал/тень — задаются ниже в секции PROPS
+let propMatRef = null
+let shadowDiskGeoRef = null
+let shadowDiskMatRef = null
+
+function spawnChunkProps(cx, cz) {
+  const seed = hash2i(cx + 0x9e37, cz + 0x79b9) ^ WORLD_SEED
+  const old = currentRng
+  currentRng = mulberry32(seed)
+
+  const baseX = cx * CHUNK_SIZE
+  const baseZ = cz * CHUNK_SIZE
+
+  const groups = { pine: [], oak: [], bush: [], rock: [] }
+  const TH = CFG.PROPS.thresholds
+  const SC = CFG.PROPS.scales
+
+  for (let i = 0; i < COUNT; i++) {
+    const wx = baseX + rnd() * CHUNK_SIZE
+    const wz = baseZ + rnd() * CHUNK_SIZE
+    if (Math.hypot(wx + 2.6, wz) < CFG.PROPS.safeRadius) continue
+
+    const r = rnd()
+    let kind
+    if (r < TH.pine) kind = 'pine'
+    else if (r < TH.oak) kind = 'oak'
+    else if (r < TH.bush) kind = 'bush'
+    else kind = 'rock'
+
+    const scale =
+      kind === 'rock'
+        ? SC.rock[0] + rnd() * (SC.rock[1] - SC.rock[0])
+        : SC.tree[0] + rnd() * (SC.tree[1] - SC.tree[0])
+    const rotY = rnd() * 6.28
+    const y = terrainHeight(wx, wz)
+
+    groups[kind].push({ x: wx, y, z: wz, scale, rotY })
+  }
+
+  currentRng = old
+
+  const meshes = []
+  const allShadows = []
+
+  for (const kind of ['pine', 'oak', 'bush', 'rock']) {
+    const items = groups[kind]
+    if (items.length === 0) continue
+
+    const inst = new THREE.InstancedMesh(
+      TEMPLATES[kind],
+      propMatRef,
+      items.length
+    )
+    inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    inst.castShadow = false
+    inst.receiveShadow = false
+    inst.frustumCulled = true
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
+      _dummyObj.position.set(it.x, it.y, it.z)
+      _dummyObj.rotation.set(0, it.rotY, 0)
+      _dummyObj.scale.setScalar(it.scale)
+      _dummyObj.updateMatrix()
+      inst.setMatrixAt(i, _dummyObj.matrix)
+      allShadows.push(it)
+    }
+    inst.instanceMatrix.needsUpdate = true
+    scene.add(inst)
+    meshes.push(inst)
+  }
+
+  // Запечённые тени
+  if (allShadows.length > 0) {
+    const shadowInst = new THREE.InstancedMesh(
+      shadowDiskGeoRef,
+      shadowDiskMatRef,
+      allShadows.length
+    )
+    shadowInst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    shadowInst.renderOrder = 1
+    shadowInst.castShadow = false
+    shadowInst.receiveShadow = false
+
+    const ss = CFG.PROPS.shadow.scale
+    const yo = CFG.PROPS.shadow.yOffset
+    for (let i = 0; i < allShadows.length; i++) {
+      const p = allShadows[i]
+      _dummyObj.position.set(p.x, p.y + yo, p.z)
+      _dummyObj.rotation.set(0, 0, 0)
+      _dummyObj.scale.set(p.scale * ss, 1, p.scale * ss)
+      _dummyObj.updateMatrix()
+      shadowInst.setMatrixAt(i, _dummyObj.matrix)
+    }
+    shadowInst.instanceMatrix.needsUpdate = true
+    scene.add(shadowInst)
+    meshes.push(shadowInst)
+  }
+
+  return meshes
+}
+
+function loadChunk(cx, cz) {
+  const key = cx + ',' + cz
+  if (chunks.has(key)) return
+  const mesh = makeChunkMesh(cx, cz)
+  const props = spawnChunkProps(cx, cz)
+  scene.add(mesh)
+  for (const p of props) p.visible = showing3D
+  chunks.set(key, { mesh, props })
+}
+
+function unloadChunk(key) {
+  const c = chunks.get(key)
+  if (!c) return
+  scene.remove(c.mesh)
+  c.mesh.geometry.dispose()
+  for (const p of c.props) scene.remove(p)
+  chunks.delete(key)
+}
+
+function updateChunks(camX, camZ, initial = false) {
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
+
+  const toLoad = []
+  for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
+    for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
+      const cx = cxi + dx,
+        cz = czi + dz
+      if (!chunks.has(cx + ',' + cz)) toLoad.push([cx, cz])
+    }
+  }
+
+  if (initial) {
+    for (const [cx, cz] of toLoad) loadChunk(cx, cz)
+  } else {
+    const n = Math.min(CHUNKS_PER_FRAME, toLoad.length)
+    for (let i = 0; i < n; i++) loadChunk(toLoad[i][0], toLoad[i][1])
+  }
+
+  const toUnload = []
+  for (const key of chunks.keys()) {
+    const [cs, czs] = key.split(',')
+    const dx = +cs - cxi,
+      dz = +czs - czi
+    if (
+      dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
+      dx > LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
+      Math.abs(dz) > LOAD_SIDE_CHUNKS + UNLOAD_MARGIN
+    ) {
+      toUnload.push(key)
+    }
+  }
+  for (const k of toUnload) unloadChunk(k)
+}
+
+/* ================================================================
+   3c. FAR GROUND TILES
+================================================================ */
+const FAR_TILE_SIZE = CFG.FAR_TILES.size
+const FAR_TILE_SEG = CFG.FAR_TILES.segments
+const FAR_LOAD_R = CFG.FAR_TILES.loadRadius
+const FAR_UNLOAD_R = CFG.FAR_TILES.unloadRadius
+const FAR_PER_FRAME = CFG.FAR_TILES.perFrame
+
+const farGroundMat = new THREE.MeshStandardMaterial({
+  map: groundTex,
+  vertexColors: true,
+  roughness: 1,
+  metalness: 0,
+  transparent: true,
+  opacity: 0,
+})
+
+const farTiles = new Map()
+
+function makeFarTileGeometry(fx, fz) {
+  const geo = new THREE.PlaneGeometry(
+    FAR_TILE_SIZE,
+    FAR_TILE_SIZE,
+    FAR_TILE_SEG,
+    FAR_TILE_SEG
+  )
+  geo.rotateX(-Math.PI / 2)
+
+  const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+  const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+
+  const pos = geo.attributes.position
+  const uv = geo.attributes.uv
+
+  const colArr = new Float32Array(pos.count * 3)
+  const col = new THREE.Color()
+
+  for (let i = 0; i < pos.count; i++) {
+    const wx = cxw + pos.getX(i)
+    const wz = czw + pos.getZ(i)
+    const h = terrainHeight(wx, wz)
+
+    pos.setY(i, h)
+    uv.setXY(i, wx / TILE, wz / TILE)
+
+    heightToTerrainColor(h, col)
+    colArr[i * 3] = col.r
+    colArr[i * 3 + 1] = col.g
+    colArr[i * 3 + 2] = col.b
+  }
+  pos.needsUpdate = true
+  uv.needsUpdate = true
+  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
+  geo.computeVertexNormals()
+  return geo
+}
+
+function loadFarTile(fx, fz) {
+  const key = fx + ',' + fz
+  if (farTiles.has(key)) return
+  const geo = makeFarTileGeometry(fx, fz)
+  const mesh = new THREE.Mesh(geo, farGroundMat)
+  mesh.position.set(
+    fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2,
+    0,
+    fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+  )
+  mesh.receiveShadow = false
+  mesh.visible = false
+  scene.add(mesh)
+  farTiles.set(key, { mesh, geo })
+}
+
+function unloadFarTile(key) {
+  const c = farTiles.get(key)
+  if (!c) return
+  scene.remove(c.mesh)
+  c.geo.dispose()
+  farTiles.delete(key)
+}
+
+function updateFarTiles(camX, camZ, initial = false) {
+  const fxi = Math.floor(camX / FAR_TILE_SIZE)
+  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
+
+  const toLoad = []
+  for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
+    for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
+      const fx = fxi + dx,
+        fz = fzi + dz
+      if (!farTiles.has(fx + ',' + fz)) toLoad.push([fx, fz])
+    }
+  }
+
+  if (initial) {
+    for (const [fx, fz] of toLoad) loadFarTile(fx, fz)
+  } else {
+    const n = Math.min(FAR_PER_FRAME, toLoad.length)
+    for (let i = 0; i < n; i++) loadFarTile(toLoad[i][0], toLoad[i][1])
+  }
+
+  const toUnload = []
+  for (const key of farTiles.keys()) {
+    const [fxs, fzs] = key.split(',')
+    if (
+      Math.abs(+fxs - fxi) > FAR_UNLOAD_R ||
+      Math.abs(+fzs - fzi) > FAR_UNLOAD_R
+    ) {
+      toUnload.push(key)
+    }
+  }
+  for (const k of toUnload) unloadFarTile(k)
+}
+
+/* ================================================================
+   4. PROPS — материал и тень (шаблоны уже в props.js)
+================================================================ */
+const propMat = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: CFG.PROPS.material.roughness,
+  metalness: CFG.PROPS.material.metalness,
+  flatShading: false,
+})
+propMatRef = propMat
+
+const shadowDiskGeo = new THREE.CircleGeometry(1, 8)
+shadowDiskGeo.rotateX(-Math.PI / 2)
+const shadowDiskMat = new THREE.MeshBasicMaterial({
+  color: CFG.PROPS.shadow.color,
+  transparent: true,
+  opacity: CFG.PROPS.shadow.opacity,
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: CFG.PROPS.shadow.polygonOffset,
+  polygonOffsetUnits: CFG.PROPS.shadow.polygonOffset,
+})
+shadowDiskGeoRef = shadowDiskGeo
+shadowDiskMatRef = shadowDiskMat
+
+/* ================================================================
+   5. BOSS
+================================================================ */
+const boss = new THREE.Group()
+boss.position.set(...CFG.BOSS.position)
+
+const skinMat = new THREE.MeshStandardMaterial({
+  color: CFG.BOSS.colors.skin,
+  roughness: 0.55,
+})
+const darkMat = new THREE.MeshStandardMaterial({
+  color: CFG.BOSS.colors.dark,
+  roughness: 0.8,
+})
+const accentMat = new THREE.MeshStandardMaterial({
+  color: CFG.BOSS.colors.accent,
+  roughness: 0.4,
+  metalness: 0.3,
+})
+
+function box(w, h, d, mat) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+  m.castShadow = true
+  m.receiveShadow = true
+  return m
+}
+
+const torso = box(2.0, 2.4, 1.4, skinMat)
+torso.position.y = 3.8
+boss.add(torso)
+
+const chest = box(1.1, 0.9, 0.15, accentMat)
+chest.position.set(0, 4.0, 0.75)
+boss.add(chest)
+
+const head = box(1.25, 1.2, 1.2, skinMat)
+head.position.y = 5.7
+boss.add(head)
+
+for (const zz of [0.62, -0.62]) {
+  const eye = box(0.3, 0.22, 0.1, darkMat)
+  eye.position.set(0.3, 5.85, zz)
+  eye.rotation.y = 0
+  boss.add(eye)
+}
+const brow = box(0.36, 0.1, 0.12, darkMat)
+brow.position.set(0.32, 6.05, 0.62)
+brow.rotation.z = -0.35
+boss.add(brow)
+const brow2 = brow.clone()
+brow2.position.z = -0.62
+brow2.rotation.z = 0.35
+boss.add(brow2)
+
+const armL = box(0.55, 2.1, 0.55, skinMat)
+armL.position.set(0, 3.6, 1.05)
+armL.geometry.translate(0, -1.05, 0)
+armL.position.y = 4.7
+boss.add(armL)
+
+const armR = box(0.55, 2.1, 0.55, skinMat)
+armR.geometry.translate(0, -1.05, 0)
+armR.position.set(0, 4.7, -1.05)
+boss.add(armR)
+
+function makeLeg() {
+  const pivot = new THREE.Group()
+  const upper = box(0.72, 1.4, 0.72, darkMat)
+  upper.position.y = -0.7
+  pivot.add(upper)
+  const lower = box(0.62, 1.3, 0.62, darkMat)
+  lower.position.y = -2.0
+  pivot.add(lower)
+  const foot = box(0.85, 0.4, 0.95, accentMat)
+  foot.position.set(0.18, -2.75, 0)
+  pivot.add(foot)
+  return pivot
+}
+
+const legBack = makeLeg()
+legBack.position.set(0, 2.6, -0.5)
+boss.add(legBack)
+
+const legKick = makeLeg()
+legKick.position.set(0, 2.6, 0.5)
+boss.add(legKick)
+
+scene.add(boss)
+
+/* ================================================================
+   5b. VEG OVERLAY CHUNKS
+================================================================ */
+const OVERLAY_SIZE = CFG.OVERLAY.size
+const OVERLAY_SEG = CFG.OVERLAY.segments
+const OVERLAY_CANVAS = CFG.OVERLAY.canvasSize
+const OVERLAY_LOAD_R = CFG.OVERLAY.loadRadius
+const OVERLAY_UNLOAD_R = CFG.OVERLAY.unloadRadius
+const OVERLAY_PER_FRAME = CFG.OVERLAY.perFrame
+
+const overlayChunks = new Map()
+
+function makeOverlayGeometry(ox, oz) {
+  const geo = new THREE.PlaneGeometry(
+    OVERLAY_SIZE,
+    OVERLAY_SIZE,
+    OVERLAY_SEG,
+    OVERLAY_SEG
+  )
+  geo.rotateX(-Math.PI / 2)
+
+  const cxw = ox * OVERLAY_SIZE + OVERLAY_SIZE / 2
+  const czw = oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
+
+  const pos = geo.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    const wx = cxw + pos.getX(i)
+    const wz = czw + pos.getZ(i)
+    pos.setY(i, terrainHeight(wx, wz))
+  }
+  pos.needsUpdate = true
+  geo.computeVertexNormals()
+  return geo
+}
+
+function makeOverlayCanvas(ox, oz) {
+  const W = OVERLAY_CANVAS,
+    H = OVERLAY_CANVAS
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, W, H)
+
+  const baseX = ox * OVERLAY_SIZE
+  const baseZ = oz * OVERLAY_SIZE
+
+  const seed = hash2i(ox + 0x51ed, oz + 0x270f) ^ WORLD_SEED
+  const rng = mulberry32(seed)
+
+  const O = CFG.OVERLAY
+  const N = O.points
+  for (let i = 0; i < N; i++) {
+    const wx = baseX + rng() * OVERLAY_SIZE
+    const wz = baseZ + rng() * OVERLAY_SIZE
+    if (Math.hypot(wx + 2.6, wz) < O.safeRadius) continue
+
+    const px = ((wx - baseX) / OVERLAY_SIZE) * W
+    const py = ((wz - baseZ) / OVERLAY_SIZE) * H
+
+    const isRock = rng() < O.rockRatio
+    if (isRock) {
+      ctx.fillStyle = O.rockColor
+      ctx.fillRect(px, py, 1, 1)
+    } else {
+      const isBig = rng() < O.bigTreeRatio
+      ctx.fillStyle = isBig ? O.bigTreeColor : O.smallTreeColor
+      ctx.fillRect(px, py, 1, 1)
+      if (isBig) ctx.fillRect(px + 1, py, 1, 1)
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.minFilter = THREE.NearestFilter
+  tex.magFilter = THREE.NearestFilter
+  tex.generateMipmaps = false
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy()
+  return tex
+}
+
+function loadOverlayChunk(ox, oz) {
+  const key = ox + ',' + oz
+  if (overlayChunks.has(key)) return
+
+  const geo = makeOverlayGeometry(ox, oz)
+  const tex = makeOverlayCanvas(ox, oz)
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  })
+
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(
+    ox * OVERLAY_SIZE + OVERLAY_SIZE / 2,
+    0,
+    oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
+  )
+  mesh.renderOrder = 2
+  mesh.material.opacity = lodFade
+  mesh.visible = lodFade > 0.005
+  scene.add(mesh)
+
+  overlayChunks.set(key, { mesh, mat, tex, geo })
+}
+
+function unloadOverlayChunk(key) {
+  const c = overlayChunks.get(key)
+  if (!c) return
+  scene.remove(c.mesh)
+  c.geo.dispose()
+  c.tex.dispose()
+  c.mat.dispose()
+  overlayChunks.delete(key)
+}
+
+function updateOverlayChunks(camX, camZ, initial = false) {
+  const oxi = Math.floor(camX / OVERLAY_SIZE)
+  const ozi = Math.floor(camZ / OVERLAY_SIZE)
+
+  const toLoad = []
+  for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
+    for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
+      const ox = oxi + dx,
+        oz = ozi + dz
+      if (!overlayChunks.has(ox + ',' + oz)) toLoad.push([ox, oz])
+    }
+  }
+
+  if (initial) {
+    for (const [ox, oz] of toLoad) loadOverlayChunk(ox, oz)
+  } else {
+    const n = Math.min(OVERLAY_PER_FRAME, toLoad.length)
+    for (let i = 0; i < n; i++) loadOverlayChunk(toLoad[i][0], toLoad[i][1])
+  }
+
+  const toUnload = []
+  for (const key of overlayChunks.keys()) {
+    const [oxs, ozs] = key.split(',')
+    if (
+      Math.abs(+oxs - oxi) > OVERLAY_UNLOAD_R ||
+      Math.abs(+ozs - ozi) > OVERLAY_UNLOAD_R
+    )
+      toUnload.push(key)
+  }
+  for (const k of toUnload) unloadOverlayChunk(k)
+}
+
+// Флаги LOD
+let in2DMode = false
+let lodFade = 0
+
+const FOG_3D_NEAR = CFG.FOG.near3D,
+  FOG_3D_FAR = CFG.FOG.far3D
+const FOG_2D_NEAR = CFG.FOG.near2D,
+  FOG_2D_FAR = CFG.FOG.far2D
+
+/* ================================================================
+   6. ROCKET
+================================================================ */
+const rocket = new THREE.Group()
+
+const bodyMat = new THREE.MeshStandardMaterial({
+  color: CFG.ROCKET.colors.body,
+  metalness: 0.55,
+  roughness: 0.3,
+})
+const redMat = new THREE.MeshStandardMaterial({
+  color: CFG.ROCKET.colors.red,
+  metalness: 0.3,
+  roughness: 0.45,
+})
+const glassMat = new THREE.MeshStandardMaterial({
+  color: CFG.ROCKET.colors.glass,
+  metalness: 0.9,
+  roughness: 0.15,
+})
+
+const rBody = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.36, 0.36, 2.2, 16),
+  bodyMat
+)
+rBody.rotation.z = Math.PI / 2
+rBody.castShadow = true
+rocket.add(rBody)
+
+const rNose = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.0, 16), redMat)
+rNose.rotation.z = -Math.PI / 2
+rNose.position.x = 1.6
+rNose.castShadow = true
+rocket.add(rNose)
+
+const port = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.17, 0.17, 0.06, 12),
+  glassMat
+)
+port.rotation.x = Math.PI / 2
+port.position.set(0.5, 0.3, 0.33)
+rocket.add(port)
+
+const finShape = new THREE.Shape()
+finShape.moveTo(0, 0)
+finShape.lineTo(-1.0, 0)
+finShape.lineTo(-1.0, 0.55)
+finShape.closePath()
+const finGeo = new THREE.ExtrudeGeometry(finShape, {
+  depth: 0.07,
+  bevelEnabled: false,
+})
+finGeo.translate(0, 0, -0.035)
+
+for (const sgn of [1, -1]) {
+  const fin = new THREE.Mesh(finGeo, redMat)
+  fin.position.set(-0.35, 0.34 * sgn, 0)
+  fin.scale.y = sgn
+  fin.castShadow = true
+  rocket.add(fin)
+}
+
+const nozzle = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.36, 0.5, 0.5, 14),
+  darkMat
+)
+nozzle.rotation.z = Math.PI / 2
+nozzle.position.x = -1.25
+rocket.add(nozzle)
+
+const flameMat = new THREE.MeshBasicMaterial({
+  color: CFG.ROCKET.flame.outer,
+  transparent: true,
+  opacity: 0.95,
+})
+const flame = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.4, 12), flameMat)
+flame.rotation.z = Math.PI / 2
+flame.position.x = -2.1
+rocket.add(flame)
+
+const flameInner = new THREE.Mesh(
+  new THREE.ConeGeometry(0.2, 0.9, 10),
+  new THREE.MeshBasicMaterial({ color: CFG.ROCKET.flame.inner })
+)
+flameInner.rotation.z = Math.PI / 2
+flameInner.position.x = -1.85
+rocket.add(flameInner)
+
+const exhaustLight = new THREE.PointLight(CFG.ROCKET.exhaustLight, 0, 14)
+exhaustLight.position.set(-2.0, 0, 0)
+rocket.add(exhaustLight)
+
+scene.add(rocket)
+
+/* ================================================================
+   7. GAME STATE
+================================================================ */
+const GRAVITY = CFG.GAME.gravity
+const REST_Y = CFG.GAME.restY
+const LAUNCH_ANGLE = CFG.GAME.launchAngle
+
+const ANG_ACC = CFG.GAME.angAcc
+const ANG_DAMP = CFG.GAME.angDamp
+const ANG_MAX = CFG.GAME.angMax
+
+const G = {
+  phase: 'ready',
+  timer: 0,
+  coins: CFG.GAME.initialCoins,
+  best: CFG.GAME.initialBest,
+  lastDist: 0,
+  fuel: 0,
+  upgrades: { ...CFG.GAME.initialUpgrades },
+}
+
+const rocketState = {
+  pos: new THREE.Vector3(0, REST_Y, 0),
+  vel: new THREE.Vector3(),
+  angVel: 0,
+}
+
+let boosting = false
+
+const UPGRADES = CFG.UPGRADES
+const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
+const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades)
+const maxFuel = () => CFG.RULES.maxFuel(G.upgrades)
+const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades)
+const dragCoef = () => CFG.RULES.dragCoef(G.upgrades)
+const airDensity = (y) => CFG.RULES.airDensity(y)
+
+/* ================================================================
+   8. UI
+================================================================ */
+const $dist = document.getElementById('dist')
+const $coins = document.getElementById('coins')
+const $best = document.getElementById('best')
+const $shop = document.getElementById('shop')
+const $launch = document.getElementById('launch')
+const $boostUI = document.getElementById('boostUI')
+const $fuelFill = document.getElementById('fuelFill')
+const $fuelText = document.getElementById('fuelText')
+const $alignText = document.getElementById('alignText')
+const $touchUI = document.getElementById('touchControls')
+const $toast = document.getElementById('toast')
+
+function updateHUD() {
+  $dist.textContent = Math.max(0, Math.floor(rocketState.pos.x))
+  $coins.textContent = G.coins
+  $best.textContent = Math.floor(G.best)
+}
+
+function renderShop() {
+  $shop.innerHTML = ''
+  for (const u of UPGRADES) {
+    const lvl = G.upgrades[u.key]
+    const cost = costOf(u)
+    const can = G.coins >= cost
+
+    const btn = document.createElement('button')
+    btn.className = 'upg' + (can ? '' : ' disabled')
+    btn.innerHTML = `
+      <div class="u-icon">${u.icon}</div>
+      <div>
+        <div class="u-name">${u.name} <span class="u-lvl">Lv.${lvl}</span></div>
+        <div class="u-desc">${u.desc}</div>
+      </div>
+      <div class="u-cost">💥 ${cost}</div>`
+    btn.addEventListener('click', () => buy(u))
+    $shop.appendChild(btn)
+  }
+}
+
+function buy(u) {
+  const cost = costOf(u)
+  if (G.coins < cost) return
+  G.coins -= cost
+  G.upgrades[u.key]++
+  updateHUD()
+  renderShop()
+  showToast(`${u.icon} Lv.${G.upgrades[u.key]}`, CFG.UI.toastColors.upgrade)
+}
+
+let toastTimer
+function showToast(text, color = CFG.UI.toastColors.default) {
+  $toast.textContent = text
+  $toast.style.color = color
+  $toast.classList.add('on')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(
+    () => $toast.classList.remove('on'),
+    CFG.UI.toastDuration
+  )
+}
+
+/* ================================================================
+   9. INPUT
+================================================================ */
+const input = { boost: false }
+const keys = { W: false, S: false }
+const touchKeys = { W: false, S: false }
+
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault()
+    input.boost = true
+    if (G.phase === 'ready' || G.phase === 'landed') startKick()
+  }
+  if (e.code === 'KeyW') {
+    keys.W = true
+    e.preventDefault()
+  }
+  if (e.code === 'KeyS') {
+    keys.S = true
+    e.preventDefault()
+  }
+})
+addEventListener('keyup', (e) => {
+  if (e.code === 'Space') input.boost = false
+  if (e.code === 'KeyW') keys.W = false
+  if (e.code === 'KeyS') keys.S = false
+})
+
+const $rotUp = document.getElementById('rotUp')
+const $rotDown = document.getElementById('rotDown')
+
+function bindHold(el, setter) {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault()
+    setter(true)
+  })
+  el.addEventListener('pointerup', () => setter(false))
+  el.addEventListener('pointerleave', () => setter(false))
+  el.addEventListener('pointercancel', () => setter(false))
+}
+bindHold($rotUp, (v) => (touchKeys.W = v))
+bindHold($rotDown, (v) => (touchKeys.S = v))
+
+renderer.domElement.addEventListener('pointerdown', () => {
+  if (G.phase === 'fly') {
+    input.boost = true
+  } else if (G.phase === 'ready' || G.phase === 'landed') {
+    startKick()
+  }
+})
+addEventListener('pointerup', () => {
+  input.boost = false
+})
+addEventListener('pointercancel', () => {
+  input.boost = false
+})
+
+$launch.addEventListener('click', (e) => {
+  e.stopPropagation()
+  if (G.phase === 'ready' || G.phase === 'landed') startKick()
+})
+
+/* ================================================================
+   10. GAME LOGIC
+================================================================ */
+function startKick() {
+  if (G.phase !== 'ready' && G.phase !== 'landed') return
+  resetRocket()
+  G.phase = 'windup'
+  G.timer = 0
+  $launch.classList.add('hidden')
+  $shop.style.display = 'none'
+}
+
+function resetRocket() {
+  const gY = terrainHeight(0, 0)
+  rocketState.pos.set(0, gY + REST_Y, 0)
+  rocketState.vel.set(0, 0, 0)
+  rocket.rotation.z = 0
+  rocketState.angVel = 0
+  rocket.position.copy(rocketState.pos)
+  G.fuel = maxFuel()
+  input.boost = false
+}
+
+function launch() {
+  const speed = launchSpeed()
+  rocketState.vel.set(
+    Math.cos(LAUNCH_ANGLE) * speed,
+    Math.sin(LAUNCH_ANGLE) * speed,
+    0
+  )
+  rocket.rotation.z = LAUNCH_ANGLE
+  rocketState.angVel = 0
+  G.phase = 'fly'
+  G.timer = 0
+  boosting = false
+  showToast('ПОЛЕТЕЛИ! 🚀', CFG.UI.toastColors.upgrade)
+}
+
+function land() {
+  G.phase = 'landed'
+  G.timer = 0
+  rocketState.angVel = 0
+  const gY = terrainHeight(rocketState.pos.x, rocketState.pos.z)
+  rocketState.pos.y = gY + REST_Y
+  rocketState.vel.set(0, 0, 0)
+
+  const dist = Math.max(0, rocketState.pos.x)
+  const earned = Math.max(1, Math.floor(dist))
+  G.lastDist = dist
+  G.coins += earned
+  if (dist > G.best) G.best = dist
+
+  updateHUD()
+  renderShop()
+
+  $launch.classList.remove('hidden')
+  $shop.style.display = ''
+  $launch.textContent = 'Пнуть снова! 🦵'
+
+  showToast(`${Math.floor(dist)} м  +${earned} 💥`, CFG.UI.toastColors.land)
+
+  shake = CFG.CAMERA.shakeOnLand
+}
+
+let shake = 0
+
+/* ================================================================
+   11. UPDATE
+================================================================ */
+function update(dt) {
+  updateBoss(dt)
+  updateRocket(dt)
+  updateCamera(dt)
+  updateScenery()
+  updateChunks(camera.position.x, camera.position.z)
+  updateFarTiles(camera.position.x, camera.position.z)
+  updateOverlayChunks(camera.position.x, camera.position.z)
+  updateLOD(dt)
+
+  if (G.phase === 'fly') {
+    $boostUI.classList.add('on')
+    $touchUI.classList.remove('hidden')
+    $fuelFill.style.width = (G.fuel / maxFuel()) * 100 + '%'
+    $fuelText.textContent = G.fuel.toFixed(1)
+  } else {
+    $boostUI.classList.remove('on')
+    $touchUI.classList.add('hidden')
+  }
+
+  if (G.phase === 'fly') updateHUD()
+}
+
+function updateBoss(dt) {
+  const idle = performance.now() * 0.0022
+
+  if (G.phase === 'ready' || G.phase === 'landed') {
+    legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 12)
+    boss.position.y = Math.sin(idle) * 0.08
+    torso.rotation.z = Math.sin(idle * 0.7) * 0.03
+    head.rotation.z = Math.sin(idle * 0.7) * 0.05
+    legBack.rotation.z = Math.sin(idle) * 0.03
+  } else if (G.phase === 'windup') {
+    G.timer += dt
+    const t = Math.min(1, G.timer / 0.3)
+    const e = 1 - Math.pow(1 - t, 3)
+    legKick.rotation.z = -0.85 * e
+    torso.rotation.z = 0.12 * e
+    boss.position.y = -0.12 * e
+
+    if (t >= 1) {
+      G.phase = 'strike'
+      G.timer = 0
+    }
+  } else if (G.phase === 'strike') {
+    G.timer += dt
+    const t = Math.min(1, G.timer / 0.11)
+    const e = t * t * (3 - 2 * t)
+    legKick.rotation.z = -0.85 + (2.05 + 0.85) * e
+    torso.rotation.z = 0.12 - 0.28 * e
+    boss.position.y = -0.12 + 0.2 * e
+
+    if (t >= 1 && G.phase === 'strike') launch()
+  } else if (G.phase === 'fly') {
+    legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 6)
+    torso.rotation.z += (0 - torso.rotation.z) * Math.min(1, dt * 6)
+    boss.position.y += (0 - boss.position.y) * Math.min(1, dt * 6)
+  }
+}
+
+function updateRocket(dt) {
+  const p = rocketState
+  const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
+
+  if (G.phase === 'fly') {
+    boosting = input.boost && G.fuel > 0
+    if (boosting) {
+      const ta = thrustAcc()
+      const ang = rocket.rotation.z
+      p.vel.x += Math.cos(ang) * ta * dt
+      p.vel.y += Math.sin(ang) * ta * dt
+      G.fuel = Math.max(0, G.fuel - dt)
+    }
+
+    p.vel.y -= GRAVITY * dt
+
+    const speed = p.vel.length()
+    if (speed > 0.01) {
+      const k = dragCoef() * airDensity(p.pos.y)
+      const aDrag = k * speed
+      p.vel.x -= p.vel.x * aDrag * dt
+      p.vel.y -= p.vel.y * aDrag * dt
+    }
+
+    p.pos.addScaledVector(p.vel, dt)
+
+    if (p.pos.y <= restY && p.vel.y < 0) {
+      p.pos.y = restY
+      land()
+    }
+  } else if (G.phase === 'landed') {
+    p.pos.y += (restY - p.pos.y) * Math.min(1, dt * 8)
+    rocket.rotation.z += (0 - rocket.rotation.z) * Math.min(1, dt * 6)
+  }
+
+  rocket.position.copy(p.pos)
+
+  if (G.phase === 'fly') {
+    const rotInput =
+      (keys.W || touchKeys.W ? 1 : 0) - (keys.S || touchKeys.S ? 1 : 0)
+
+    p.angVel += rotInput * ANG_ACC * dt
+    p.angVel -= p.angVel * ANG_DAMP * dt
+    p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel))
+
+    rocket.rotation.z += p.angVel * dt
+  }
+
+  if (G.phase === 'fly') {
+    let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
+    while (diff > Math.PI) diff -= Math.PI * 2
+    while (diff < -Math.PI) diff += Math.PI * 2
+    const deg = (Math.abs(diff) * 180) / Math.PI
+
+    if (deg < 8) {
+      $alignText.textContent = '🎯 0°'
+      $alignText.style.color = '#7dffa0'
+    } else if (deg < 25) {
+      $alignText.textContent = Math.round(deg) + '°'
+      $alignText.style.color = '#ffd75e'
+    } else {
+      $alignText.textContent = Math.round(deg) + '°'
+      $alignText.style.color = '#ff7a7a'
+    }
+
+    if (boosting) {
+      flameMat.color.setHex(
+        deg < 15 ? CFG.ROCKET.flame.aligned : CFG.ROCKET.flame.misaligned
+      )
+    }
+  }
+
+  const boostAmt = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
+  const flick = 0.85 + Math.random() * 0.3
+  flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
+  flameInner.scale.set(
+    boostAmt * flick * 1.1,
+    boostAmt * flick,
+    boostAmt * flick
+  )
+  flame.visible = boostAmt > 0.05
+  flameInner.visible = flame.visible
+  flameMat.opacity = boosting ? 0.95 : 0.5
+  exhaustLight.intensity = boostAmt * (boosting ? 45 : 8)
+}
+
+const camLook = new THREE.Vector3(0, 3, 0)
+let camBlend = 0
+
+function updateCamera(dt) {
+  const p = rocketState.pos
+  const gY = terrainHeight(p.x, 0)
+  const speed = rocketState.vel.length()
+
+  const wantBehind = G.phase === 'fly' ? 1 : 0
+  const blendSpeed =
+    wantBehind > camBlend ? CFG.CAMERA.blendIn : CFG.CAMERA.blendOut
+  camBlend += (wantBehind - camBlend) * Math.min(1, dt * blendSpeed)
+  if (camBlend < 0.001) camBlend = 0
+  if (camBlend > 0.999) camBlend = 1
+
+  const alt = Math.max(0, p.y - gY)
+  const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
+  const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
+  const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
+
+  const R =
+    CFG.CAMERA.baseRadius +
+    Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)
+  const hDist = R * Math.cos(elev)
+  const vDist = R * Math.sin(elev)
+
+  const lead = CFG.CAMERA.leadTime
+  const px = p.x + rocketState.vel.x * lead
+  const py = p.y + rocketState.vel.y * lead
+
+  const camX = px - hDist * camBlend
+  const camY = py + vDist
+  const camZ = hDist * (1 - camBlend)
+
+  const follow =
+    CFG.CAMERA.followBase +
+    Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
+  const s = 1 - Math.exp(-follow * dt)
+
+  camera.position.x += (camX - camera.position.x) * s
+  camera.position.y += (camY - camera.position.y) * s
+  camera.position.z += (camZ - camera.position.z) * s
+
+  const lookAhead =
+    (CFG.CAMERA.lookAheadBase + CFG.CAMERA.lookAheadBehind * camBlend) *
+    (1 - altT * CFG.CAMERA.lookAheadAltK)
+  const lookX = px + lookAhead
+  const lookY = py
+
+  camLook.x += (lookX - camLook.x) * s
+  camLook.y += (lookY - camLook.y) * s
+  camLook.z += (0 - camLook.z) * s
+
+  if (shake > 0) {
+    shake = Math.max(0, shake - dt * CFG.CAMERA.shakeDecayK)
+    const a = shake * shake * CFG.CAMERA.shakeAmpK
+    camera.position.x += (Math.random() - 0.5) * a
+    camera.position.y += (Math.random() - 0.5) * a
+  }
+
+  camera.lookAt(camLook)
+}
+
+function updateScenery() {
+  const camX = camera.position.x
+  const [ox, oy, oz] = CFG.LIGHTS.sunOffset
+  sun.position.set(camX + ox, oy, oz)
+  sun.target.position.set(camX, 0, 0)
+  sun.target.updateMatrixWorld()
+  skyDome.position.copy(camera.position)
+}
+
+function updateLOD(dt) {
+  const CHANGE_OVERLAY = CFG.LOD.changeAltitude
+  const SAMPLE_R = CFG.LOD.sampleRadius
+  const SAMPLES = CFG.LOD.sampleCount
+
+  const p = rocketState.pos
+  const flying = G.phase === 'fly'
+
+  let alt = p.y - terrainHeight(p.x, p.z)
+  for (let i = 0; i < SAMPLES; i++) {
+    const a = (i / SAMPLES) * Math.PI * 2
+    const gx = p.x + Math.cos(a) * SAMPLE_R
+    const gz = p.z + Math.sin(a) * SAMPLE_R
+    const a2 = p.y - terrainHeight(gx, gz)
+    if (a2 < alt) alt = a2
+  }
+  if (alt < 0) alt = 0
+
+  if (!in2DMode) {
+    if (flying && alt > CHANGE_OVERLAY) in2DMode = true
+  } else {
+    if (!flying || alt < CHANGE_OVERLAY - 50) in2DMode = false
+  }
+
+  const targetFade = in2DMode ? 1 : 0
+  const speed = in2DMode ? CFG.LOD.fadeIn : CFG.LOD.fadeOut
+  lodFade += (targetFade - lodFade) * Math.min(1, dt * speed)
+  if (lodFade < 0.005) lodFade = 0
+  if (lodFade > 0.995) lodFade = 1
+
+  for (const c of overlayChunks.values()) {
+    c.mat.opacity = lodFade
+    c.mesh.visible = lodFade > 0.005
+  }
+
+  farGroundMat.opacity = lodFade
+  const farVisible = lodFade > 0.005
+  for (const c of farTiles.values()) c.mesh.visible = farVisible
+
+  const showFine = lodFade < 0.95
+  for (const c of chunks.values()) c.mesh.visible = showFine
+
+  const want3D = lodFade < 0.15
+  if (want3D !== showing3D) {
+    for (const c of chunks.values()) {
+      for (const pr of c.props) pr.visible = want3D
+    }
+    boss.visible = want3D
+    showing3D = want3D
+  }
+
+  scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade
+  scene.fog.far = FOG_3D_FAR + (FOG_2D_FAR - FOG_3D_FAR) * lodFade
+}
+
+/* ================================================================
+   12. MAIN LOOP
+================================================================ */
+let last = performance.now()
+
+function loop(now) {
+  const dt = Math.min(0.033, (now - last) / 1000)
+  last = now
+
+  update(dt)
+  renderer.render(scene, camera)
+
+  requestAnimationFrame(loop)
+}
+
+/* ================================================================
+   13. INIT
+================================================================ */
+applySkyFog(groundMat)
+applySkyFog(farGroundMat)
+applySkyFog(propMat)
+
+resetRocket()
+rocket.position.copy(rocketState.pos)
+G.fuel = maxFuel()
+updateHUD()
+renderShop()
+
+updateChunks(camera.position.x, camera.position.z, true)
+updateFarTiles(camera.position.x, camera.position.z, true)
+updateOverlayChunks(camera.position.x, camera.position.z, true)
+
+requestAnimationFrame(loop)
+
+setTimeout(() => showToast('ПНИ РАКЕТУ! 🦵', CFG.UI.toastColors.upgrade), 400)

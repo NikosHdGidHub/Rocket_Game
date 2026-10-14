@@ -1,0 +1,24 @@
+{
+  "name": "rocket_game",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NikosHdGidHub/Rocket_Game.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/NikosHdGidHub/Rocket_Game/issues"
+  },
+  "homepage": "https://github.com/NikosHdGidHub/Rocket_Game#readme",
+  "dependencies": {
+    "three": "^0.186.1"
+  }
+}
