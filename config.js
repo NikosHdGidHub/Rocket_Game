@@ -579,7 +579,7 @@ export const OVERLAY = /** @type {const} */ ({
    *   2048 → 0.78 м/px, ~400 МБ (для мощных GPU)
    * [типично] 1024–2048.
    */
-  canvasSize: 1523,
+  canvasSize: 1536,
 
   /** Радиус прогрузки (в overlay-чанках). */
   loadRadius: 1,
