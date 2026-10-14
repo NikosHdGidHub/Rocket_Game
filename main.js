@@ -136,9 +136,28 @@ skyDome.frustumCulled = false
 skyDome.renderOrder = -1
 scene.add(skyDome)
 
+/* ---------- Elliptical fog uniforms ----------
+   Один набор uniform-объектов, разделяемый всеми материалами через
+   applySkyFog. Обновляется каждый кадр в updateFogEllipse().
+*/
+const fogU = {
+  /** Центр эллипса (XZ-проекция позиции ракеты). */
+  center: { value: new THREE.Vector2(0, 0) },
+
+  /** Направление эллипса (XZ-проекция нормированной скорости). */
+  dir: { value: new THREE.Vector2(1, 0) },
+
+  /** Множитель дальности в стороны (из config). */
+  shapeSide: { value: CFG.FOG.ellipseSide },
+
+  /** Множитель дальности назад (из config). */
+  shapeBack: { value: CFG.FOG.ellipseBack },
+}
+
 /* ---------- Sky-matching fog ---------- */
 function applySkyFog(mat) {
   mat.onBeforeCompile = (shader) => {
+    // --- Sky-matching ---
     shader.uniforms.skyTop = { value: SKY_ZENITH }
     shader.uniforms.skyBottom = { value: SKY_HORIZON }
     shader.uniforms.skyExponent = { value: CFG.SKY.exponent }
@@ -153,6 +172,14 @@ function applySkyFog(mat) {
     shader.uniforms.corePowF = { value: CFG.SKY.corePow }
     shader.uniforms.coreAmtF = { value: CFG.SKY.coreAmt }
 
+    // --- Elliptical fog — делим ОДНИ И ТЕ ЖЕ uniform-объекты
+    //     между всеми материалами, чтобы не дублировать состояние.
+    shader.uniforms.fogCenter = fogU.center
+    shader.uniforms.fogDirU = fogU.dir
+    shader.uniforms.fogShapeSide = fogU.shapeSide
+    shader.uniforms.fogShapeBack = fogU.shapeBack
+
+    // --- Вершинный: пробрасываем мировую позицию ---
     shader.vertexShader = shader.vertexShader.replace(
       '#include <fog_pars_vertex>',
       `#include <fog_pars_vertex>
@@ -161,9 +188,15 @@ function applySkyFog(mat) {
     shader.vertexShader = shader.vertexShader.replace(
       '#include <fog_vertex>',
       `#include <fog_vertex>
-       vSkyWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+   vec4 _skyWp = vec4(transformed, 1.0);
+   #ifdef USE_INSTANCING
+     _skyWp = instanceMatrix * _skyWp;
+   #endif
+   _skyWp = modelMatrix * _skyWp;
+   vSkyWorldPos = _skyWp.xyz;`
     )
 
+    // --- Фрагментный: объявляем функцию цвета неба + новые uniform-ы ---
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <fog_pars_fragment>',
       `#include <fog_pars_fragment>
@@ -178,6 +211,13 @@ function applySkyFog(mat) {
        uniform float glowAmtF;
        uniform float corePowF;
        uniform float coreAmtF;
+
+       // --- эллиптический туман ---
+       uniform vec2  fogCenter;
+       uniform vec2  fogDirU;
+       uniform float fogShapeSide;
+       uniform float fogShapeBack;
+
        varying vec3  vSkyWorldPos;
 
        vec3 skyColorAtDir(vec3 dir) {
@@ -194,12 +234,27 @@ function applySkyFog(mat) {
        }`
     )
 
+    // --- Фрагментный: заменяем расчёт тумана на эллиптический ---
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <fog_fragment>',
       `#ifdef USE_FOG
-         vec3  fogDir    = normalize(vSkyWorldPos - cameraPosition);
-         vec3  fogCol    = skyColorAtDir(fogDir);
-         float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+         // Вектор от центра эллипса (позиция ракеты) до пикселя в XZ.
+         vec2  toFrag = vSkyWorldPos.xz - fogCenter;
+
+         // Проекция на ось полёта (вперёд/назад) и на перпендикуляр (в стороны).
+         float along  = dot(toFrag, fogDirU);
+         float across = abs(dot(toFrag, vec2(-fogDirU.y, fogDirU.x)));
+
+         // Вперёд — без сжатия (rAlong = 1), назад — сжимаем на shapeBack.
+         float rAlong = along >= 0.0 ? 1.0 : fogShapeBack;
+         vec2  p      = vec2(along / rAlong, across / fogShapeSide);
+         float eDist  = length(p);   // в «метрах вперёд»
+
+         // Цвет тумана = цвет неба в направлении луча взгляда.
+         vec3  skyLook = normalize(vSkyWorldPos - cameraPosition);
+         vec3  fogCol  = skyColorAtDir(skyLook);
+
+         float fogFactor = smoothstep(fogNear, fogFar, eDist);
          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogCol, fogFactor);
        #endif`
     )
@@ -294,6 +349,8 @@ function makeChunkMesh(cx, cz) {
 }
 
 const _dummyObj = new THREE.Object3D()
+const _Y_UP = new THREE.Vector3(0, 1, 0)
+const _tmpNormal = new THREE.Vector3()
 
 // Ссылки на prop-материал/тень — задаются ниже в секции PROPS
 let propMatRef = null
@@ -377,14 +434,35 @@ function spawnChunkProps(cx, cz) {
 
     const ss = CFG.PROPS.shadow.scale
     const yo = CFG.PROPS.shadow.yOffset
+    const eps = 1.5 // шаг конечных разниц для нормали, м
+
     for (let i = 0; i < allShadows.length; i++) {
       const p = allShadows[i]
-      _dummyObj.position.set(p.x, p.y + yo, p.z)
-      _dummyObj.rotation.set(0, 0, 0)
+
+      // Нормаль рельефа в точке (p.x, p.z).
+      // p.y уже равен terrainHeight(p.x, p.z), поэтому берём ещё две
+      // точки по +X и +Z и считаем градиент.
+      const hX = terrainHeight(p.x + eps, p.z)
+      const hZ = terrainHeight(p.x, p.z + eps)
+      _tmpNormal.set(-(hX - p.y) / eps, 1, -(hZ - p.y) / eps).normalize()
+
+      // Сдвиг вдоль НОРМАЛИ, а не по мировому Y: тогда зазор 12 см
+      // сохраняется на любом уклоне.
+      _dummyObj.position.set(
+        p.x + _tmpNormal.x * yo,
+        p.y + _tmpNormal.y * yo,
+        p.z + _tmpNormal.z * yo
+      )
+
+      // Диск по умолчанию лежит в плоскости XZ (нормаль +Y).
+      // Доворачиваем его так, чтобы его нормаль совпала с нормалью рельефа.
+      _dummyObj.quaternion.setFromUnitVectors(_Y_UP, _tmpNormal)
+
       _dummyObj.scale.set(p.scale * ss, 1, p.scale * ss)
       _dummyObj.updateMatrix()
       shadowInst.setMatrixAt(i, _dummyObj.matrix)
     }
+
     shadowInst.instanceMatrix.needsUpdate = true
     scene.add(shadowInst)
     meshes.push(shadowInst)
@@ -1217,6 +1295,7 @@ function update(dt) {
   updateRocket(dt)
   updateCamera(dt)
   updateScenery()
+  updateFogEllipse(dt)
   updateChunks(camera.position.x, camera.position.z)
   updateFarTiles(camera.position.x, camera.position.z)
   updateOverlayChunks(camera.position.x, camera.position.z)
@@ -1420,6 +1499,34 @@ function updateScenery() {
   skyDome.position.copy(camera.position)
 }
 
+/* ---------- Эллиптический туман: обновление центра и направления ---------- */
+function updateFogEllipse(dt) {
+  // Центр эллипса — XZ-позиция ракеты.
+  // Логичнее привязывать к ракете, а не к камере: «вперёд» — относительно
+  // игрового персонажа, а не наблюдателя.
+  fogU.center.value.set(rocketState.pos.x, rocketState.pos.z)
+
+  // Направление — нормированная горизонтальная скорость.
+  const v = rocketState.vel
+  const speed = Math.hypot(v.x, v.z)
+
+  if (speed >= CFG.FOG.dirMinSpeed) {
+    const tx = v.x / speed
+    const tz = v.z / speed
+
+    // Сглаживание, чтобы эллипс плавно доворачивал, а не «щёлкал».
+    const k = 1 - Math.exp(-CFG.FOG.dirSmoothing * dt)
+    fogU.dir.value.x += (tx - fogU.dir.value.x) * k
+    fogU.dir.value.y += (tz - fogU.dir.value.y) * k
+
+    // Ре-нормализация, чтобы длина не «сдувалась» сглаживанием.
+    const l = Math.hypot(fogU.dir.value.x, fogU.dir.value.y) || 1
+    fogU.dir.value.x /= l
+    fogU.dir.value.y /= l
+  }
+  // Если скорость мала — оставляем последнее направление.
+}
+
 function updateLOD(dt) {
   const CHANGE_OVERLAY = CFG.LOD.changeAltitude
   const SAMPLE_R = CFG.LOD.sampleRadius
@@ -1496,6 +1603,7 @@ function loop(now) {
 applySkyFog(groundMat)
 applySkyFog(farGroundMat)
 applySkyFog(propMat)
+applySkyFog(shadowDiskMat)
 
 loadProgress() // ← сначала загружаем сейв
 resetRocket()
