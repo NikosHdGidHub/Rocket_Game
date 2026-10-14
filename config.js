@@ -176,7 +176,7 @@ export const FOG = /** @type {const} */ ({
 
   // 2D-режим (высоко в воздухе)
   near2D: 500,
-  far2D: 2600,
+  far2D: 4600,
 
   /* ---------- ЭЛЛИПТИЧЕСКАЯ ФОРМА ---------- */
 
@@ -231,12 +231,6 @@ export const TERRAIN = /** @type {const} */ ({
   ],
 
   /**
-   * Впадины (subtract). Создаёт «ложбины», вырезанные из равнины.
-   * [влияет] amp — глубина, freq — периодичность.
-   */
-  dip: { amp: 5.5, freq: 0.0075, phase: 1.2, axis: 'x' },
-
-  /**
    * X-координата, ПОСЛЕ которой начинают появляться горы.
    * [влияет] чем меньше — тем раньше по пути начинаются горы.
    * [типично] 800–1200.
@@ -265,7 +259,7 @@ export const TERRAIN = /** @type {const} */ ({
    */
   ridgeWave: {
     enabled: true,
-    amp: 300,
+    amp: 350,
     freq: 0.0015,
     octaves: 2,
   },
@@ -287,7 +281,7 @@ export const TERRAIN = /** @type {const} */ ({
     enabled: true,
     refX: 2000,
     freqExp: 0.35,
-    sharpExp: 1.2,
+    sharpExp: 1.6,
     minFreqScale: 0.76,
     minSharpScale: 0.2,
   },
@@ -308,7 +302,7 @@ export const TERRAIN = /** @type {const} */ ({
   ridgeHeightMod: {
     enabled: true,
     amp: 0.55,
-    freq: 0.0027,
+    freq: 0.0031,
     octaves: 3,
   },
 
@@ -333,7 +327,7 @@ export const TERRAIN = /** @type {const} */ ({
    * До этой точки growth = 1, дальше линейно растёт.
    * [влияет] где начинается «бесконечное усложнение» вглубь мира.
    */
-  growthStart: 2800,
+  growthStart: 4000,
 
   /**
    * Скорость роста (прибавка growth за 1 м по X).
@@ -341,7 +335,7 @@ export const TERRAIN = /** @type {const} */ ({
    * [влияет] чем больше, тем быстрее растут горы вдаль.
    * [типично] 1/20000 (медленно) ... 1/5000 (быстро).
    */
-  growthRate: 1 / 5000,
+  growthRate: 1 / 7500,
 
   /**
    * Ridged-noise компоненты (основа формы гор).
@@ -356,11 +350,11 @@ export const TERRAIN = /** @type {const} */ ({
    */
   ridges: [
     { freq: 0.00085, seed: 0.4, sharp: 5.2, amp: 350, swap: false }, // главные пики
-    { freq: 0.0022, seed: 1.1, sharp: 4.0, amp: 130, swap: false }, // средние
-    { freq: 0.0055, seed: 2.9, sharp: 2.4, amp: 45, swap: false }, // мелкие скалы
-    { freq: 0.0135, seed: 3.6, sharp: 1.3, amp: 15, swap: false }, // микрорельеф
-    { freq: 0.0013, seed: 5.2, sharp: 3.5, amp: 180, swap: true }, // поперечный хребет
-    { freq: 0.0041, seed: 6.8, sharp: 1.4, amp: 60, swap: true }, // поперечный мелкий
+    { freq: 0.0022, seed: 1.1, sharp: 4.0, amp: 130, swap: false }, // средни
+    { freq: 0.0055, seed: 2.9, sharp: 2.4, amp: 15, swap: false, soft: true }, // мелкие скалы
+    //{ freq: 0.0135, seed: 3.6, sharp: 1.3, amp: 15, swap: false, soft: true }, // микрорельеф
+    { freq: 0.0013, seed: 5.2, sharp: 2.5, amp: 180, swap: true }, // поперечный хребет
+    { freq: 0.0041, seed: 6.8, sharp: 1.4, amp: 60, swap: true, soft: true }, // поперечный мелкий
   ],
 
   /**

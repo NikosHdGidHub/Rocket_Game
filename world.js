@@ -111,11 +111,6 @@ export function terrainBase(x, z) {
     h += (w.fn === 'sin' ? Math.sin(arg) : Math.cos(arg)) * w.amp
   }
 
-  // Впадины — без изменений
-  const d = CFG.TERRAIN.dip
-  const dip = Math.max(0, Math.sin(x * d.freq + d.phase + S))
-  h -= dip * dip * d.amp
-
   // Множитель «включения гор»
   const mt = Math.min(1, Math.max(0, (x - CFG.TERRAIN.mountainsStart) / CFG.TERRAIN.mountainsRamp))
   const mt2 = mt * mt
@@ -145,11 +140,11 @@ export function terrainBase(x, z) {
     sharpScale = Math.max(RG.minSharpScale, Math.pow(ratio, RG.sharpExp))
   }
 
-  const ridge = (u, v, freq, seed, sharp) => {
+  const ridge = (u, v, freq, seed, sharp, soft) => {
     const f = freq * freqScale // эффективная частота → ширина/частота хребта
-    const sh = sharp * sharpScale // эффективная острота → «заострённость» пиков
-    // Сдвиг фазы волнистостью. waveField ∈ [-1,1], RW.amp в метрах,
-    // f в 1/м ⇒ итог безразмерный. Смещение хребта в (u)-направлении ≈ ±amp м.
+    // Мягкие гребни (sharp < ~2.5) не масштабируем по остроте:
+    // они и так «синусоидные», дальше вырождаются в полосы.
+    const sh = soft ? sharp : sharp * sharpScale
     const wavePhase = waveField * RW.amp * f
     const s = Math.sin(u * f + v * f * 0.55 + seed + S + wavePhase)
     return Math.pow(1 - Math.abs(s), sh)
@@ -158,8 +153,8 @@ export function terrainBase(x, z) {
   let r = 0
   for (const g of CFG.TERRAIN.ridges) {
     r += g.swap
-      ? ridge(z, -x, g.freq, g.seed, g.sharp) * g.amp
-      : ridge(x, z, g.freq, g.seed, g.sharp) * g.amp
+      ? ridge(z, -x, g.freq, g.seed, g.sharp, g.soft) * g.amp
+      : ridge(x, z, g.freq, g.seed, g.sharp, g.soft) * g.amp
   }
 
   // ─── Модуляция высоты вдоль хребта ───
