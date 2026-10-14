@@ -143,8 +143,8 @@ export const FOG = /** @type {const} */ ({
   initialFar: 300,
   // 3D-режим (низко над землёй)
   // 3D-режим (низко над землёй)
-  near3D: 90,
-  far3D: 1200,
+  near3D: 100,
+  far3D: 1800,
 
   /**
    * Динамический туман по высоте.
@@ -160,7 +160,7 @@ export const FOG = /** @type {const} */ ({
    * выше — остаётся базовым.
    * [типично] 300–500.
    */
-  altRef: 400,
+  altRef: 250,
 
   /**
    * Туман НА УРОВНЕ ЗЕМЛИ (alt = 0). Самая густая и близкая
@@ -171,8 +171,8 @@ export const FOG = /** @type {const} */ ({
    *          far — где всё растворяется в «молоке».
    * [типично] near: 20–50, far: 200–400.
    */
-  nearGround: 30,
-  farGround: 280,
+  nearGround: 50,
+  farGround: 350,
 
   // 2D-режим (высоко в воздухе)
   near2D: 500,
@@ -181,7 +181,7 @@ export const FOG = /** @type {const} */ ({
   /* ---------- ЭЛЛИПТИЧЕСКАЯ ФОРМА ---------- */
 
   /** Множитель дальности В СТОРОНЫ (перпендикулярно полёту).*/
-  ellipseSide: 0.75,
+  ellipseSide: 0.6,
 
   /** Множитель дальности НАЗАД.*/
   ellipseBack: 0.3,
@@ -433,7 +433,7 @@ export const CHUNKS = /** @type {const} */ ({
   segments: 50,
 
   /** Сколько чанков грузить ВПЕРЁД (в +X).*/
-  loadForward: 6,
+  loadForward: 9,
 
   /**Сколько чанков грузить НАЗАД (в -X).*/
   loadBack: 1,
@@ -842,9 +842,9 @@ export const CAMERA = /** @type {const} */ ({
 
 export const LOD = /** @type {const} */ ({
   /** Высота над рельефом (м), при которой включается 2D-режим. */
-  changeAltitude: 500,
+  changeAltitude: 600,
   /** Должна быть меньше changeAltitude */
-  changeBack: 420,
+  changeBack: 500,
 
   /** Радиус кольца сэмплирования высоты вокруг ракеты (м). */
   sampleRadius: 200,

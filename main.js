@@ -1214,6 +1214,8 @@ function updateOverlayChunks(camX, camZ, initial = false) {
 // Флаги LOD
 let in2DMode = false
 let lodFade = 0
+let lodAltSmooth = 0 // ← сглаженная по времени высота над рельефом
+let lodAltInit = false // ← первый кадр — инициализация
 
 const FOG_3D_NEAR = CFG.FOG.near3D,
   FOG_3D_FAR = CFG.FOG.far3D
@@ -1871,10 +1873,21 @@ function updateLOD(dt) {
   }
   if (alt < 0) alt = 0
 
-  if (!in2DMode) {
-    if (flying && alt > CHANGE_OVERLAY) in2DMode = true
+  // Сглаживание высоты по времени — гасит дёрганье на пиках гор
+  // и даёт стабильный вход/выход из 2D. Туман тоже использует
+  // это сглаженное значение.
+  if (!lodAltInit) {
+    lodAltSmooth = alt
+    lodAltInit = true
   } else {
-    if (!flying || alt < CHANGE_OVERLAY_BACK) in2DMode = false
+    const k = 1 - Math.exp(-4.0 * dt) // 4.0 = скорость сглаживания (1/с)
+    lodAltSmooth += (alt - lodAltSmooth) * k
+  }
+
+  if (!in2DMode) {
+    if (flying && lodAltSmooth > CHANGE_OVERLAY) in2DMode = true
+  } else {
+    if (!flying || lodAltSmooth < CHANGE_OVERLAY_BACK) in2DMode = false
   }
 
   const targetFade = in2DMode ? 1 : 0
@@ -1904,8 +1917,22 @@ function updateLOD(dt) {
     showing3D = want3D
   }
 
-  scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade
-  scene.fog.far = FOG_3D_FAR + (FOG_2D_FAR - FOG_3D_FAR) * lodFade
+  // ─── Динамический туман по высоте ───
+  // «Базовые» значения для 3D-режима. При dynamicByAltitude
+  // они интерполируются от nearGround/farGround (у земли)
+  // к near3D/far3D (на altRef и выше).
+  let dNear = FOG_3D_NEAR
+  let dFar = FOG_3D_FAR
+
+  if (CFG.FOG.dynamicByAltitude) {
+    const F = CFG.FOG
+    const t = Math.min(1, Math.max(0, lodAltSmooth / F.altRef))
+    dNear = F.nearGround + (FOG_3D_NEAR - F.nearGround) * t
+    dFar = F.farGround + (FOG_3D_FAR - F.farGround) * t
+  }
+
+  scene.fog.near = dNear + (FOG_2D_NEAR - dNear) * lodFade
+  scene.fog.far = dFar + (FOG_2D_FAR - dFar) * lodFade
 }
 
 /* ================================================================
