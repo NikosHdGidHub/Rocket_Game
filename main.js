@@ -357,24 +357,33 @@ let propMatRef = null
 let shadowDiskGeoRef = null
 let shadowDiskMatRef = null
 
-function spawnChunkProps(cx, cz) {
+/* ================================================================
+   computeChunkProps — детерминированный список «что где растёт»
+   на чанке (cx, cz). Никакой привязки к THREE.
+   Один и тот же вызов из 3D-пропсов и из overlay-точек даёт
+   ОДИНАКОВЫЙ набор позиций → точки попадают точно под деревья.
+================================================================ */
+function computeChunkProps(cx, cz) {
   const seed = hash2i(cx + 0x9e37, cz + 0x79b9) ^ WORLD_SEED
-  const old = currentRng
-  currentRng = mulberry32(seed)
+  const rng = mulberry32(seed)
 
   const baseX = cx * CHUNK_SIZE
   const baseZ = cz * CHUNK_SIZE
 
-  const groups = { pine: [], oak: [], bush: [], rock: [] }
+  const items = []
   const TH = CFG.PROPS.thresholds
   const SC = CFG.PROPS.scales
+  const SAFE_R2 = CFG.PROPS.safeRadius * CFG.PROPS.safeRadius
 
   for (let i = 0; i < COUNT; i++) {
-    const wx = baseX + rnd() * CHUNK_SIZE
-    const wz = baseZ + rnd() * CHUNK_SIZE
-    if (Math.hypot(wx + 2.6, wz) < CFG.PROPS.safeRadius) continue
+    const wx = baseX + rng() * CHUNK_SIZE
+    const wz = baseZ + rng() * CHUNK_SIZE
 
-    const r = rnd()
+    const dx = wx + 2.6
+    const dz = wz
+    if (dx * dx + dz * dz < SAFE_R2) continue
+
+    const r = rng()
     let kind
     if (r < TH.pine) kind = 'pine'
     else if (r < TH.oak) kind = 'oak'
@@ -383,31 +392,51 @@ function spawnChunkProps(cx, cz) {
 
     const scale =
       kind === 'rock'
-        ? SC.rock[0] + rnd() * (SC.rock[1] - SC.rock[0])
-        : SC.tree[0] + rnd() * (SC.tree[1] - SC.tree[0])
-    const rotY = rnd() * 6.28
-    const y = terrainHeight(wx, wz)
+        ? SC.rock[0] + rng() * (SC.rock[1] - SC.rock[0])
+        : SC.tree[0] + rng() * (SC.tree[1] - SC.tree[0])
+    const rotY = rng() * 6.28
 
-    groups[kind].push({ x: wx, y, z: wz, scale, rotY })
+    items.push({ x: wx, z: wz, kind, scale, rotY })
   }
+  return items
+}
 
-  currentRng = old
+/* ================================================================
+   spawnChunkProps — строит InstancedMesh-ы и тени для чанка.
+   Использует computeChunkProps, поэтому позиции гарантированно
+   совпадают с overlay-точками.
+================================================================ */
+function spawnChunkProps(cx, cz) {
+  const items = computeChunkProps(cx, cz)
+
+  // Раскладываем по группам; y-координату считаем здесь (нужна
+  // только для 3D-рендера, поэтому её нет в computeChunkProps).
+  const groups = { pine: [], oak: [], bush: [], rock: [] }
+  for (const it of items) {
+    groups[it.kind].push({
+      x: it.x,
+      y: terrainHeight(it.x, it.z),
+      z: it.z,
+      scale: it.scale,
+      rotY: it.rotY,
+    })
+  }
 
   const meshes = []
   const allShadows = []
 
   for (const kind of ['pine', 'oak', 'bush', 'rock']) {
-    const items = groups[kind]
-    if (items.length === 0) continue
+    const list = groups[kind]
+    if (list.length === 0) continue
 
-    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMatRef, items.length)
+    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMatRef, list.length)
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
     inst.castShadow = false
     inst.receiveShadow = false
     inst.frustumCulled = true
 
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i]
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i]
       _dummyObj.position.set(it.x, it.y, it.z)
       _dummyObj.rotation.set(0, it.rotY, 0)
       _dummyObj.scale.setScalar(it.scale)
@@ -420,7 +449,7 @@ function spawnChunkProps(cx, cz) {
     meshes.push(inst)
   }
 
-  // Запечённые тени
+  // ---------- Запечённые тени ----------
   if (allShadows.length > 0) {
     const shadowInst = new THREE.InstancedMesh(
       shadowDiskGeoRef,
@@ -440,22 +469,18 @@ function spawnChunkProps(cx, cz) {
       const p = allShadows[i]
 
       // Нормаль рельефа в точке (p.x, p.z).
-      // p.y уже равен terrainHeight(p.x, p.z), поэтому берём ещё две
-      // точки по +X и +Z и считаем градиент.
       const hX = terrainHeight(p.x + eps, p.z)
       const hZ = terrainHeight(p.x, p.z + eps)
       _tmpNormal.set(-(hX - p.y) / eps, 1, -(hZ - p.y) / eps).normalize()
 
-      // Сдвиг вдоль НОРМАЛИ, а не по мировому Y: тогда зазор 12 см
-      // сохраняется на любом уклоне.
+      // Сдвиг вдоль НОРМАЛИ, а не по мировому Y.
       _dummyObj.position.set(
         p.x + _tmpNormal.x * yo,
         p.y + _tmpNormal.y * yo,
         p.z + _tmpNormal.z * yo
       )
 
-      // Диск по умолчанию лежит в плоскости XZ (нормаль +Y).
-      // Доворачиваем его так, чтобы его нормаль совпала с нормалью рельефа.
+      // Диск по умолчанию лежит в XZ — доворачиваем нормаль к рельефу.
       _dummyObj.quaternion.setFromUnitVectors(_Y_UP, _tmpNormal)
 
       _dummyObj.scale.set(p.scale * ss, 1, p.scale * ss)
@@ -494,6 +519,26 @@ function updateChunks(camX, camZ, initial = false) {
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
 
+  // --- Выгрузка: всегда, чтобы не копить мусор ---
+  const toUnload = []
+  for (const key of chunks.keys()) {
+    const [cs, czs] = key.split(',')
+    const dx = +cs - cxi,
+      dz = +czs - czi
+    if (
+      dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
+      dx > LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
+      Math.abs(dz) > LOAD_SIDE_CHUNKS + UNLOAD_MARGIN
+    )
+      toUnload.push(key)
+  }
+  for (const k of toUnload) unloadChunk(k)
+
+  // --- НЕ грузим новые чанки, пока сидим в 2D ---
+  // lodFade > 0.5 значит уже глубоко в 2D-режиме, толку от детальных чанков нет.
+  if (!initial && lodFade > 0.5) return
+
+  // --- Загрузка ---
   const toLoad = []
   for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
     for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
@@ -509,21 +554,6 @@ function updateChunks(camX, camZ, initial = false) {
     const n = Math.min(CHUNKS_PER_FRAME, toLoad.length)
     for (let i = 0; i < n; i++) loadChunk(toLoad[i][0], toLoad[i][1])
   }
-
-  const toUnload = []
-  for (const key of chunks.keys()) {
-    const [cs, czs] = key.split(',')
-    const dx = +cs - cxi,
-      dz = +czs - czi
-    if (
-      dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
-      dx > LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
-      Math.abs(dz) > LOAD_SIDE_CHUNKS + UNLOAD_MARGIN
-    ) {
-      toUnload.push(key)
-    }
-  }
-  for (const k of toUnload) unloadChunk(k)
 }
 
 /* ================================================================
@@ -546,37 +576,59 @@ const farGroundMat = new THREE.MeshStandardMaterial({
 
 const farTiles = new Map()
 
-function makeFarTileGeometry(fx, fz) {
+/* ================================================================
+   Инкрементальный билдер дальнего тайла.
+   step(budgetMs) — обрабатывает столько строк сетки, сколько
+   успеет за budgetMs миллисекунд. Возвращает true, когда готов.
+================================================================ */
+function createFarTileBuilder(fx, fz) {
   const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, FAR_TILE_SEG, FAR_TILE_SEG)
   geo.rotateX(-Math.PI / 2)
 
-  const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
-  const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
-
   const pos = geo.attributes.position
   const uv = geo.attributes.uv
-
   const colArr = new Float32Array(pos.count * 3)
+  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
+
+  const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+  const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
   const col = new THREE.Color()
 
-  for (let i = 0; i < pos.count; i++) {
-    const wx = cxw + pos.getX(i)
-    const wz = czw + pos.getZ(i)
-    const h = terrainHeight(wx, wz)
+  // PlaneGeometry пишет вершины построчно: row = iy, vertsPerRow = seg+1.
+  const vertsPerRow = FAR_TILE_SEG + 1
+  const totalRows = FAR_TILE_SEG + 1
+  let row = 0
 
-    pos.setY(i, h)
-    uv.setXY(i, wx / TILE, wz / TILE)
-
-    heightToTerrainColor(h, col)
-    colArr[i * 3] = col.r
-    colArr[i * 3 + 1] = col.g
-    colArr[i * 3 + 2] = col.b
+  return {
+    geo,
+    step(budgetMs) {
+      const t0 = performance.now()
+      while (row < totalRows && performance.now() - t0 < budgetMs) {
+        const start = row * vertsPerRow
+        const end = start + vertsPerRow
+        for (let i = start; i < end; i++) {
+          const wx = cxw + pos.getX(i)
+          const wz = czw + pos.getZ(i)
+          const h = terrainHeight(wx, wz)
+          pos.setY(i, h)
+          uv.setXY(i, wx / TILE, wz / TILE)
+          heightToTerrainColor(h, col)
+          colArr[i * 3] = col.r
+          colArr[i * 3 + 1] = col.g
+          colArr[i * 3 + 2] = col.b
+        }
+        row++
+      }
+      if (row >= totalRows) {
+        pos.needsUpdate = true
+        uv.needsUpdate = true
+        geo.attributes.color.needsUpdate = true
+        geo.computeVertexNormals()
+        return true
+      }
+      return false
+    },
   }
-  pos.needsUpdate = true
-  uv.needsUpdate = true
-  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
-  geo.computeVertexNormals()
-  return geo
 }
 
 function loadFarTile(fx, fz) {
@@ -603,26 +655,66 @@ function unloadFarTile(key) {
   farTiles.delete(key)
 }
 
+const pendingFarTiles = new Map() // key -> { fx, fz, builder }
+
+function finalizeFarTile(key, fx, fz, geo) {
+  const mesh = new THREE.Mesh(geo, farGroundMat)
+  mesh.position.set(
+    fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2,
+    0,
+    fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+  )
+  mesh.receiveShadow = false
+  mesh.visible = lodFade > 0.005
+  scene.add(mesh)
+  farTiles.set(key, { mesh, geo })
+}
+
 function updateFarTiles(camX, camZ, initial = false) {
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
 
-  const toLoad = []
+  // 1) Пополняем очередь — БЕЗ генерации.
   for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
     for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
       const fx = fxi + dx,
         fz = fzi + dz
-      if (!farTiles.has(fx + ',' + fz)) toLoad.push([fx, fz])
+      const key = fx + ',' + fz
+      if (farTiles.has(key) || pendingFarTiles.has(key)) continue
+      pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
     }
   }
 
+  // 2) Прогреваем очередь.
   if (initial) {
-    for (const [fx, fz] of toLoad) loadFarTile(fx, fz)
+    // При первичной загрузке строим синхронно (один раз на старте — ок).
+    for (const [key, p] of pendingFarTiles) {
+      while (!p.builder.step(Infinity)) {}
+      finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+    }
+    pendingFarTiles.clear()
   } else {
-    const n = Math.min(FAR_PER_FRAME, toLoad.length)
-    for (let i = 0; i < n; i++) loadFarTile(toLoad[i][0], toLoad[i][1])
+    const BUDGET_MS = 3
+    const t0 = performance.now()
+    for (const [key, p] of pendingFarTiles) {
+      const elapsed = performance.now() - t0
+      if (elapsed >= BUDGET_MS) break
+      if (p.builder.step(BUDGET_MS - elapsed)) {
+        finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+        pendingFarTiles.delete(key)
+      }
+    }
   }
 
+  // 3) Отменяем «уехавшие» pending-тайлы.
+  for (const [key, p] of pendingFarTiles) {
+    if (Math.abs(p.fx - fxi) > FAR_UNLOAD_R || Math.abs(p.fz - fzi) > FAR_UNLOAD_R) {
+      p.builder.geo.dispose()
+      pendingFarTiles.delete(key)
+    }
+  }
+
+  // 4) Выгрузка — как было.
   const toUnload = []
   for (const key of farTiles.keys()) {
     const [fxs, fzs] = key.split(',')
@@ -759,92 +851,237 @@ const OVERLAY_PER_FRAME = CFG.OVERLAY.perFrame
 
 const overlayChunks = new Map()
 
-function makeOverlayGeometry(ox, oz) {
+/* ================================================================
+   Инкрементальный билдер overlay-чанка:
+   фаза 0 — привязка геометрии к рельефу (по строкам),
+   фаза 1 — рисование точек-деревьев (по 3D-чанкам внутри overlay).
+================================================================ */
+/* ---------- Хелперы для рисования точек ---------- */
+
+function hexToRgb(hex) {
+  return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]
+}
+
+/**
+ * Предсчёт смещений пикселей внутри диска радиуса R.
+ * Возвращает массив [dx, dy] — для каждой точки дерева
+ * просто прогоняем этот маленький массив.
+ */
+function makeDiscOffsets(sizePx) {
+  const R = (sizePx - 1) / 2
+  const offsets = []
+  const R2 = R * R + 0.25
+  const Ri = Math.ceil(R)
+  for (let dy = -Ri; dy <= Ri; dy++) {
+    for (let dx = -Ri; dx <= Ri; dx++) {
+      if (dx * dx + dy * dy <= R2) offsets.push([dx, dy])
+    }
+  }
+  return offsets
+}
+
+/**
+ * Записать точку диаметром offsets.length в ImageData.
+ *
+ * Режимы (см. CFG.OVERLAY.mergeAlpha):
+ *   - source-over: точки накапливают alpha → плотный лес темнее.
+ *   - max-alpha:   пиксель держит самый «плотный» из перекрытий,
+ *                  без накопления → ровный ковёр.
+ *
+ * Формат — straight alpha (как в ImageData).
+ */
+function plotPoint(pix, W, H, cx, cy, offsets, r, g, b, a, merge) {
+  const sa = a / 255
+  if (sa <= 0) return
+
+  for (let i = 0; i < offsets.length; i++) {
+    const x = cx + offsets[i][0]
+    const y = cy + offsets[i][1]
+    if (x < 0 || x >= W || y < 0 || y >= H) continue
+
+    const i4 = (y * W + x) * 4
+
+    if (merge) {
+      // ─── source-over ───
+      const da = pix[i4 + 3] / 255
+      const inv = 1 - sa
+      const outA = sa + da * inv
+      if (outA <= 0) continue
+      const k = 1 / outA
+
+      pix[i4] = (r * sa + pix[i4] * da * inv) * k
+      pix[i4 + 1] = (g * sa + pix[i4 + 1] * da * inv) * k
+      pix[i4 + 2] = (b * sa + pix[i4 + 2] * da * inv) * k
+      pix[i4 + 3] = outA * 255
+    } else {
+      // ─── max-alpha: побеждает самая плотная точка ───
+      const curA = pix[i4 + 3]
+      if (a > curA) {
+        pix[i4] = r
+        pix[i4 + 1] = g
+        pix[i4 + 2] = b
+        pix[i4 + 3] = a
+      }
+    }
+  }
+}
+
+function createOverlayBuilder(ox, oz) {
+  // --- геометрия ---
   const geo = new THREE.PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE, OVERLAY_SEG, OVERLAY_SEG)
   geo.rotateX(-Math.PI / 2)
+  const pos = geo.attributes.position
 
   const cxw = ox * OVERLAY_SIZE + OVERLAY_SIZE / 2
   const czw = oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
+  const vertsPerRow = OVERLAY_SEG + 1
+  const totalGeoRows = OVERLAY_SEG + 1
 
-  const pos = geo.attributes.position
-  for (let i = 0; i < pos.count; i++) {
-    const wx = cxw + pos.getX(i)
-    const wz = czw + pos.getZ(i)
-    pos.setY(i, terrainHeight(wx, wz))
-  }
-  pos.needsUpdate = true
-  geo.computeVertexNormals()
-  return geo
-}
-
-function makeOverlayCanvas(ox, oz) {
-  const W = OVERLAY_CANVAS,
-    H = OVERLAY_CANVAS
+  // --- canvas ---
+  const W = OVERLAY_CANVAS
   const canvas = document.createElement('canvas')
   canvas.width = W
-  canvas.height = H
+  canvas.height = W
   const ctx = canvas.getContext('2d')
-  ctx.clearRect(0, 0, W, H)
+  ctx.clearRect(0, 0, W, W)
+
+  const imgData = ctx.createImageData(W, W)
+  const pix = imgData.data
+
+  const pxPerM = W / OVERLAY_SIZE
+  const chunksPerSide = Math.round(OVERLAY_SIZE / CHUNK_SIZE)
+  const totalChunkCells = chunksPerSide * chunksPerSide
 
   const baseX = ox * OVERLAY_SIZE
   const baseZ = oz * OVERLAY_SIZE
 
-  const seed = hash2i(ox + 0x51ed, oz + 0x270f) ^ WORLD_SEED
-  const rng = mulberry32(seed)
-
+  // --- цвета и параметры точек из конфига ---
   const O = CFG.OVERLAY
-  const N = O.points
-  for (let i = 0; i < N; i++) {
-    const wx = baseX + rng() * OVERLAY_SIZE
-    const wz = baseZ + rng() * OVERLAY_SIZE
-    if (Math.hypot(wx + 2.6, wz) < O.safeRadius) continue
+  const PINE_RGB = hexToRgb(O.colors.pine)
+  const OAK_RGB = hexToRgb(O.colors.oak)
+  const DISC = makeDiscOffsets(O.pointSize)
+  const JIT = O.colorJitter
+  const MERGE = O.mergeAlpha
+  const BASE_ALPHA = O.pointAlpha * 255
+  const ALPHA_JIT = O.alphaJitter
 
-    const px = ((wx - baseX) / OVERLAY_SIZE) * W
-    const py = ((wz - baseZ) / OVERLAY_SIZE) * H
+  // Верхняя граница «нулевого» уровня — используется при jitter,
+  // чтобы точки не улетали в чёрный или белый.
+  const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v)
 
-    const isRock = rng() < O.rockRatio
-    if (isRock) {
-      ctx.fillStyle = O.rockColor
-      ctx.fillRect(px, py, 1, 1)
-    } else {
-      const isBig = rng() < O.bigTreeRatio
-      ctx.fillStyle = isBig ? O.bigTreeColor : O.smallTreeColor
-      ctx.fillRect(px, py, 1, 1)
-      if (isBig) ctx.fillRect(px + 1, py, 1, 1)
-    }
+  let phase = 0 // 0 = рельеф, 1 = деревья
+  let row = 0
+
+  return {
+    geo,
+    canvas,
+    step(budgetMs) {
+      const t0 = performance.now()
+
+      // ---------- Фаза 0: рельеф ----------
+      if (phase === 0) {
+        while (row < totalGeoRows && performance.now() - t0 < budgetMs) {
+          const start = row * vertsPerRow
+          const end = start + vertsPerRow
+          for (let i = start; i < end; i++) {
+            const wx = cxw + pos.getX(i)
+            const wz = czw + pos.getZ(i)
+            pos.setY(i, terrainHeight(wx, wz))
+          }
+          row++
+        }
+        if (row >= totalGeoRows) {
+          pos.needsUpdate = true
+          geo.computeVertexNormals()
+          phase = 1
+          row = 0
+        }
+      }
+
+      // ---------- Фаза 1: деревья ----------
+      if (phase === 1) {
+        const c0x = Math.floor(baseX / CHUNK_SIZE)
+        const c0z = Math.floor(baseZ / CHUNK_SIZE)
+
+        while (row < totalChunkCells && performance.now() - t0 < budgetMs) {
+          const cx = c0x + (row % chunksPerSide)
+          const cz = c0z + Math.floor(row / chunksPerSide)
+          const items = computeChunkProps(cx, cz)
+
+          for (let k = 0; k < items.length; k++) {
+            const it = items[k]
+            // Кусты и камни — не рисуем.
+            if (it.kind !== 'pine' && it.kind !== 'oak') continue
+
+            const px = ((it.x - baseX) * pxPerM) | 0
+            const py = ((it.z - baseZ) * pxPerM) | 0
+            if (px < -3 || px >= W + 3 || py < -3 || py >= W + 3) continue
+
+            // Цветовой jitter.
+            const h = hash2i((it.x * 10) | 0, (it.z * 10) | 0)
+            const rnd01 = (h & 1023) / 1023
+            const factor = 1 + (rnd01 * 2 - 1) * JIT
+
+            const base = it.kind === 'pine' ? PINE_RGB : OAK_RGB
+            const cr = clamp255(base[0] * factor) | 0
+            const cg = clamp255(base[1] * factor) | 0
+            const cb = clamp255(base[2] * factor) | 0
+
+            // ─── новое: alpha-jitter ───
+            // Используем ДРУГИЕ биты того же хэша, чтобы alpha и цвет
+            // не коррелировали (иначе «светлые = прозрачнее»).
+            const rnd02 = ((h >>> 10) & 1023) / 1023
+            const aFactor = 1 + (rnd02 * 2 - 1) * ALPHA_JIT
+            const ca = clamp255(BASE_ALPHA * aFactor) | 0
+            // ───────────────────────────
+
+            plotPoint(pix, W, W, px, py, DISC, cr, cg, cb, ca, MERGE)
+          }
+          row++
+        }
+
+        if (row >= totalChunkCells) {
+          ctx.putImageData(imgData, 0, 0)
+          return true
+        }
+      }
+
+      return false
+    },
   }
-
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.minFilter = THREE.NearestFilter
-  tex.magFilter = THREE.NearestFilter
-  tex.generateMipmaps = false
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy()
-  return tex
 }
 
-function loadOverlayChunk(ox, oz) {
-  const key = ox + ',' + oz
-  if (overlayChunks.has(key)) return
+const pendingOverlays = new Map()
 
-  const geo = makeOverlayGeometry(ox, oz)
-  const tex = makeOverlayCanvas(ox, oz)
+function finalizeOverlayChunk(key, ox, oz, builder) {
+  const tex = new THREE.CanvasTexture(builder.canvas)
+  tex.colorSpace = THREE.SRGBColorSpace // ← фикс бага 2 (см. ниже)
+  tex.minFilter = THREE.LinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.generateMipmaps = false
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy()
+
   const mat = new THREE.MeshBasicMaterial({
     map: tex,
     transparent: true,
     depthWrite: false,
+    toneMapped: CFG.OVERLAY.toneMapped, // ← фикс бага 2
     polygonOffset: true,
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -4,
   })
 
-  const mesh = new THREE.Mesh(geo, mat)
+  // ← ФИКС БАГА 1: подключаем тот же эллиптический туман, что и у земли.
+  applySkyFog(mat)
+
+  const mesh = new THREE.Mesh(builder.geo, mat)
   mesh.position.set(ox * OVERLAY_SIZE + OVERLAY_SIZE / 2, 0, oz * OVERLAY_SIZE + OVERLAY_SIZE / 2)
   mesh.renderOrder = 2
   mesh.material.opacity = lodFade
   mesh.visible = lodFade > 0.005
   scene.add(mesh)
 
-  overlayChunks.set(key, { mesh, mat, tex, geo })
+  overlayChunks.set(key, { mesh, mat, tex, geo: builder.geo })
 }
 
 function unloadOverlayChunk(key) {
@@ -858,25 +1095,63 @@ function unloadOverlayChunk(key) {
 }
 
 function updateOverlayChunks(camX, camZ, initial = false) {
+  // --- Overlay выключен: чистим всё, что успело построиться. ---
+  // Работает и при статичном конфиге (тогда просто пустой сетап),
+  // и при hot-toggle: переключил в false — чанки тут же удаляются.
+  if (!CFG.OVERLAY.enabled) {
+    if (overlayChunks.size > 0) {
+      for (const key of [...overlayChunks.keys()]) unloadOverlayChunk(key)
+    }
+    if (pendingOverlays.size > 0) {
+      for (const [, p] of pendingOverlays) p.builder.geo.dispose()
+      pendingOverlays.clear()
+    }
+    return
+  }
+
   const oxi = Math.floor(camX / OVERLAY_SIZE)
   const ozi = Math.floor(camZ / OVERLAY_SIZE)
 
-  const toLoad = []
+  // 1) Пополняем очередь.
   for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
     for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
       const ox = oxi + dx,
         oz = ozi + dz
-      if (!overlayChunks.has(ox + ',' + oz)) toLoad.push([ox, oz])
+      const key = ox + ',' + oz
+      if (overlayChunks.has(key) || pendingOverlays.has(key)) continue
+      pendingOverlays.set(key, { ox, oz, builder: createOverlayBuilder(ox, oz) })
     }
   }
 
+  // 2) Прогреваем.
   if (initial) {
-    for (const [ox, oz] of toLoad) loadOverlayChunk(ox, oz)
+    for (const [key, p] of pendingOverlays) {
+      while (!p.builder.step(Infinity)) {}
+      finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
+    }
+    pendingOverlays.clear()
   } else {
-    const n = Math.min(OVERLAY_PER_FRAME, toLoad.length)
-    for (let i = 0; i < n; i++) loadOverlayChunk(toLoad[i][0], toLoad[i][1])
+    const BUDGET_MS = 3
+    const t0 = performance.now()
+    for (const [key, p] of pendingOverlays) {
+      const elapsed = performance.now() - t0
+      if (elapsed >= BUDGET_MS) break
+      if (p.builder.step(BUDGET_MS - elapsed)) {
+        finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
+        pendingOverlays.delete(key)
+      }
+    }
   }
 
+  // 3) Отменяем «уехавшие» pending-чанки.
+  for (const [key, p] of pendingOverlays) {
+    if (Math.abs(p.ox - oxi) > OVERLAY_UNLOAD_R || Math.abs(p.oz - ozi) > OVERLAY_UNLOAD_R) {
+      p.builder.geo.dispose()
+      pendingOverlays.delete(key)
+    }
+  }
+
+  // 4) Выгрузка — как было.
   const toUnload = []
   for (const key of overlayChunks.keys()) {
     const [oxs, ozs] = key.split(',')
