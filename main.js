@@ -940,6 +940,84 @@ const dragCoef = () => CFG.RULES.dragCoef(G.upgrades)
 const airDensity = (y) => CFG.RULES.airDensity(y)
 
 /* ================================================================
+   7b. SAVE / LOAD — сохранение прогресса в localStorage
+
+   Формат:
+     { v: 1, coins: number, best: number, upgrades: {power, aero, fuel, thrust} }
+   Все поля валидируются на загрузке: если значение кривое — берём дефолт.
+   localStorage может быть недоступен (iOS private mode, квота) —
+   поэтому все операции обёрнуты в try/catch.
+================================================================ */
+
+function saveProgress() {
+  if (!CFG.SAVE.autoSave) return
+  try {
+    const data = {
+      v: CFG.SAVE.version,
+      coins: G.coins,
+      best: G.best,
+      upgrades: { ...G.upgrades },
+    }
+    localStorage.setItem(CFG.SAVE.key, JSON.stringify(data))
+  } catch (e) {
+    // Не падаем: игра работает без сохранения
+    console.warn('saveProgress failed:', e)
+  }
+}
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(CFG.SAVE.key)
+    if (!raw) return
+
+    const data = JSON.parse(raw)
+    if (!data || typeof data !== 'object') return
+
+    // Монеты: неотрицательное число
+    if (typeof data.coins === 'number' && isFinite(data.coins) && data.coins >= 0) {
+      G.coins = Math.floor(data.coins)
+    }
+
+    // Рекорд: неотрицательное число (может быть float)
+    if (typeof data.best === 'number' && isFinite(data.best) && data.best >= 0) {
+      G.best = data.best
+    }
+
+    // Апгрейды: только известные ключи, только числа >= 1
+    if (data.upgrades && typeof data.upgrades === 'object') {
+      for (const key of Object.keys(CFG.GAME.initialUpgrades)) {
+        const v = data.upgrades[key]
+        if (typeof v === 'number' && isFinite(v) && v >= 1) {
+          G.upgrades[key] = Math.floor(v)
+        }
+        // Иначе оставляем дефолт из CFG.GAME.initialUpgrades
+      }
+    }
+  } catch (e) {
+    console.warn('loadProgress failed:', e)
+  }
+}
+
+function resetProgress() {
+  const ok = confirm('Сбросить весь прогресс? Монеты, рекорд и апгрейды будут потеряны.')
+  if (!ok) return
+
+  try {
+    localStorage.removeItem(CFG.SAVE.key)
+  } catch (e) {
+    console.warn('resetProgress failed:', e)
+  }
+
+  G.coins = CFG.GAME.initialCoins
+  G.best = CFG.GAME.initialBest
+  G.upgrades = { ...CFG.GAME.initialUpgrades }
+
+  updateHUD()
+  renderShop()
+  showToast('Прогресс сброшен 🗑️', '#ff7a7a')
+}
+
+/* ================================================================
    8. UI
 ================================================================ */
 const $dist = document.getElementById('dist')
@@ -989,6 +1067,7 @@ function buy(u) {
   updateHUD()
   renderShop()
   showToast(`${u.icon} Lv.${G.upgrades[u.key]}`, CFG.UI.toastColors.upgrade)
+  saveProgress()
 }
 
 let toastTimer
@@ -1062,6 +1141,11 @@ $launch.addEventListener('click', (e) => {
   if (G.phase === 'ready' || G.phase === 'landed') startKick()
 })
 
+document.getElementById('resetBtn').addEventListener('click', (e) => {
+  e.stopPropagation()
+  resetProgress()
+})
+
 /* ================================================================
    10. GAME LOGIC
 ================================================================ */
@@ -1112,6 +1196,7 @@ function land() {
 
   updateHUD()
   renderShop()
+  saveProgress()
 
   $launch.classList.remove('hidden')
   $shop.style.display = ''
@@ -1412,11 +1497,12 @@ applySkyFog(groundMat)
 applySkyFog(farGroundMat)
 applySkyFog(propMat)
 
+loadProgress() // ← сначала загружаем сейв
 resetRocket()
 rocket.position.copy(rocketState.pos)
 G.fuel = maxFuel()
-updateHUD()
-renderShop()
+updateHUD() // показывает монеты/рекорд из сейва
+renderShop() // показывает уровни из сейва
 
 updateChunks(camera.position.x, camera.position.z, true)
 updateFarTiles(camera.position.x, camera.position.z, true)

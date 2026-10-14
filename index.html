@@ -2,10 +2,7 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, user-scalable=no"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>🚀 Ракетный Пинок 3D</title>
     <style>
       * {
@@ -19,8 +16,7 @@
         height: 100%;
         overflow: hidden;
         background: #87c5f0;
-        font-family:
-          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         user-select: none;
         -webkit-user-select: none;
         -webkit-tap-highlight-color: transparent;
@@ -39,6 +35,7 @@
         display: flex;
         gap: 10px;
         justify-content: center;
+        align-items: center;
         flex-wrap: wrap;
         pointer-events: none;
         z-index: 10;
@@ -58,6 +55,30 @@
       .stat b {
         color: #ffd75e;
         font-size: 18px;
+      }
+      .reset-btn {
+        pointer-events: auto;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(12, 18, 32, 0.62);
+        backdrop-filter: blur(8px);
+        color: #eaf2ff;
+        font-size: 20px;
+        font-family: inherit;
+        cursor: pointer;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+        transition: 0.15s;
+      }
+      .reset-btn:hover {
+        border-color: #ff7a7a;
+        color: #ff7a7a;
+        transform: translateY(-2px);
+      }
+      .reset-btn:active {
+        transform: translateY(0) scale(0.94);
       }
 
       /* ---------- Boost bar ---------- */
@@ -231,6 +252,11 @@
         #boostUI {
           bottom: 150px;
         }
+        .reset-btn {
+          width: 38px;
+          height: 38px;
+          font-size: 17px;
+        }
       }
 
       #touchControls {
@@ -281,6 +307,7 @@
       <div class="stat">📏 <b id="dist">0</b> м</div>
       <div class="stat">💥 <b id="coins">0</b></div>
       <div class="stat">🏆 <b id="best">0</b> м</div>
+      <button id="resetBtn" class="reset-btn" title="Сбросить прогресс">🗑️</button>
     </div>
 
     <div id="boostUI">
@@ -304,9 +331,6 @@
 
     <div id="toast"></div>
 
-    <!-- importmap ДОЛЖЕН быть в HTML и загружаться до main.js.
-         Он говорит браузеру, откуда брать модуль 'three'
-         (в Node/VS Code это делает package.json, но в браузере — нет). -->
     <script type="importmap">
       {
         "imports": {
@@ -316,7 +340,6 @@
       }
     </script>
 
-    <!-- Вся игровая логика — во внешнем модуле -->
     <script type="module" src="./main.js"></script>
   </body>
 </html>
