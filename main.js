@@ -19,6 +19,8 @@ import {
   heightToTerrainColor,
   makeGroundTexture,
   GROUND_TILE,
+  collectForestSpheres,
+  forestDensityFromSpheres,
 } from './world.js'
 import { TEMPLATES } from './props.js'
 
@@ -359,9 +361,12 @@ let shadowDiskMatRef = null
 
 /* ================================================================
    computeChunkProps — детерминированный список «что где растёт»
-   на чанке (cx, cz). Никакой привязки к THREE.
-   Один и тот же вызов из 3D-пропсов и из overlay-точек даёт
-   ОДИНАКОВЫЙ набор позиций → точки попадают точно под деревья.
+   на чанке (cx, cz).
+
+   Камни — везде.
+   Деревья/кусты — только ниже vegMaxHeight И только внутри
+   лесных пятен (см. world.js → collectForestSpheres).
+   Плотность внутри пятна плавно спадает от центра к краю.
 ================================================================ */
 function computeChunkProps(cx, cz) {
   const seed = hash2i(cx + 0x9e37, cz + 0x79b9) ^ WORLD_SEED
@@ -374,14 +379,18 @@ function computeChunkProps(cx, cz) {
   const TH = CFG.PROPS.thresholds
   const SC = CFG.PROPS.scales
   const SAFE_R2 = CFG.PROPS.safeRadius * CFG.PROPS.safeRadius
+  const VEG_MAX_H = CFG.PROPS.vegMaxHeight
+
+  // Один раз на чанк — список лесных пятен, дотягивающихся сюда.
+  const spheres = collectForestSpheres(cx, cz)
 
   for (let i = 0; i < COUNT; i++) {
     const wx = baseX + rng() * CHUNK_SIZE
     const wz = baseZ + rng() * CHUNK_SIZE
 
-    const dx = wx + 2.6
-    const dz = wz
-    if (dx * dx + dz * dz < SAFE_R2) continue
+    const dxs = wx + 2.6
+    const dzs = wz
+    if (dxs * dxs + dzs * dzs < SAFE_R2) continue
 
     const r = rng()
     let kind
@@ -390,9 +399,26 @@ function computeChunkProps(cx, cz) {
     else if (r < TH.bush) kind = 'bush'
     else kind = 'rock'
 
+    if (kind !== 'rock') {
+      // Сначала — дешёвая маска леса. Отсеивает большинство.
+      const density = forestDensityFromSpheres(wx, wz, spheres)
+      if (density <= 0) continue
+      if (rng() > density) continue
+
+      // Только теперь — дорогой terrainHeight, и только
+      // для тех деревьев, что выжили по маске.
+      if (terrainHeight(wx, wz) > VEG_MAX_H) continue
+    } else {
+      // ─── камни ───
+      // В низинах — пониженная частота, выше линии леса —
+      // обычная. То есть получаем «каменистые склоны, чистые луга».
+      const h = terrainHeight(wx, wz)
+      if (h <= VEG_MAX_H && rng() > CFG.PROPS.rockLowlandFrequency) continue
+    }
+
     const scale =
       kind === 'rock'
-        ? SC.rock[0] + rng() * (SC.rock[1] - SC.rock[0])
+        ? SC.rock[0] + (SC.rock[1] - SC.rock[0]) * Math.pow(rng(), CFG.PROPS.rockScaleBias)
         : SC.tree[0] + rng() * (SC.tree[1] - SC.tree[0])
     const rotY = rng() * 6.28
 
@@ -409,10 +435,11 @@ function computeChunkProps(cx, cz) {
 function spawnChunkProps(cx, cz) {
   const items = computeChunkProps(cx, cz)
 
-  // Раскладываем по группам; y-координату считаем здесь (нужна
-  // только для 3D-рендера, поэтому её нет в computeChunkProps).
   const groups = { pine: [], oak: [], bush: [], rock: [] }
   for (const it of items) {
+    // y здесь считается ТОЛЬКО для тех элементов, что попали в items.
+    // Мусорные попытки (вне пятна, выше линии леса) уже отсеяны
+    // в computeChunkProps — за них terrainHeight не платили.
     groups[it.kind].push({
       x: it.x,
       y: terrainHeight(it.x, it.z),

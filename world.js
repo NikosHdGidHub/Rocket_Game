@@ -80,17 +80,11 @@ export function terrainBase(x, z) {
   h -= dip * dip * d.amp
 
   // Множитель «включения гор»
-  const mt = Math.min(
-    1,
-    Math.max(0, (x - CFG.TERRAIN.mountainsStart) / CFG.TERRAIN.mountainsRamp)
-  )
+  const mt = Math.min(1, Math.max(0, (x - CFG.TERRAIN.mountainsStart) / CFG.TERRAIN.mountainsRamp))
   const mt2 = mt * mt
 
   // Глобальный рост
-  const far = Math.max(
-    0,
-    (x - CFG.TERRAIN.growthStart) * CFG.TERRAIN.growthRate
-  )
+  const far = Math.max(0, (x - CFG.TERRAIN.growthStart) * CFG.TERRAIN.growthRate)
   const growth = 1 + far
 
   // Ridged noise
@@ -106,8 +100,7 @@ export function terrainBase(x, z) {
       : ridge(x, z, g.freq, g.seed, g.sharp) * g.amp
   }
 
-  h +=
-    mt2 * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
+  h += mt2 * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
 
   // Шум поверх гор
   const n = CFG.TERRAIN.noise
@@ -128,10 +121,7 @@ function gsharpOr(g) {
 
 export function terrainHeight(x, z) {
   const d = Math.hypot(x + 2.6, z)
-  const flat = Math.min(
-    1,
-    Math.max(0, (d - CFG.TERRAIN.safeRadius) / CFG.TERRAIN.safeRamp)
-  )
+  const flat = Math.min(1, Math.max(0, (d - CFG.TERRAIN.safeRadius) / CFG.TERRAIN.safeRamp))
   return terrainBase(x, z) * flat
 }
 
@@ -203,4 +193,88 @@ export function makeGroundTexture(maxAnisotropy) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping
   t.anisotropy = maxAnisotropy
   return t
+}
+
+/* ================================================================
+   ЛЕСНЫЕ ПЯТНА — детерминированные «рощи» по всему миру.
+
+   Идея: воображаемая сетка с шагом forestCellSize. В каждой
+   ячейке по хэшу рождается 1–2 центра с радиусом из config.
+   Плотность дерева = max по всем пятнам от (1 - d/r)^falloff.
+
+   Всё детерминировано по МИРОВЫМ координатам → два соседних
+   чанка видят одни и те же пятна на общей границе. Никаких швов.
+================================================================ */
+
+export function collectForestSpheres(cx, cz) {
+  const S = CFG.PROPS.forestCellSize
+  const CS = CFG.CHUNKS.size
+  const Rmin = CFG.PROPS.forestRadius[0]
+  const Rmax = CFG.PROPS.forestRadius[1]
+
+  const x0 = cx * CS,
+    x1 = (cx + 1) * CS
+  const z0 = cz * CS,
+    z1 = (cz + 1) * CS
+
+  // Broad-phase: какие ячейки сетки могут содержать центр,
+  // который дотянется до нашего чанка.
+  const ci0 = Math.floor((x0 - Rmax) / S)
+  const ci1 = Math.floor((x1 + Rmax) / S)
+  const cj0 = Math.floor((z0 - Rmax) / S)
+  const cj1 = Math.floor((z1 + Rmax) / S)
+
+  const spheres = []
+  for (let ci = ci0; ci <= ci1; ci++) {
+    for (let cj = cj0; cj <= cj1; cj++) {
+      const h = hash2i(ci + 0x5f1a, cj + 0xa3d2) ^ WORLD_SEED
+      const rng = mulberry32(h)
+      const n = 1 + (h & 1) // 1 или 2 пятна в ячейке
+
+      for (let k = 0; k < n; k++) {
+        const sx = ci * S + rng() * S
+        const sz = cj * S + rng() * S
+        const r = Rmin + rng() * (Rmax - Rmin)
+
+        // Отсеиваем то, что физически не достаёт до чанка.
+        if (sx + r < x0 || sx - r > x1) continue
+        if (sz + r < z0 || sz - r > z1) continue
+
+        spheres.push({ sx, sz, r })
+      }
+    }
+  }
+  return spheres
+}
+
+export function forestDensityFromSpheres(x, z, spheres) {
+  const falloff = CFG.PROPS.forestFalloff
+  const edgeAmp = CFG.PROPS.forestEdgeNoise
+  const edgeFreq = CFG.PROPS.forestEdgeFreq
+
+  // Один вызов vnoise на точку — используем как общий сдвиг
+  // радиуса для всех пятен вокруг этой точки. Дёшево и достаточно:
+  // соседние точки получают согласованный сдвиг → границы «дышат».
+  let edgeOffset = 0
+  if (edgeAmp > 0) {
+    edgeOffset = (vnoise(x * edgeFreq, z * edgeFreq) - 0.5) * edgeAmp
+  }
+
+  let maxD = 0
+  for (let i = 0; i < spheres.length; i++) {
+    const s = spheres[i]
+    const dx = x - s.sx
+    const dz = z - s.sz
+    const d2 = dx * dx + dz * dz
+    if (d2 >= s.r * s.r) continue
+
+    let d = Math.sqrt(d2) + edgeOffset * s.r
+    let t = d / s.r
+    if (t < 0) t = 0
+    if (t >= 1) continue
+
+    const density = Math.pow(1 - t, falloff)
+    if (density > maxD) maxD = density
+  }
+  return maxD
 }
