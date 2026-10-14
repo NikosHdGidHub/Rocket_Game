@@ -1722,6 +1722,7 @@ function update(dt) {
   updateFarTiles(camera.position.x, camera.position.z)
   updateOverlayChunks(camera.position.x, camera.position.z)
   updateLOD(dt)
+  updatePersistentVisibility(camera.position.x, camera.position.z)
 
   if (G.phase === 'fly') {
     $boostUI.classList.add('on')
@@ -2001,11 +2002,15 @@ function updateLOD(dt) {
   for (const c of farTiles.values()) c.mesh.visible = farVisible
 
   const showFine = lodFade < 0.95
-  for (const c of chunks.values()) c.mesh.visible = showFine
+  for (const [key, c] of chunks) {
+    if (PERSISTENT_CHUNKS.has(key)) continue // ← их видимость рулит updatePersistentVisibility
+    c.mesh.visible = showFine
+  }
 
   const want3D = lodFade < 0.15
   if (want3D !== showing3D) {
-    for (const c of chunks.values()) {
+    for (const [key, c] of chunks) {
+      if (PERSISTENT_CHUNKS.has(key)) continue // ← пропускаем
       for (const pr of c.props) pr.visible = want3D
     }
     boss.visible = want3D
@@ -2028,6 +2033,40 @@ function updateLOD(dt) {
 
   scene.fog.near = dNear + (FOG_2D_NEAR - dNear) * lodFade
   scene.fog.far = dFar + (FOG_2D_FAR - dFar) * lodFade
+}
+
+/* ================================================================
+   updatePersistentVisibility — показываем только ближние persistent.
+
+   Persistent-чанки не выгружаются никогда, но в сцене могут
+   висеть десятками. Тут мы включаем visible только для тех,
+   что находятся в радиусе persistentVisibleRadius от камеры.
+   Остальные остаются в scene.children, но с visible=false — Three.js
+   пропускает их на этапе рендера почти бесплатно.
+================================================================ */
+function updatePersistentVisibility(camX, camZ) {
+  if (PERSISTENT_CHUNKS.size === 0) return
+
+  const R = CFG.CHUNKS.persistentVisibleRadius
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
+
+  // showFine и showProps согласованы с updateLOD.
+  const showFine = lodFade < 0.95
+  const showProps = showing3D // ← значение уже установлено updateLOD
+
+  for (const key of PERSISTENT_CHUNKS) {
+    const c = chunks.get(key)
+    if (!c) continue
+
+    const [cs, czs] = key.split(',')
+    const near = Math.abs(+cs - cxi) <= R && Math.abs(+czs - czi) <= R
+
+    c.mesh.visible = near && showFine
+
+    const pv = near && showProps
+    for (const p of c.props) p.visible = pv
+  }
 }
 
 /* ================================================================
