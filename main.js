@@ -1562,7 +1562,7 @@ const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
 const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades)
 const maxFuel = () => CFG.RULES.maxFuel(G.upgrades)
 const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades)
-const dragCoef = () => CFG.RULES.dragCoef(G.upgrades)
+const dragCoefAtAngle = (alpha) => CFG.RULES.dragCoefAtAngle(G.upgrades, alpha)
 const airDensity = (y) => CFG.RULES.airDensity(y)
 
 /* ================================================================
@@ -1911,15 +1911,12 @@ function updateRocket(dt) {
   const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
 
   if (G.phase === 'fly') {
+    const ang = rocket.rotation.z
+    const yaw = CFG.GAME.flightYaw || 0
+
     boosting = input.boost && G.fuel > 0
     if (boosting) {
       const ta = thrustAcc()
-      const ang = rocket.rotation.z
-      const yaw = CFG.GAME.flightYaw || 0
-      // Вектор тяги — вдоль носа ракеты, с учётом и тангажа (Z),
-      // и сноса (Y). Раньше Z не было, потому что не было yaw.
-      // cos(ang) — проекция «вперёд»; распределяем её между X и Z
-      // по углу yaw. sin(ang) — вертикальная составляющая (без yaw).
       const c = Math.cos(ang)
       p.vel.x += c * Math.cos(yaw) * ta * dt
       p.vel.y += Math.sin(ang) * ta * dt
@@ -1931,12 +1928,19 @@ function updateRocket(dt) {
 
     const speed = p.vel.length()
     if (speed > 0.01) {
-      const k = dragCoef() * airDensity(p.pos.y)
+      // Угол атаки: между носом ракеты и вектором скорости.
+      // Нос в мире — тот же единичный вектор, что идёт в тягу.
+      const noseX = Math.cos(ang) * Math.cos(yaw)
+      const noseY = Math.sin(ang)
+      const noseZ = Math.cos(ang) * Math.sin(yaw)
+      const dot = (noseX * p.vel.x + noseY * p.vel.y + noseZ * p.vel.z) / speed
+      // acos(±1) → защита от выхода за [-1, 1] из-за округления
+      const alpha = Math.acos(Math.max(-1, Math.min(1, dot)))
+
+      const k = dragCoefAtAngle(alpha) * airDensity(p.pos.y)
       const aDrag = k * speed
       p.vel.x -= p.vel.x * aDrag * dt
       p.vel.y -= p.vel.y * aDrag * dt
-      // Сопротивление по Z — чтобы соотношение X:Z сохранялось
-      // на всём полёте (иначе Z «плывёт» относительно X).
       p.vel.z -= p.vel.z * aDrag * dt
     }
 
@@ -1961,6 +1965,32 @@ function updateRocket(dt) {
     p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel))
 
     rocket.rotation.z += p.angVel * dt
+
+    // ─── Аэродинамическая стабилизация ───
+    // Доворачиваем нос к вектору скорости с ограниченной скоростью.
+    // Работает ПОСЛЕ ручного управления: если игрок крутит W/S,
+    // angVel >> aeroAlign, и стабилизация почти не мешает.
+    // Когда игрок отпускает клавиши, angVel затухает — и ракета
+    // плавно возвращается «в поток» сама.
+    const ALIGN_RATE = CFG.GAME.aeroAlign
+    const MIN_SPEED = CFG.GAME.aeroAlignMinSpeed
+    const spd = p.vel.length()
+    if (ALIGN_RATE > 0 && spd > MIN_SPEED) {
+      // Угол тангажа вектора скорости. Берём hypot(x,z), а не x,
+      // чтобы учесть yaw — иначе при большом yaw будет ошибка.
+      const desired = Math.atan2(p.vel.y, Math.hypot(p.vel.x, p.vel.z))
+
+      // Кратчайшая разница по кругу, в диапазоне (−π, π].
+      let diff = desired - rocket.rotation.z
+      while (diff > Math.PI) diff -= Math.PI * 2
+      while (diff < -Math.PI) diff += Math.PI * 2
+
+      // Не поворачиваем больше, чем ALIGN_RATE * dt за кадр.
+      // Если разница меньше — доходим точно до цели без «дрожания».
+      const maxStep = ALIGN_RATE * dt
+      const step = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
+      rocket.rotation.z += step
+    }
   }
 
   if (G.phase === 'fly') {
