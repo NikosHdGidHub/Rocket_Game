@@ -1000,7 +1000,7 @@ export const UPGRADES = /** @type {const} */ ([
     name: 'Аэродинамика',
     desc: 'Меньше торможения',
     base: 45,
-    growth: 1.6,
+    growth: 1.55,
   },
   {
     key: 'fuel',
@@ -1008,7 +1008,7 @@ export const UPGRADES = /** @type {const} */ ([
     name: 'Бак топлива',
     desc: 'Дольше ускорение',
     base: 35,
-    growth: 1.55,
+    growth: 1.45,
   },
   {
     key: 'thrust',
@@ -1016,7 +1016,7 @@ export const UPGRADES = /** @type {const} */ ([
     name: 'Тяга двигателя',
     desc: 'Сильнее ускорение',
     base: 50,
-    growth: 1.65,
+    growth: 1.75,
   },
 ])
 
@@ -1038,25 +1038,25 @@ export const RULES = {
    * Максимальное топливо (в секундах буста).
    * Lv1: 2.0с, Lv10: 6.05с.
    */
-  maxFuel: (u) => 2.0 + (u.fuel - 1) * 0.45,
+  maxFuel: (u) => 2.0 + (u.fuel - 1) * 1.15,
 
   /**
    * Ускорение от тяги (м/с² вдоль носа).
    * Lv1: 12, Lv10: 48.
    */
-  thrustAcc: (u) => 12 + (u.thrust - 1) * 4,
+  thrustAcc: (u) => 12 + (u.thrust - 1) * 3,
 
   /**
    * Коэффициент сопротивления воздуха (1/м).
-   * Lv1: 0.0025, Lv10: 0.00056 (в 4.5 раз меньше).
+   * Lv1: 0.0055, Lv10: 0.00056 (в 4.5 раз меньше).
    */
-  dragCoef: (u) => 0.0025 / (1 + (u.aero - 1) * 0.4),
+  dragCoef: (u) => 0.0055 / (1 + (u.aero - 1) * 0.35),
 
   /**
    * Плотность воздуха по высоте (экспоненциальное падение).
    * На 0 м = 1, на 20000 м = 0.37.
    */
-  airDensity: (y) => Math.exp(-Math.max(0, y) / 20000),
+  airDensity: (y) => Math.exp(-Math.max(0, y) / 3000),
   upgradeCost: (u, lvl) => Math.floor(u.base * Math.pow(u.growth, lvl - 1)),
 }
 
