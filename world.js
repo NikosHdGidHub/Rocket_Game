@@ -7,6 +7,13 @@ import * as CFG from './config.js'
 
 export const WORLD_SEED = CFG.WORLD_SEED
 
+export function terrainBrightnessNoise(x, z) {
+  const C = CFG.TERRAIN_COLOR_NOISE
+  if (!C.enabled) return 1
+  const n = fbm2(x * C.freq, z * C.freq, C.octaves) - 0.5 // -0.5..0.5
+  return 1 + n * 2 * C.brightness
+}
+
 /* ---------- Детерминированный RNG ---------- */
 export function hash2i(x, y) {
   let h = (x | 0) * 374761393 + (y | 0) * 668265263
@@ -53,6 +60,36 @@ export function fbm2(x, z, oct) {
     norm += amp
     amp *= 0.5
     freq *= 2.0
+  }
+  return s / norm
+}
+
+/* ---------- Периодический value-noise для бесшовного тайла ---------- */
+function vnoisePeriodic(x, z, P) {
+  const xi = Math.floor(x),
+    zi = Math.floor(z)
+  const xf = x - xi,
+    zf = z - zi
+  const u = xf * xf * (3 - 2 * xf)
+  const v = zf * zf * (3 - 2 * zf)
+  const w = (n) => ((n % P) + P) % P
+  const a = hash2i(w(xi), w(zi)) / 4294967296
+  const b = hash2i(w(xi + 1), w(zi)) / 4294967296
+  const c = hash2i(w(xi), w(zi + 1)) / 4294967296
+  const d = hash2i(w(xi + 1), w(zi + 1)) / 4294967296
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
+}
+
+function fbmPeriodic(x, z, oct, P) {
+  let s = 0,
+    amp = 1,
+    freq = 1,
+    norm = 0
+  for (let i = 0; i < oct; i++) {
+    s += vnoisePeriodic(x * freq, z * freq, P * freq) * amp
+    norm += amp
+    amp *= 0.5
+    freq *= 2
   }
   return s / norm
 }
@@ -158,36 +195,59 @@ export const GROUND_TILE = CFG.GROUND_TEX.tile
 
 export function makeGroundTexture(maxAnisotropy) {
   const G = CFG.GROUND_TEX
+  const S = G.size
   const c = document.createElement('canvas')
-  c.width = c.height = G.size
+  c.width = c.height = S
   const ctx = c.getContext('2d')
 
   ctx.fillStyle = G.base
-  ctx.fillRect(0, 0, G.size, G.size)
+  ctx.fillRect(0, 0, S, S)
 
-  for (let i = 0; i < G.spots; i++) {
-    const v = Math.random() > 0.5 ? 0 : 255
-    const a = G.spotAlphaMin + Math.random() * (G.spotAlphaMax - G.spotAlphaMin)
-    ctx.fillStyle = `rgba(${v},${v},${v},${a})`
-    ctx.beginPath()
-    ctx.arc(
-      Math.random() * G.size,
-      Math.random() * G.size,
-      G.spotMin + Math.random() * (G.spotMax - G.spotMin),
-      0,
-      6.284
-    )
-    ctx.fill()
+  // ---------- Пятна: рисуем 9 копий, чтобы границы были бесшовны ----------
+  // Копия, уехавшая за край, «проявляется» с другой стороны — никакого шва.
+  for (const layer of G.spotLayers) {
+    for (let i = 0; i < layer.count; i++) {
+      const v = Math.random() > 0.5 ? 0 : 255
+      const a = layer.aMin + Math.random() * (layer.aMax - layer.aMin)
+      ctx.fillStyle = `rgba(${v},${v},${v},${a})`
+
+      const cx = Math.random() * S
+      const cy = Math.random() * S
+      const r = layer.rMin + Math.random() * (layer.rMax - layer.rMin)
+
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          ctx.beginPath()
+          ctx.arc(cx + dx * S, cy + dy * S, r, 0, 6.284)
+          ctx.fill()
+        }
+      }
+    }
   }
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.07)'
-  ctx.lineWidth = 3
-  ctx.beginPath()
-  ctx.moveTo(0, 1.5)
-  ctx.lineTo(G.size, 1.5)
-  ctx.moveTo(1.5, 0)
-  ctx.lineTo(1.5, G.size)
-  ctx.stroke()
+  // ---------- Тонкая крапивка (per-pixel, тайлящаяся) ----------
+  if (G.grain.enabled) {
+    const img = ctx.getImageData(0, 0, S, S)
+    const d = img.data
+    const amp = G.grain.amp * 255
+
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const u = (x / S) * G.grain.cells
+        const v = (y / S) * G.grain.cells
+        const n = fbmPeriodic(u, v, G.grain.octaves, G.grain.cells) - 0.5
+        const add = n * 2 * amp
+        const i = (y * S + x) * 4
+        d[i] = Math.max(0, Math.min(255, d[i] + add))
+        d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + add))
+        d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + add))
+      }
+    }
+    ctx.putImageData(img, 0, 0)
+  }
+
+  // ---------- БОЛЬШЕ НЕ РИСУЕМ РАМКУ ПО КРАЮ ----------
+  // Именно она давала видимую сетку каждые N метров.
 
   const t = new THREE.CanvasTexture(c)
   t.wrapS = t.wrapT = THREE.RepeatWrapping

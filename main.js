@@ -17,6 +17,7 @@ import {
   terrainBase,
   terrainHeight,
   heightToTerrainColor,
+  terrainBrightnessNoise,
   makeGroundTexture,
   GROUND_TILE,
   collectForestSpheres,
@@ -335,6 +336,12 @@ function makeChunkMesh(cx, cz) {
     uv.setXY(i, wx / TILE, wz / TILE)
 
     heightToTerrainColor(h, col)
+
+    const b = terrainBrightnessNoise(wx, wz)
+    col.r *= b
+    col.g *= b
+    col.b *= b
+
     colArr[i * 3] = col.r
     colArr[i * 3 + 1] = col.g
     colArr[i * 3 + 2] = col.b
