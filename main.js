@@ -505,10 +505,13 @@ let propMatRef = null
    computeChunkProps — детерминированный список «что где растёт»
    на чанке (cx, cz).
 
-   Камни — везде.
-   Деревья/кусты — только ниже vegMaxHeight И только внутри
-   лесных пятен (см. world.js → collectForestSpheres).
-   Плотность внутри пятна плавно спадает от центра к краю.
+   Правила размещения:
+     1. Круг safeRadius вокруг босса — ничего не растёт.
+     2. Деревья (pine/oak): не растут внутри эллипса safeRadiusTrees
+        — «стартовая прогалина», чтобы ракета не врезалась сразу
+        после запуска. Кусты и камни в этой зоне появляются.
+     3. Ниже vegMaxHeight — все типы. Выше — только камни.
+     4. Деревья/кусты — только внутри лесных пятен (см. world.js).
 ================================================================ */
 function computeChunkProps(cx, cz) {
   const seed = hash2i(cx + 0x9e37, cz + 0x79b9) ^ WORLD_SEED
@@ -520,8 +523,17 @@ function computeChunkProps(cx, cz) {
   const items = []
   const TH = CFG.PROPS.thresholds
   const SC = CFG.PROPS.scales
-  const SAFE_R2 = CFG.PROPS.safeRadius * CFG.PROPS.safeRadius
   const VEG_MAX_H = CFG.PROPS.vegMaxHeight
+
+  // Круг вокруг босса (ничего не растёт).
+  const SAFE_R = CFG.PROPS.safeRadius
+  const SAFE_R2 = SAFE_R * SAFE_R
+
+  // Эллипс «без деревьев» — вперёд на safeRadiusTrees,
+  // в стороны и назад — на safeRadius.
+  const SAFE_TREES_FWD = CFG.PROPS.safeRadiusTrees
+  const SAFE_TREES_BACK = SAFE_R
+  const SAFE_TREES_SIDE = SAFE_R
 
   // Один раз на чанк — список лесных пятен, дотягивающихся сюда.
   const spheres = collectForestSpheres(cx, cz)
@@ -530,10 +542,14 @@ function computeChunkProps(cx, cz) {
     const wx = baseX + rng() * CHUNK_SIZE
     const wz = baseZ + rng() * CHUNK_SIZE
 
-    const dxs = wx + 2.6
-    const dzs = wz
-    if (dxs * dxs + dzs * dzs < SAFE_R2) continue
+    // Смещение относительно босса (-2.6, 0).
+    const relX = wx + 2.6
+    const relZ = wz
 
+    // ─── 1. Круг вокруг босса: никаких пропсов вообще ───
+    if (relX * relX + relZ * relZ < SAFE_R2) continue
+
+    // ─── 2. Тип пропса ───
     const r = rng()
     let kind
     if (r < TH.pine) kind = 'pine'
@@ -541,6 +557,15 @@ function computeChunkProps(cx, cz) {
     else if (r < TH.bush) kind = 'bush'
     else kind = 'rock'
 
+    // ─── 3. Для деревьев — эллипс «без деревьев» ───
+    if (kind === 'pine' || kind === 'oak' || kind === 'bush') {
+      const aX = relX >= 0 ? SAFE_TREES_FWD : SAFE_TREES_BACK
+      const ex = relX / aX
+      const ez = relZ / SAFE_TREES_SIDE
+      if (ex * ex + ez * ez < 1) continue
+    }
+
+    // ─── 4. Маска леса и высота ───
     if (kind !== 'rock') {
       // Сначала — дешёвая маска леса. Отсеивает большинство.
       const density = forestDensityFromSpheres(wx, wz, spheres)
