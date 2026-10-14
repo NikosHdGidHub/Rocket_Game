@@ -379,6 +379,10 @@ function makeChunkMesh(cx, cz, items) {
   const step = CHUNK_SIZE / CHUNK_SEG
   const VPR = CHUNK_SEG + 1
 
+  // Плоская карта высот в «сеточном» порядке [iz * VPR + ix].
+  // Заполняется в первом проходе, читается sampleH ниже.
+  const heightGrid = new Float32Array(VPR * VPR)
+
   // ---------- Первый проход: высоты, UV, цвета, аналитические нормали ----------
   for (let i = 0; i < pos.count; i++) {
     const wx = cxw + pos.getX(i)
@@ -389,6 +393,14 @@ function makeChunkMesh(cx, cz, items) {
     const hz = terrainHeight(wx, wz + step)
 
     pos.setY(i, h)
+
+    // Складываем в heightGrid по индексам (ix, iz).
+    // Плоскость после rotateX(-π/2): локальный X → индекс по X,
+    // локальный Z → индекс по Z; обе — в [0, CHUNK_SIZE].
+    const gix = Math.round((pos.getX(i) + CHUNK_SIZE / 2) / step)
+    const giz = Math.round((pos.getZ(i) + CHUNK_SIZE / 2) / step)
+    heightGrid[giz * VPR + gix] = h
+
     uv.setXY(i, wx / TILE, wz / TILE)
 
     // Аналитическая нормаль — та же, что и в far-tiles.
@@ -493,6 +505,49 @@ function makeChunkMesh(cx, cz, items) {
   const mesh = new THREE.Mesh(geo, groundMat)
   mesh.position.set(cxw, 0, czw)
   mesh.receiveShadow = false
+
+  // Билинейный сэмплер высоты по heightGrid.
+  // Точки вне [baseX, baseX + CHUNK_SIZE] × [baseZ, baseZ + CHUNK_SIZE]
+  // зажимаются к границе (для item'ов из своего чанка это не должно
+  // случиться, но на всякий случай).
+  const stepRecip = 1 / step
+  mesh.userData.terrainSampler = (x, z) => {
+    const gx = (x - baseX) * stepRecip
+    const gz = (z - baseZ) * stepRecip
+
+    let ix = Math.floor(gx)
+    let iz = Math.floor(gz)
+    let fx = gx - ix
+    let fz = gz - iz
+
+    if (ix < 0) {
+      ix = 0
+      fx = 0
+    } else if (ix > VPR - 2) {
+      ix = VPR - 2
+      fx = 1
+    }
+    if (iz < 0) {
+      iz = 0
+      fz = 0
+    } else if (iz > VPR - 2) {
+      iz = VPR - 2
+      fz = 1
+    }
+
+    const i00 = iz * VPR + ix
+    const i10 = i00 + 1
+    const i01 = i00 + VPR
+    const i11 = i01 + 1
+
+    return (
+      heightGrid[i00] * (1 - fx) * (1 - fz) +
+      heightGrid[i10] * fx * (1 - fz) +
+      heightGrid[i01] * (1 - fx) * fz +
+      heightGrid[i11] * fx * fz
+    )
+  }
+
   return mesh
 }
 
@@ -599,14 +654,14 @@ function computeChunkProps(cx, cz) {
    Использует computeChunkProps, поэтому позиции гарантированно
    совпадают с overlay-точками.
 ================================================================ */
-function spawnChunkProps(cx, cz, items) {
+function spawnChunkProps(cx, cz, items, sampleH) {
   // items приходят извне — computeChunkProps уже вызван в loadChunk.
 
   const groups = { pine: [], oak: [], bush: [], rock: [] }
   for (const it of items) {
     groups[it.kind].push({
       x: it.x,
-      y: terrainHeight(it.x, it.z),
+      y: sampleH(it.x, it.z),
       z: it.z,
       scale: it.scale,
       rotY: it.rotY,
@@ -648,7 +703,7 @@ function loadChunk(cx, cz) {
   const items = getProps(cx, cz) // для отрисовки пропсов
   const shadowItems = collectShadowItems(cx, cz) // для запекания теней
   const mesh = makeChunkMesh(cx, cz, shadowItems)
-  const props = spawnChunkProps(cx, cz, items)
+  const props = spawnChunkProps(cx, cz, items, mesh.userData.terrainSampler)
 
   scene.add(mesh)
   for (const p of props) p.visible = showing3D
