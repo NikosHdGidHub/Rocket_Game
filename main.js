@@ -587,6 +587,7 @@ function createFarTileBuilder(fx, fz) {
 
   const pos = geo.attributes.position
   const uv = geo.attributes.uv
+  const nrm = geo.attributes.normal // существует у PlaneGeometry, изначально (0,1,0)
   const colArr = new Float32Array(pos.count * 3)
   geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
 
@@ -594,7 +595,10 @@ function createFarTileBuilder(fx, fz) {
   const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
   const col = new THREE.Color()
 
-  // PlaneGeometry пишет вершины построчно: row = iy, vertsPerRow = seg+1.
+  // Шаг конечных разниц. Берём размер квадрата сетки —
+  // тогда нормаль сглажена в масштабе видимой тесселяции.
+  const eps = FAR_TILE_SIZE / FAR_TILE_SEG // ≈13.3 м
+
   const vertsPerRow = FAR_TILE_SEG + 1
   const totalRows = FAR_TILE_SEG + 1
   let row = 0
@@ -609,9 +613,21 @@ function createFarTileBuilder(fx, fz) {
         for (let i = start; i < end; i++) {
           const wx = cxw + pos.getX(i)
           const wz = czw + pos.getZ(i)
+
           const h = terrainHeight(wx, wz)
+          const hx = terrainHeight(wx + eps, wz)
+          const hz = terrainHeight(wx, wz + eps)
+
           pos.setY(i, h)
           uv.setXY(i, wx / TILE, wz / TILE)
+
+          // Аналитическая нормаль поверхности.
+          // Одинакова для любой плитки в этой мировой точке → нет шва.
+          const nx = -(hx - h) / eps
+          const nz = -(hz - h) / eps
+          const len = Math.hypot(nx, 1, nz)
+          nrm.setXYZ(i, nx / len, 1 / len, nz / len)
+
           heightToTerrainColor(h, col)
           colArr[i * 3] = col.r
           colArr[i * 3 + 1] = col.g
@@ -622,15 +638,15 @@ function createFarTileBuilder(fx, fz) {
       if (row >= totalRows) {
         pos.needsUpdate = true
         uv.needsUpdate = true
+        nrm.needsUpdate = true
         geo.attributes.color.needsUpdate = true
-        geo.computeVertexNormals()
+        // computeVertexNormals() БОЛЬШЕ НЕ НУЖЕН.
         return true
       }
       return false
     },
   }
 }
-
 function loadFarTile(fx, fz) {
   const key = fx + ',' + fz
   if (farTiles.has(key)) return
