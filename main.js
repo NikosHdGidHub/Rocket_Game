@@ -66,11 +66,7 @@ const SKY_HORIZON = new THREE.Color(CFG.SKY.horizon)
 const SUN_COLOR = new THREE.Color(CFG.SKY.sun)
 
 const scene = new THREE.Scene()
-scene.fog = new THREE.Fog(
-  CFG.SKY.horizon,
-  CFG.FOG.initialNear,
-  CFG.FOG.initialFar
-)
+scene.fog = new THREE.Fog(CFG.SKY.horizon, CFG.FOG.initialNear, CFG.FOG.initialFar)
 
 const SUN_DIR = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
 
@@ -133,11 +129,7 @@ const skyMat = new THREE.ShaderMaterial({
 })
 
 const skyDome = new THREE.Mesh(
-  new THREE.SphereGeometry(
-    CFG.SKY.domeRadius,
-    CFG.SKY.domeSegW,
-    CFG.SKY.domeSegH
-  ),
+  new THREE.SphereGeometry(CFG.SKY.domeRadius, CFG.SKY.domeSegW, CFG.SKY.domeSegH),
   skyMat
 )
 skyDome.frustumCulled = false
@@ -219,17 +211,10 @@ function applySkyFog(mat) {
    2. LIGHTS
 ================================================================ */
 scene.add(
-  new THREE.HemisphereLight(
-    CFG.LIGHTS.hemiSky,
-    CFG.LIGHTS.hemiGround,
-    CFG.LIGHTS.hemiIntensity
-  )
+  new THREE.HemisphereLight(CFG.LIGHTS.hemiSky, CFG.LIGHTS.hemiGround, CFG.LIGHTS.hemiIntensity)
 )
 
-const sun = new THREE.DirectionalLight(
-  CFG.LIGHTS.sunColor,
-  CFG.LIGHTS.sunIntensity
-)
+const sun = new THREE.DirectionalLight(CFG.LIGHTS.sunColor, CFG.LIGHTS.sunIntensity)
 sun.position.set(...CFG.LIGHTS.sunOffset)
 sun.castShadow = CFG.LIGHTS.shadow.enabled
 sun.shadow.mapSize.set(CFG.LIGHTS.shadow.mapSize, CFG.LIGHTS.shadow.mapSize)
@@ -272,12 +257,7 @@ const chunks = new Map()
 let showing3D = true
 
 function makeChunkMesh(cx, cz) {
-  const geo = new THREE.PlaneGeometry(
-    CHUNK_SIZE,
-    CHUNK_SIZE,
-    CHUNK_SEG,
-    CHUNK_SEG
-  )
+  const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEG, CHUNK_SEG)
   geo.rotateX(-Math.PI / 2)
 
   const cxw = cx * CHUNK_SIZE + CHUNK_SIZE / 2
@@ -363,11 +343,7 @@ function spawnChunkProps(cx, cz) {
     const items = groups[kind]
     if (items.length === 0) continue
 
-    const inst = new THREE.InstancedMesh(
-      TEMPLATES[kind],
-      propMatRef,
-      items.length
-    )
+    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMatRef, items.length)
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
     inst.castShadow = false
     inst.receiveShadow = false
@@ -493,12 +469,7 @@ const farGroundMat = new THREE.MeshStandardMaterial({
 const farTiles = new Map()
 
 function makeFarTileGeometry(fx, fz) {
-  const geo = new THREE.PlaneGeometry(
-    FAR_TILE_SIZE,
-    FAR_TILE_SIZE,
-    FAR_TILE_SEG,
-    FAR_TILE_SEG
-  )
+  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, FAR_TILE_SEG, FAR_TILE_SEG)
   geo.rotateX(-Math.PI / 2)
 
   const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
@@ -577,10 +548,7 @@ function updateFarTiles(camX, camZ, initial = false) {
   const toUnload = []
   for (const key of farTiles.keys()) {
     const [fxs, fzs] = key.split(',')
-    if (
-      Math.abs(+fxs - fxi) > FAR_UNLOAD_R ||
-      Math.abs(+fzs - fzi) > FAR_UNLOAD_R
-    ) {
+    if (Math.abs(+fxs - fxi) > FAR_UNLOAD_R || Math.abs(+fzs - fzi) > FAR_UNLOAD_R) {
       toUnload.push(key)
     }
   }
@@ -714,12 +682,7 @@ const OVERLAY_PER_FRAME = CFG.OVERLAY.perFrame
 const overlayChunks = new Map()
 
 function makeOverlayGeometry(ox, oz) {
-  const geo = new THREE.PlaneGeometry(
-    OVERLAY_SIZE,
-    OVERLAY_SIZE,
-    OVERLAY_SEG,
-    OVERLAY_SEG
-  )
+  const geo = new THREE.PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE, OVERLAY_SEG, OVERLAY_SEG)
   geo.rotateX(-Math.PI / 2)
 
   const cxw = ox * OVERLAY_SIZE + OVERLAY_SIZE / 2
@@ -797,11 +760,7 @@ function loadOverlayChunk(ox, oz) {
   })
 
   const mesh = new THREE.Mesh(geo, mat)
-  mesh.position.set(
-    ox * OVERLAY_SIZE + OVERLAY_SIZE / 2,
-    0,
-    oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
-  )
+  mesh.position.set(ox * OVERLAY_SIZE + OVERLAY_SIZE / 2, 0, oz * OVERLAY_SIZE + OVERLAY_SIZE / 2)
   mesh.renderOrder = 2
   mesh.material.opacity = lodFade
   mesh.visible = lodFade > 0.005
@@ -843,10 +802,7 @@ function updateOverlayChunks(camX, camZ, initial = false) {
   const toUnload = []
   for (const key of overlayChunks.keys()) {
     const [oxs, ozs] = key.split(',')
-    if (
-      Math.abs(+oxs - oxi) > OVERLAY_UNLOAD_R ||
-      Math.abs(+ozs - ozi) > OVERLAY_UNLOAD_R
-    )
+    if (Math.abs(+oxs - oxi) > OVERLAY_UNLOAD_R || Math.abs(+ozs - ozi) > OVERLAY_UNLOAD_R)
       toUnload.push(key)
   }
   for (const k of toUnload) unloadOverlayChunk(k)
@@ -882,10 +838,7 @@ const glassMat = new THREE.MeshStandardMaterial({
   roughness: 0.15,
 })
 
-const rBody = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.36, 0.36, 2.2, 16),
-  bodyMat
-)
+const rBody = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 2.2, 16), bodyMat)
 rBody.rotation.z = Math.PI / 2
 rBody.castShadow = true
 rocket.add(rBody)
@@ -896,10 +849,7 @@ rNose.position.x = 1.6
 rNose.castShadow = true
 rocket.add(rNose)
 
-const port = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.17, 0.17, 0.06, 12),
-  glassMat
-)
+const port = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 12), glassMat)
 port.rotation.x = Math.PI / 2
 port.position.set(0.5, 0.3, 0.33)
 rocket.add(port)
@@ -923,10 +873,7 @@ for (const sgn of [1, -1]) {
   rocket.add(fin)
 }
 
-const nozzle = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.36, 0.5, 0.5, 14),
-  darkMat
-)
+const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.5, 0.5, 14), darkMat)
 nozzle.rotation.z = Math.PI / 2
 nozzle.position.x = -1.25
 rocket.add(nozzle)
@@ -1050,10 +997,7 @@ function showToast(text, color = CFG.UI.toastColors.default) {
   $toast.style.color = color
   $toast.classList.add('on')
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(
-    () => $toast.classList.remove('on'),
-    CFG.UI.toastDuration
-  )
+  toastTimer = setTimeout(() => $toast.classList.remove('on'), CFG.UI.toastDuration)
 }
 
 /* ================================================================
@@ -1143,11 +1087,7 @@ function resetRocket() {
 
 function launch() {
   const speed = launchSpeed()
-  rocketState.vel.set(
-    Math.cos(LAUNCH_ANGLE) * speed,
-    Math.sin(LAUNCH_ANGLE) * speed,
-    0
-  )
+  rocketState.vel.set(Math.cos(LAUNCH_ANGLE) * speed, Math.sin(LAUNCH_ANGLE) * speed, 0)
   rocket.rotation.z = LAUNCH_ANGLE
   rocketState.angVel = 0
   G.phase = 'fly'
@@ -1285,8 +1225,7 @@ function updateRocket(dt) {
   rocket.position.copy(p.pos)
 
   if (G.phase === 'fly') {
-    const rotInput =
-      (keys.W || touchKeys.W ? 1 : 0) - (keys.S || touchKeys.S ? 1 : 0)
+    const rotInput = (keys.W || touchKeys.W ? 1 : 0) - (keys.S || touchKeys.S ? 1 : 0)
 
     p.angVel += rotInput * ANG_ACC * dt
     p.angVel -= p.angVel * ANG_DAMP * dt
@@ -1313,20 +1252,14 @@ function updateRocket(dt) {
     }
 
     if (boosting) {
-      flameMat.color.setHex(
-        deg < 15 ? CFG.ROCKET.flame.aligned : CFG.ROCKET.flame.misaligned
-      )
+      flameMat.color.setHex(deg < 15 ? CFG.ROCKET.flame.aligned : CFG.ROCKET.flame.misaligned)
     }
   }
 
   const boostAmt = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
   const flick = 0.85 + Math.random() * 0.3
   flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
-  flameInner.scale.set(
-    boostAmt * flick * 1.1,
-    boostAmt * flick,
-    boostAmt * flick
-  )
+  flameInner.scale.set(boostAmt * flick * 1.1, boostAmt * flick, boostAmt * flick)
   flame.visible = boostAmt > 0.05
   flameInner.visible = flame.visible
   flameMat.opacity = boosting ? 0.95 : 0.5
@@ -1342,8 +1275,7 @@ function updateCamera(dt) {
   const speed = rocketState.vel.length()
 
   const wantBehind = G.phase === 'fly' ? 1 : 0
-  const blendSpeed =
-    wantBehind > camBlend ? CFG.CAMERA.blendIn : CFG.CAMERA.blendOut
+  const blendSpeed = wantBehind > camBlend ? CFG.CAMERA.blendIn : CFG.CAMERA.blendOut
   camBlend += (wantBehind - camBlend) * Math.min(1, dt * blendSpeed)
   if (camBlend < 0.001) camBlend = 0
   if (camBlend > 0.999) camBlend = 1
@@ -1354,8 +1286,7 @@ function updateCamera(dt) {
   const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
 
   const R =
-    CFG.CAMERA.baseRadius +
-    Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)
+    CFG.CAMERA.baseRadius + Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)
   const hDist = R * Math.cos(elev)
   const vDist = R * Math.sin(elev)
 
@@ -1368,8 +1299,7 @@ function updateCamera(dt) {
   const camZ = hDist * (1 - camBlend)
 
   const follow =
-    CFG.CAMERA.followBase +
-    Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
+    CFG.CAMERA.followBase + Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
   const s = 1 - Math.exp(-follow * dt)
 
   camera.position.x += (camX - camera.position.x) * s
