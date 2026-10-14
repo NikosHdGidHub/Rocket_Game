@@ -314,42 +314,172 @@ const COUNT = CFG.PROPS.density
 const chunks = new Map()
 let showing3D = true
 
-function makeChunkMesh(cx, cz) {
+/* Кэш props на чанк. Нужен, потому что props одного и того же чанка
+   запрашиваются и для его собственной отрисовки, и как halo-тени
+   соседей. Без кэша computeChunkProps вызовется 4× лишний раз. */
+const propsCache = new Map() // key -> items[]
+
+function getProps(cx, cz) {
+  const key = cx + ',' + cz
+  let items = propsCache.get(key)
+  if (!items) {
+    items = computeChunkProps(cx, cz)
+    propsCache.set(key, items)
+  }
+  return items
+}
+
+/**
+ * Собираем items с halo для запекания теней.
+ *
+ * Свет приходит с +X/+Z (SUN_DIR = 28,32,22). Тень уходит в −X/−Z.
+ * Значит деревья из чанков (cx+1, cz), (cx, cz+1) и (cx+1, cz+1)
+ * могут отбросить тень в наш чанк (cx, cz).
+ *
+ * Max смещение ~11 м ≪ 200 м ⇒ одного ряда гало достаточно.
+ */
+function collectShadowItems(cx, cz) {
+  return [
+    ...getProps(cx, cz),
+    ...getProps(cx + 1, cz),
+    ...getProps(cx, cz + 1),
+    ...getProps(cx + 1, cz + 1),
+  ]
+}
+
+function makeChunkMesh(cx, cz, items) {
   const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEG, CHUNK_SEG)
   geo.rotateX(-Math.PI / 2)
 
   const cxw = cx * CHUNK_SIZE + CHUNK_SIZE / 2
   const czw = cz * CHUNK_SIZE + CHUNK_SIZE / 2
+  const baseX = cx * CHUNK_SIZE
+  const baseZ = cz * CHUNK_SIZE
 
   const pos = geo.attributes.position
   const uv = geo.attributes.uv
+  const nrm = geo.attributes.normal // уже есть, (0,1,0)
 
   const colArr = new Float32Array(pos.count * 3)
   const col = new THREE.Color()
 
+  // Отдельный буфер яркости теней, чтобы применять их ПОСЛЕ
+  // всех базовых цветов, и брать минимум (самую тёмную тень).
+  const shadowB = new Float32Array(pos.count).fill(1)
+
+  const step = CHUNK_SIZE / CHUNK_SEG
+  const VPR = CHUNK_SEG + 1
+
+  // ---------- Первый проход: высоты, UV, цвета, аналитические нормали ----------
   for (let i = 0; i < pos.count; i++) {
     const wx = cxw + pos.getX(i)
     const wz = czw + pos.getZ(i)
+
     const h = terrainHeight(wx, wz)
+    const hx = terrainHeight(wx + step, wz)
+    const hz = terrainHeight(wx, wz + step)
 
     pos.setY(i, h)
     uv.setXY(i, wx / TILE, wz / TILE)
 
+    // Аналитическая нормаль — та же, что и в far-tiles.
+    // Совпадает на границах соседних чанков → нет швов.
+    const nx = -(hx - h) / step
+    const nz = -(hz - h) / step
+    const len = Math.hypot(nx, 1, nz)
+    nrm.setXYZ(i, nx / len, 1 / len, nz / len)
+
     heightToTerrainColor(h, col)
-
     const b = terrainBrightnessNoise(wx, wz)
-    col.r *= b
-    col.g *= b
-    col.b *= b
-
-    colArr[i * 3] = col.r
-    colArr[i * 3 + 1] = col.g
-    colArr[i * 3 + 2] = col.b
+    colArr[i * 3] = col.r * b
+    colArr[i * 3 + 1] = col.g * b
+    colArr[i * 3 + 2] = col.b * b
   }
+
+  // ---------- Второй проход: запекание теней от деревьев ----------
+  // Смещение тени — ФИКСИРОВАННОЕ расстояние по направлению
+  // от солнца (в XZ). Никакой зависимости от высоты дерева
+  // или угла солнца — по просьбе: тени не «улетают».
+  const shLenXZ = Math.hypot(SUN_DIR.x, SUN_DIR.z) || 1
+  const shDirX = -SUN_DIR.x / shLenXZ // единичный вектор в XZ
+  const shDirZ = -SUN_DIR.z / shLenXZ
+
+  const shStrength = CFG.PROPS.shadow.strength
+  const shScale = CFG.PROPS.shadow.scale
+  const shSoft = CFG.PROPS.shadow.softness
+
+  const shDist = CFG.PROPS.shadow.offset
+
+  // Радиус кроны — по типу. Камни тень не отбрасывают.
+  const treeRadius = (kind) => {
+    if (kind === 'pine') return 1.6
+    if (kind === 'oak') return 1.8
+    if (kind === 'bush') return 0.8
+    return 0
+  }
+
+  for (let k = 0; k < items.length; k++) {
+    const it = items[k]
+    const baseR = treeRadius(it.kind)
+    if (baseR <= 0) continue
+
+    const R = baseR * it.scale * shScale
+    if (R <= 0) continue
+
+    // Центр тени — фиксированно смещённый от основания дерева.
+    const tOffset = shDist * (0.6 + 0.4 * it.scale) // 0.6..1.4 от базы
+    const tx = it.x + shDirX * tOffset
+    const tz = it.z + shDirZ * tOffset
+
+    // Локальные координаты тени от левого края чанка (0..CHUNK_SIZE).
+    const lx = tx - baseX
+    const lz = tz - baseZ
+
+    // Диапазон индексов вершин, попадающих в квадрат [lx±R, lz±R].
+    const ix0 = Math.max(0, Math.floor((lx - R) / step))
+    const ix1 = Math.min(CHUNK_SEG, Math.ceil((lx + R) / step))
+    const iz0 = Math.max(0, Math.floor((lz - R) / step))
+    const iz1 = Math.min(CHUNK_SEG, Math.ceil((lz + R) / step))
+
+    const R2 = R * R
+
+    for (let iz = iz0; iz <= iz1; iz++) {
+      const vz = iz * step
+      const dz = vz - lz
+      const dz2 = dz * dz
+      const rowBase = iz * VPR
+
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const vx = ix * step
+        const dx = vx - lx
+        const d2 = dx * dx + dz2
+        if (d2 > R2) continue
+
+        const t = Math.sqrt(d2) / R
+        const w = 1 - Math.pow(t, shSoft)
+        const shade = 1 - w * shStrength
+
+        const idx = rowBase + ix
+        if (shade < shadowB[idx]) shadowB[idx] = shade
+      }
+    }
+  }
+
+  // Применяем тени к базовым цветам.
+  for (let i = 0; i < pos.count; i++) {
+    const s = shadowB[i]
+    if (s < 1) {
+      colArr[i * 3] *= s
+      colArr[i * 3 + 1] *= s
+      colArr[i * 3 + 2] *= s
+    }
+  }
+
   pos.needsUpdate = true
   uv.needsUpdate = true
+  nrm.needsUpdate = true
   geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
-  geo.computeVertexNormals()
+  // computeVertexNormals() УДАЛЯЕМ — используем аналитические.
 
   const mesh = new THREE.Mesh(geo, groundMat)
   mesh.position.set(cxw, 0, czw)
@@ -358,13 +488,9 @@ function makeChunkMesh(cx, cz) {
 }
 
 const _dummyObj = new THREE.Object3D()
-const _Y_UP = new THREE.Vector3(0, 1, 0)
-const _tmpNormal = new THREE.Vector3()
 
 // Ссылки на prop-материал/тень — задаются ниже в секции PROPS
 let propMatRef = null
-let shadowDiskGeoRef = null
-let shadowDiskMatRef = null
 
 /* ================================================================
    computeChunkProps — детерминированный список «что где растёт»
@@ -439,14 +565,11 @@ function computeChunkProps(cx, cz) {
    Использует computeChunkProps, поэтому позиции гарантированно
    совпадают с overlay-точками.
 ================================================================ */
-function spawnChunkProps(cx, cz) {
-  const items = computeChunkProps(cx, cz)
+function spawnChunkProps(cx, cz, items) {
+  // items приходят извне — computeChunkProps уже вызван в loadChunk.
 
   const groups = { pine: [], oak: [], bush: [], rock: [] }
   for (const it of items) {
-    // y здесь считается ТОЛЬКО для тех элементов, что попали в items.
-    // Мусорные попытки (вне пятна, выше линии леса) уже отсеяны
-    // в computeChunkProps — за них terrainHeight не платили.
     groups[it.kind].push({
       x: it.x,
       y: terrainHeight(it.x, it.z),
@@ -457,7 +580,6 @@ function spawnChunkProps(cx, cz) {
   }
 
   const meshes = []
-  const allShadows = []
 
   for (const kind of ['pine', 'oak', 'bush', 'rock']) {
     const list = groups[kind]
@@ -476,55 +598,10 @@ function spawnChunkProps(cx, cz) {
       _dummyObj.scale.setScalar(it.scale)
       _dummyObj.updateMatrix()
       inst.setMatrixAt(i, _dummyObj.matrix)
-      allShadows.push(it)
     }
     inst.instanceMatrix.needsUpdate = true
     scene.add(inst)
     meshes.push(inst)
-  }
-
-  // ---------- Запечённые тени ----------
-  if (allShadows.length > 0) {
-    const shadowInst = new THREE.InstancedMesh(
-      shadowDiskGeoRef,
-      shadowDiskMatRef,
-      allShadows.length
-    )
-    shadowInst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
-    shadowInst.renderOrder = 1
-    shadowInst.castShadow = false
-    shadowInst.receiveShadow = false
-
-    const ss = CFG.PROPS.shadow.scale
-    const yo = CFG.PROPS.shadow.yOffset
-    const eps = 1.5 // шаг конечных разниц для нормали, м
-
-    for (let i = 0; i < allShadows.length; i++) {
-      const p = allShadows[i]
-
-      // Нормаль рельефа в точке (p.x, p.z).
-      const hX = terrainHeight(p.x + eps, p.z)
-      const hZ = terrainHeight(p.x, p.z + eps)
-      _tmpNormal.set(-(hX - p.y) / eps, 1, -(hZ - p.y) / eps).normalize()
-
-      // Сдвиг вдоль НОРМАЛИ, а не по мировому Y.
-      _dummyObj.position.set(
-        p.x + _tmpNormal.x * yo,
-        p.y + _tmpNormal.y * yo,
-        p.z + _tmpNormal.z * yo
-      )
-
-      // Диск по умолчанию лежит в XZ — доворачиваем нормаль к рельефу.
-      _dummyObj.quaternion.setFromUnitVectors(_Y_UP, _tmpNormal)
-
-      _dummyObj.scale.set(p.scale * ss, 1, p.scale * ss)
-      _dummyObj.updateMatrix()
-      shadowInst.setMatrixAt(i, _dummyObj.matrix)
-    }
-
-    shadowInst.instanceMatrix.needsUpdate = true
-    scene.add(shadowInst)
-    meshes.push(shadowInst)
   }
 
   return meshes
@@ -533,8 +610,12 @@ function spawnChunkProps(cx, cz) {
 function loadChunk(cx, cz) {
   const key = cx + ',' + cz
   if (chunks.has(key)) return
-  const mesh = makeChunkMesh(cx, cz)
-  const props = spawnChunkProps(cx, cz)
+
+  const items = getProps(cx, cz) // для отрисовки пропсов
+  const shadowItems = collectShadowItems(cx, cz) // для запекания теней
+  const mesh = makeChunkMesh(cx, cz, shadowItems)
+  const props = spawnChunkProps(cx, cz, items)
+
   scene.add(mesh)
   for (const p of props) p.visible = showing3D
   chunks.set(key, { mesh, props })
@@ -547,6 +628,7 @@ function unloadChunk(key) {
   c.mesh.geometry.dispose()
   for (const p of c.props) scene.remove(p)
   chunks.delete(key)
+  propsCache.delete(key)
 }
 
 function updateChunks(camX, camZ, initial = false) {
@@ -567,7 +649,18 @@ function updateChunks(camX, camZ, initial = false) {
       toUnload.push(key)
   }
   for (const k of toUnload) unloadChunk(k)
-
+  // Пруним кэш: всё, что ушло за пределы окна загрузки +1 ряд, не нужно.
+  const padXf = LOAD_FWD_CHUNKS + 1
+  const padXb = LOAD_BACK_CHUNKS + 1
+  const padZ = LOAD_SIDE_CHUNKS + 1
+  for (const key of propsCache.keys()) {
+    const [cs, czs] = key.split(',')
+    const dx = +cs - cxi
+    const dz = +czs - czi
+    if (dx < -padXb || dx > padXf || Math.abs(dz) > padZ) {
+      propsCache.delete(key)
+    }
+  }
   // --- НЕ грузим новые чанки, пока сидим в 2D ---
   // lodFade > 0.5 значит уже глубоко в 2D-режиме, толку от детальных чанков нет.
   if (!initial && lodFade > 0.5) return
@@ -785,20 +878,6 @@ const propMat = new THREE.MeshStandardMaterial({
   flatShading: false,
 })
 propMatRef = propMat
-
-const shadowDiskGeo = new THREE.CircleGeometry(1, 8)
-shadowDiskGeo.rotateX(-Math.PI / 2)
-const shadowDiskMat = new THREE.MeshBasicMaterial({
-  color: CFG.PROPS.shadow.color,
-  transparent: true,
-  opacity: CFG.PROPS.shadow.opacity,
-  depthWrite: false,
-  polygonOffset: true,
-  polygonOffsetFactor: CFG.PROPS.shadow.polygonOffset,
-  polygonOffsetUnits: CFG.PROPS.shadow.polygonOffset,
-})
-shadowDiskGeoRef = shadowDiskGeo
-shadowDiskMatRef = shadowDiskMat
 
 /* ================================================================
    5. BOSS
@@ -1956,7 +2035,6 @@ function loop(now) {
 applySkyFog(groundMat)
 applySkyFog(farGroundMat)
 applySkyFog(propMat)
-applySkyFog(shadowDiskMat)
 
 loadProgress() // ← сначала загружаем сейв
 resetRocket()
