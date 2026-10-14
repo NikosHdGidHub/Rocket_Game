@@ -100,7 +100,7 @@ const S = WORLD_SEED * 0.0001
 export function terrainBase(x, z) {
   let h = 0
 
-  // Базовые волны
+  // Базовые волны — без изменений
   for (const w of CFG.TERRAIN.baseWaves) {
     const arg =
       w.axis === 'x'
@@ -111,7 +111,7 @@ export function terrainBase(x, z) {
     h += (w.fn === 'sin' ? Math.sin(arg) : Math.cos(arg)) * w.amp
   }
 
-  // Впадины
+  // Впадины — без изменений
   const d = CFG.TERRAIN.dip
   const dip = Math.max(0, Math.sin(x * d.freq + d.phase + S))
   h -= dip * dip * d.amp
@@ -120,26 +120,62 @@ export function terrainBase(x, z) {
   const mt = Math.min(1, Math.max(0, (x - CFG.TERRAIN.mountainsStart) / CFG.TERRAIN.mountainsRamp))
   const mt2 = mt * mt
 
-  // Глобальный рост
+  // Глобальный рост (высота)
   const far = Math.max(0, (x - CFG.TERRAIN.growthStart) * CFG.TERRAIN.growthRate)
   const growth = 1 + far
 
-  // Ridged noise
+  // ─── НОВОЕ: волнистость + утолщение/разрежение хребтов ───
+  const RW = CFG.TERRAIN.ridgeWave
+  const RG = CFG.TERRAIN.ridgeGrowth
+
+  // Одно поле шума на весь вызов. Дёшево (2 октавы) и даёт
+  // согласованный «изгиб» всех ridge-компонентов.
+  let waveField = 0
+  if (RW.enabled && RW.amp > 0) {
+    waveField = (fbm2(x * RW.freq, z * RW.freq, RW.octaves) - 0.5) * 2 // [-1, 1]
+  }
+
+  // Масштаб формы по X: чем дальше — тем шире и мягче хребты.
+  // ratio = 1 при x ≤ refX, дальше плавно падает.
+  let freqScale = 1
+  let sharpScale = 1
+  if (RG.enabled && x > RG.refX) {
+    const ratio = RG.refX / x
+    freqScale = Math.max(RG.minFreqScale, Math.pow(ratio, RG.freqExp))
+    sharpScale = Math.max(RG.minSharpScale, Math.pow(ratio, RG.sharpExp))
+  }
+
   const ridge = (u, v, freq, seed, sharp) => {
-    const s = Math.sin(u * freq + v * freq * 0.55 + seed + S)
-    return Math.pow(1 - Math.abs(s), sharp)
+    const f = freq * freqScale // эффективная частота → ширина/частота хребта
+    const sh = sharp * sharpScale // эффективная острота → «заострённость» пиков
+    // Сдвиг фазы волнистостью. waveField ∈ [-1,1], RW.amp в метрах,
+    // f в 1/м ⇒ итог безразмерный. Смещение хребта в (u)-направлении ≈ ±amp м.
+    const wavePhase = waveField * RW.amp * f
+    const s = Math.sin(u * f + v * f * 0.55 + seed + S + wavePhase)
+    return Math.pow(1 - Math.abs(s), sh)
   }
 
   let r = 0
   for (const g of CFG.TERRAIN.ridges) {
     r += g.swap
-      ? ridge(z, -x, g.freq, g.seed, gsharpOr(g)) * g.amp
+      ? ridge(z, -x, g.freq, g.seed, g.sharp) * g.amp
       : ridge(x, z, g.freq, g.seed, g.sharp) * g.amp
+  }
+
+  // ─── Модуляция высоты вдоль хребта ───
+  // Низкочастотный шум по (x,z) поднимает одни участки массива
+  // и опускает другие — ломает «полочку» постоянной высоты
+  // на гребне. Шум не параллелен диагональному гребню, поэтому
+  // гарантированно даёт вариацию вдоль него.
+  const RH = CFG.TERRAIN.ridgeHeightMod
+  if (RH.enabled && RH.amp > 0) {
+    const mod = (fbm2(x * RH.freq, z * RH.freq, RH.octaves) - 0.5) * 2 // [-1,1]
+    r *= 1 + mod * RH.amp
   }
 
   h += mt2 * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
 
-  // Шум поверх гор
+  // Шум поверх гор — без изменений
   const n = CFG.TERRAIN.noise
   const t = Math.min(1, Math.max(0, h / n.heightRef))
   if (t > 0) {
@@ -149,11 +185,6 @@ export function terrainBase(x, z) {
   }
 
   return h
-}
-
-// мелкий хелпер — оставил чтобы не запутаться
-function gsharpOr(g) {
-  return g.sharp
 }
 
 export function terrainHeight(x, z) {
