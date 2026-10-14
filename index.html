@@ -1,272 +1,437 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>🚀 Ракетный Пинок 3D</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { width:100%; height:100%; overflow:hidden; background:#87c5f0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
-  canvas { display:block; }
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <title>🚀 Ракетный Пинок 3D</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #87c5f0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      canvas {
+        display: block;
+      }
 
-  /* ---------- HUD ---------- */
-  #hud {
-    position:fixed; top:0; left:0; right:0; padding:14px 18px;
-    display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
-    pointer-events:none; z-index:10;
-  }
-  .stat {
-    background:rgba(12,18,32,.62); backdrop-filter:blur(8px);
-    color:#eaf2ff; padding:8px 16px; border-radius:12px;
-    font-size:15px; font-weight:600; letter-spacing:.3px;
-    border:1px solid rgba(255,255,255,.12);
-    box-shadow:0 4px 18px rgba(0,0,0,.25);
-  }
-  .stat b { color:#ffd75e; font-size:18px; }
+      /* ---------- HUD ---------- */
+      #hud {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        padding: 14px 18px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .stat {
+        background: rgba(12, 18, 32, 0.62);
+        backdrop-filter: blur(8px);
+        color: #eaf2ff;
+        padding: 8px 16px;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+      }
+      .stat b {
+        color: #ffd75e;
+        font-size: 18px;
+      }
 
-  /* ---------- Boost bar ---------- */
-  #boostUI {
-    position:fixed; left:50%; bottom:190px; transform:translateX(-50%);
-    width:min(340px, 70vw); z-index:10; opacity:0; transition:opacity .25s;
-    pointer-events:none;
-  }
-  #boostUI.on { opacity:1; }
-  #fuelTrack {
-    height:14px; background:rgba(12,18,32,.6); border-radius:8px;
-    border:1px solid rgba(255,255,255,.15); overflow:hidden;
-    box-shadow:0 4px 18px rgba(0,0,0,.3);
-  }
-  #fuelFill {
-    height:100%; width:100%;
-    background:linear-gradient(90deg,#ff7a18,#ffd75e);
-    transition:width .08s linear;
-  }
-  #boostHint {
-    text-align:center; color:#fff; font-size:12px; font-weight:700;
-    margin-top:6px; text-shadow:0 2px 6px rgba(0,0,0,.5); letter-spacing:1px;
-  }
+      /* ---------- Boost bar ---------- */
+      #boostUI {
+        position: fixed;
+        left: 50%;
+        bottom: 190px;
+        transform: translateX(-50%);
+        width: min(340px, 70vw);
+        z-index: 10;
+        opacity: 0;
+        transition: opacity 0.25s;
+        pointer-events: none;
+      }
+      #boostUI.on {
+        opacity: 1;
+      }
+      #fuelTrack {
+        height: 14px;
+        background: rgba(12, 18, 32, 0.6);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        overflow: hidden;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+      }
+      #fuelFill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #ff7a18, #ffd75e);
+        transition: width 0.08s linear;
+      }
+      #boostHint {
+        text-align: center;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        margin-top: 6px;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+        letter-spacing: 1px;
+      }
 
-  /* ---------- Bottom panel ---------- */
-  #panel {
-    position:fixed; left:0; right:0; bottom:0; padding:14px;
-    display:flex; flex-direction:column; align-items:center; gap:10px;
-    z-index:10; pointer-events:none;
-  }
-  #shop {
-    display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
-    pointer-events:auto; max-width:900px;
-  }
-  .upg {
-    display:flex; align-items:center; gap:9px;
-    background:rgba(12,18,32,.72); backdrop-filter:blur(10px);
-    border:1px solid rgba(255,255,255,.14); border-radius:14px;
-    padding:8px 12px; cursor:pointer; color:#eaf2ff;
-    font-family:inherit; text-align:left; transition:.15s;
-    box-shadow:0 4px 16px rgba(0,0,0,.28);
-  }
-  .upg:hover:not(.disabled) { border-color:#ffd75e; transform:translateY(-2px); }
-  .upg.disabled { opacity:.42; cursor:not-allowed; }
-  .u-icon { font-size:22px; }
-  .u-name { font-size:13px; font-weight:700; white-space:nowrap; }
-  .u-lvl  { color:#ffd75e; font-size:11px; }
-  .u-desc { font-size:10px; opacity:.6; white-space:nowrap; }
-  .u-cost { font-size:13px; font-weight:800; color:#ffd75e; margin-left:4px; }
+      /* ---------- Bottom panel ---------- */
+      #panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        z-index: 10;
+        pointer-events: none;
+      }
+      #shop {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+        pointer-events: auto;
+        max-width: 900px;
+      }
+      .upg {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        background: rgba(12, 18, 32, 0.72);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        padding: 8px 12px;
+        cursor: pointer;
+        color: #eaf2ff;
+        font-family: inherit;
+        text-align: left;
+        transition: 0.15s;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+      }
+      .upg:hover:not(.disabled) {
+        border-color: #ffd75e;
+        transform: translateY(-2px);
+      }
+      .upg.disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+      .u-icon {
+        font-size: 22px;
+      }
+      .u-name {
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .u-lvl {
+        color: #ffd75e;
+        font-size: 11px;
+      }
+      .u-desc {
+        font-size: 10px;
+        opacity: 0.6;
+        white-space: nowrap;
+      }
+      .u-cost {
+        font-size: 13px;
+        font-weight: 800;
+        color: #ffd75e;
+        margin-left: 4px;
+      }
 
-  #launch {
-    pointer-events:auto; font-family:inherit;
-    font-size:20px; font-weight:900; letter-spacing:1.5px;
-    padding:16px 54px; border-radius:16px; border:none; cursor:pointer;
-    color:#20130a; background:linear-gradient(180deg,#ffd75e,#ff9f1a);
-    box-shadow:0 8px 0 #b96a00, 0 12px 28px rgba(0,0,0,.35);
-    transition:.08s; text-transform:uppercase;
-  }
-  #launch:active { transform:translateY(5px); box-shadow:0 3px 0 #b96a00, 0 6px 16px rgba(0,0,0,.35); }
-  #launch.hidden { display:none; }
+      #launch {
+        pointer-events: auto;
+        font-family: inherit;
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 1.5px;
+        padding: 16px 54px;
+        border-radius: 16px;
+        border: none;
+        cursor: pointer;
+        color: #20130a;
+        background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+        box-shadow:
+          0 8px 0 #b96a00,
+          0 12px 28px rgba(0, 0, 0, 0.35);
+        transition: 0.08s;
+        text-transform: uppercase;
+      }
+      #launch:active {
+        transform: translateY(5px);
+        box-shadow:
+          0 3px 0 #b96a00,
+          0 6px 16px rgba(0, 0, 0, 0.35);
+      }
+      #launch.hidden {
+        display: none;
+      }
 
-  #toast {
-    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.7);
-    font-size:52px; font-weight:900; color:#fff; z-index:20;
-    text-shadow:0 6px 30px rgba(0,0,0,.6); opacity:0;
-    pointer-events:none; transition:.35s cubic-bezier(.2,1.6,.5,1);
-    white-space:nowrap;
-  }
-  #toast.on { opacity:1; transform:translate(-50%,-50%) scale(1); }
+      #toast {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.7);
+        font-size: 52px;
+        font-weight: 900;
+        color: #fff;
+        z-index: 20;
+        text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+        opacity: 0;
+        pointer-events: none;
+        transition: 0.35s cubic-bezier(0.2, 1.6, 0.5, 1);
+        white-space: nowrap;
+      }
+      #toast.on {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
 
-  @media (max-width:640px) {
-    .u-desc { display:none; }
-    .u-name { font-size:11px; }
-    #launch { font-size:17px; padding:14px 40px; }
-    #boostUI { bottom:150px; }
-  }
+      @media (max-width: 640px) {
+        .u-desc {
+          display: none;
+        }
+        .u-name {
+          font-size: 11px;
+        }
+        #launch {
+          font-size: 17px;
+          padding: 14px 40px;
+        }
+        #boostUI {
+          bottom: 150px;
+        }
+      }
 
-  #touchControls {
-  position:fixed; left:0; right:0; bottom:20px; padding:0 20px;
-  display:flex; justify-content:flex-start; z-index:11;
-  pointer-events:none;
-}
-#touchControls.hidden { display:none; }
-#rotBtns { display:flex; flex-direction:column; gap:10px; pointer-events:auto; }
-.tbtn {
-  width:66px; height:66px; border-radius:50%;
-  border:1px solid rgba(255,255,255,.22);
-  background:rgba(12,18,32,.72); backdrop-filter:blur(10px);
-  color:#eaf2ff; font-size:24px; font-weight:900;
-  font-family:inherit; cursor:pointer;
-  touch-action:none; user-select:none;
-  box-shadow:0 4px 16px rgba(0,0,0,.3);
-  transition:.1s;
-}
-.tbtn:active { transform:scale(.92); background:rgba(255,215,94,.3); }
-</style>
-</head>
-<body>
+      #touchControls {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 20px;
+        padding: 0 20px;
+        display: flex;
+        justify-content: flex-start;
+        z-index: 11;
+        pointer-events: none;
+      }
+      #touchControls.hidden {
+        display: none;
+      }
+      #rotBtns {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: auto;
+      }
+      .tbtn {
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(12, 18, 32, 0.72);
+        backdrop-filter: blur(10px);
+        color: #eaf2ff;
+        font-size: 24px;
+        font-weight: 900;
+        font-family: inherit;
+        cursor: pointer;
+        touch-action: none;
+        user-select: none;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        transition: 0.1s;
+      }
+      .tbtn:active {
+        transform: scale(0.92);
+        background: rgba(255, 215, 94, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div class="stat">📏 <b id="dist">0</b> м</div>
+      <div class="stat">💥 <b id="coins">0</b></div>
+      <div class="stat">🏆 <b id="best">0</b> м</div>
+    </div>
 
-<div id="hud">
-  <div class="stat">📏 <b id="dist">0</b> м</div>
-  <div class="stat">💥 <b id="coins">0</b></div>
-  <div class="stat">🏆 <b id="best">0</b> м</div>
-</div>
+    <div id="boostUI">
+      <div id="fuelTrack"><div id="fuelFill"></div></div>
+      <div id="boostHint">
+        🔥 <span id="fuelText">0.0</span> с · <span id="alignText">—</span> ·
+        <span style="opacity: 0.55">W/S — ПОВОРОТ · ПРОБЕЛ — ТЯГА</span>
+      </div>
+    </div>
 
-<div id="boostUI">
-  <div id="fuelTrack"><div id="fuelFill"></div></div>
-  <div id="boostHint">
-  🔥 <span id="fuelText">0.0</span> с
-  · <span id="alignText">—</span>
-  · <span style="opacity:.55">W/S — ПОВОРОТ · ПРОБЕЛ — ТЯГА</span>
-</div>
-</div>
+    <div id="panel">
+      <div id="shop"></div>
+      <button id="launch">Пнуть! 🦵</button>
+    </div>
+    <div id="touchControls" class="hidden">
+      <div id="rotBtns">
+        <button id="rotUp" class="tbtn">▲</button>
+        <button id="rotDown" class="tbtn">▼</button>
+      </div>
+    </div>
 
-<div id="panel">
-  <div id="shop"></div>
-  <button id="launch">Пнуть! 🦵</button>
-</div>
-<div id="touchControls" class="hidden">
-  <div id="rotBtns">
-    <button id="rotUp"   class="tbtn">▲</button>
-    <button id="rotDown" class="tbtn">▼</button>
-  </div>
-</div>
+    <div id="toast"></div>
 
-<div id="toast"></div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
 
-<script type="importmap">
-{ "imports": {
-  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-} }
-</script>
+    <script type="module">
+      import * as THREE from 'three'
+      import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
-<script type="module">
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-
-/* ================================================================
+      /* ================================================================
    0. SEEDED RNG — детерминированная генерация по seed
 ================================================================ */
-const WORLD_SEED = 1337;   // ← поменяй, и весь мир будет другой
+      const WORLD_SEED = 1337 // ← поменяй, и весь мир будет другой
 
-function hash2i(x, y) {
-  let h = (x | 0) * 374761393 + (y | 0) * 668265263;
-  h = (h ^ (h >>> 13)) * 1274126177;
-  h = h ^ (h >>> 16);
-  return h >>> 0;
-}
-function mulberry32(seed) {
-  let s = seed >>> 0;
-  return function () {
-    s = (s + 0x6D2B79F5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+      function hash2i(x, y) {
+        let h = (x | 0) * 374761393 + (y | 0) * 668265263
+        h = (h ^ (h >>> 13)) * 1274126177
+        h = h ^ (h >>> 16)
+        return h >>> 0
+      }
+      function mulberry32(seed) {
+        let s = seed >>> 0
+        return function () {
+          s = (s + 0x6d2b79f5) >>> 0
+          let t = s
+          t = Math.imul(t ^ (t >>> 15), t | 1)
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+      }
 
-/* ---------- Value noise для рельефа ---------- */
-// Детерминированный шум на решётке целых координат + сглаживание smoothstep.
-// Возвращает [0, 1).
-function vnoise(x, z) {
-  const xi = Math.floor(x), zi = Math.floor(z);
-  const xf = x - xi,        zf = z - zi;
-  const u  = xf * xf * (3 - 2 * xf);
-  const v  = zf * zf * (3 - 2 * zf);
+      /* ---------- Value noise для рельефа ---------- */
+      // Детерминированный шум на решётке целых координат + сглаживание smoothstep.
+      // Возвращает [0, 1).
+      function vnoise(x, z) {
+        const xi = Math.floor(x),
+          zi = Math.floor(z)
+        const xf = x - xi,
+          zf = z - zi
+        const u = xf * xf * (3 - 2 * xf)
+        const v = zf * zf * (3 - 2 * zf)
 
-  const a = hash2i(xi,     zi    ) / 4294967296;
-  const b = hash2i(xi + 1, zi    ) / 4294967296;
-  const c = hash2i(xi,     zi + 1) / 4294967296;
-  const d = hash2i(xi + 1, zi + 1) / 4294967296;
+        const a = hash2i(xi, zi) / 4294967296
+        const b = hash2i(xi + 1, zi) / 4294967296
+        const c = hash2i(xi, zi + 1) / 4294967296
+        const d = hash2i(xi + 1, zi + 1) / 4294967296
 
-  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
-}
+        return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
+      }
 
-// Фрактальный шум: несколько октав с падающей амплитудой. Возвращает [0, 1).
-function fbm2(x, z, oct) {
-  let s = 0, amp = 1, freq = 1, norm = 0;
-  for (let i = 0; i < oct; i++) {
-    s    += vnoise(x * freq, z * freq) * amp;
-    norm += amp;
-    amp  *= 0.5;
-    freq *= 2.0;
-  }
-  return s / norm;
-}
+      // Фрактальный шум: несколько октав с падающей амплитудой. Возвращает [0, 1).
+      function fbm2(x, z, oct) {
+        let s = 0,
+          amp = 1,
+          freq = 1,
+          norm = 0
+        for (let i = 0; i < oct; i++) {
+          s += vnoise(x * freq, z * freq) * amp
+          norm += amp
+          amp *= 0.5
+          freq *= 2.0
+        }
+        return s / norm
+      }
 
-// Текущий генератор. Фабрики пропсов читают rnd().
-let currentRng = Math.random;
-const rnd = () => currentRng();
+      // Текущий генератор. Фабрики пропсов читают rnd().
+      let currentRng = Math.random
+      const rnd = () => currentRng()
 
-/* ================================================================
+      /* ================================================================
    1. RENDERER / SCENE / CAMERA
 ================================================================ */
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
+      const renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+      renderer.setSize(innerWidth, innerHeight)
 
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping
+      renderer.toneMappingExposure = 1.15
 
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-document.body.appendChild(renderer.domElement);
+      renderer.shadowMap.enabled = true
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      document.body.appendChild(renderer.domElement)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 3000);
-camera.position.set(6, 8, 26);
+      const camera = new THREE.PerspectiveCamera(
+        55,
+        innerWidth / innerHeight,
+        0.1,
+        3000
+      )
+      camera.position.set(6, 8, 26)
 
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+      addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight
+        camera.updateProjectionMatrix()
+        renderer.setSize(innerWidth, innerHeight)
+      })
 
-/* ================================================================
+      /* ================================================================
    1b. НЕБО — градиентный купол + солнце (шейдер)
 ================================================================ */
-// Три ключевых цвета. Меняй — небо меняется целиком.
-const SKY_ZENITH  = new THREE.Color(0x2f6fce);   // зенит — глубокий синий
-const SKY_HORIZON = new THREE.Color(0xd9ebf8);   // горизонт — дымчатый, тёплый
-const SUN_COLOR   = new THREE.Color(0xfff0c0);   // солнце — тёплый жёлтый
+      // Три ключевых цвета. Меняй — небо меняется целиком.
+      const SKY_ZENITH = new THREE.Color(0x2f6fce) // зенит — глубокий синий
+      const SKY_HORIZON = new THREE.Color(0xd9ebf8) // горизонт — дымчатый, тёплый
+      const SUN_COLOR = new THREE.Color(0xfff0c0) // солнце — тёплый жёлтый
 
-const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(SKY_HORIZON.getHex(), 80, 300);
+      const scene = new THREE.Scene()
+      scene.fog = new THREE.Fog(SKY_HORIZON.getHex(), 80, 300)
 
-// Направление солнца — совпадает с sun.position ниже.
-// Низкое солнце = красивее диск и длинные градиенты. Пусть будет ~35°.
-const SUN_DIR = new THREE.Vector3(28, 32, 22).normalize();
+      // Направление солнца — совпадает с sun.position ниже.
+      // Низкое солнце = красивее диск и длинные градиенты. Пусть будет ~35°.
+      const SUN_DIR = new THREE.Vector3(28, 32, 22).normalize()
 
-const skyMat = new THREE.ShaderMaterial({
-  side: THREE.BackSide,
-  depthWrite: false,
-  fog: false,
-  uniforms: {
-    topColor:    { value: SKY_ZENITH.clone() },
-    bottomColor: { value: SKY_HORIZON.clone() },
-    sunColor:    { value: SUN_COLOR.clone() },
-    sunDir:      { value: SUN_DIR.clone() },
-    exponent:    { value: 0.85 },
-  },
-  vertexShader: `
+      const skyMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        uniforms: {
+          topColor: { value: SKY_ZENITH.clone() },
+          bottomColor: { value: SKY_HORIZON.clone() },
+          sunColor: { value: SUN_COLOR.clone() },
+          sunDir: { value: SUN_DIR.clone() },
+          exponent: { value: 0.85 },
+        },
+        vertexShader: `
     varying vec3 vWorldPos;
     void main() {
       vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -274,7 +439,7 @@ const skyMat = new THREE.ShaderMaterial({
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
-  fragmentShader: `
+        fragmentShader: `
     uniform vec3  topColor;
     uniform vec3  bottomColor;
     uniform vec3  sunColor;
@@ -304,46 +469,45 @@ const skyMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(col, 1.0);
     }
   `,
-});
+      })
 
-const skyDome = new THREE.Mesh(
-  new THREE.SphereGeometry(1400, 32, 16),
-  skyMat
-);
-skyDome.frustumCulled = false;
-skyDome.renderOrder = -1;   // рисуется первым, всегда под всем
-scene.add(skyDome);
+      const skyDome = new THREE.Mesh(
+        new THREE.SphereGeometry(1400, 32, 16),
+        skyMat
+      )
+      skyDome.frustumCulled = false
+      skyDome.renderOrder = -1 // рисуется первым, всегда под всем
+      scene.add(skyDome)
 
-
-/* ---------- Sky-matching fog ----------
+      /* ---------- Sky-matching fog ----------
    Заменяем стандартный THREE.Fog на шейдер, который считает цвет
    тумана как цвет неба в направлении луча взгляда.
    Дальняя геометрия растворяется в точный оттенок купола — без силуэтов.
 */
-function applySkyFog(mat) {
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.skyTop      = { value: SKY_ZENITH };
-    shader.uniforms.skyBottom   = { value: SKY_HORIZON };
-    shader.uniforms.skyExponent = { value: 0.85 };
-    shader.uniforms.sunColorF   = { value: SUN_COLOR };
-    shader.uniforms.sunDirF     = { value: SUN_DIR };
+      function applySkyFog(mat) {
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.skyTop = { value: SKY_ZENITH }
+          shader.uniforms.skyBottom = { value: SKY_HORIZON }
+          shader.uniforms.skyExponent = { value: 0.85 }
+          shader.uniforms.sunColorF = { value: SUN_COLOR }
+          shader.uniforms.sunDirF = { value: SUN_DIR }
 
-    // --- Вершинный: пробрасываем мировую позицию ---
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <fog_pars_vertex>',
-      `#include <fog_pars_vertex>
+          // --- Вершинный: пробрасываем мировую позицию ---
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <fog_pars_vertex>',
+            `#include <fog_pars_vertex>
        varying vec3 vSkyWorldPos;`
-    );
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <fog_vertex>',
-      `#include <fog_vertex>
+          )
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <fog_vertex>',
+            `#include <fog_vertex>
        vSkyWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
-    );
+          )
 
-    // --- Фрагментный: объявляем функцию цвета неба ---
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <fog_pars_fragment>',
-      `#include <fog_pars_fragment>
+          // --- Фрагментный: объявляем функцию цвета неба ---
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <fog_pars_fragment>',
+            `#include <fog_pars_fragment>
        uniform vec3  skyTop;
        uniform vec3  skyBottom;
        uniform float skyExponent;
@@ -363,1491 +527,1639 @@ function applySkyFog(mat) {
          col += sunColorF * (glow + core);
          return col;
        }`
-    );
+          )
 
-    // --- Фрагментный: заменяем сам расчёт тумана ---
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <fog_fragment>',
-      `#ifdef USE_FOG
+          // --- Фрагментный: заменяем сам расчёт тумана ---
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <fog_fragment>',
+            `#ifdef USE_FOG
          vec3  fogDir    = normalize(vSkyWorldPos - cameraPosition);
          vec3  fogCol    = skyColorAtDir(fogDir);
          float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogCol, fogFactor);
        #endif`
-    );
-  };
-  mat.needsUpdate = true;
-}
+          )
+        }
+        mat.needsUpdate = true
+      }
 
-
-/* ================================================================
+      /* ================================================================
    2. LIGHTS
 ================================================================ */
-// Полусферический свет: верх — цвет неба, низ — цвет земли.
-// Верх теперь совпадает с горизонтом купола → мягкая интеграция.
-scene.add(new THREE.HemisphereLight(0xb8d8f0, 0x4a7a35, 1.05));
+      // Полусферический свет: верх — цвет неба, низ — цвет земли.
+      // Верх теперь совпадает с горизонтом купола → мягкая интеграция.
+      scene.add(new THREE.HemisphereLight(0xb8d8f0, 0x4a7a35, 1.05))
 
-// Направленный свет — тёплый, чуть холоднее чем солнце в шейдере,
-// чтобы тени/склоны читались отдельно от диска.
-const sun = new THREE.DirectionalLight(0xfff0d0, 1.9);
-sun.position.set(28, 32, 22);
-sun.position.set(20, 45, 25);
-sun.castShadow = false;
-sun.shadow.mapSize.set(2048, 2048);
-const sc = sun.shadow.camera;
-sc.left = -45; sc.right = 45; sc.top = 45; sc.bottom = -45;
-sc.near = 1; sc.far = 160;
-sun.shadow.bias = -0.0008;
-scene.add(sun);
-scene.add(sun.target);
+      // Направленный свет — тёплый, чуть холоднее чем солнце в шейдере,
+      // чтобы тени/склоны читались отдельно от диска.
+      const sun = new THREE.DirectionalLight(0xfff0d0, 1.9)
+      sun.position.set(28, 32, 22)
+      sun.position.set(20, 45, 25)
+      sun.castShadow = false
+      sun.shadow.mapSize.set(2048, 2048)
+      const sc = sun.shadow.camera
+      sc.left = -45
+      sc.right = 45
+      sc.top = 45
+      sc.bottom = -45
+      sc.near = 1
+      sc.far = 160
+      sun.shadow.bias = -0.0008
+      scene.add(sun)
+      scene.add(sun.target)
 
-
-
-/* ================================================================
+      /* ================================================================
    3. TERRAIN — бесконечный, без границ
 ================================================================ */
-const S = WORLD_SEED * 0.0001;   // смещение фаз от seed
+      const S = WORLD_SEED * 0.0001 // смещение фаз от seed
 
-function terrainBase(x, z) {
-  let h = 0;
+      function terrainBase(x, z) {
+        let h = 0
 
-  // --- Полого-холмистая база (до 1000 м) ---
-  h += Math.sin(x * 0.016 + 0.4 + S) * 5.5;
-  h += Math.sin(x * 0.041 + 1.9 + S) * 2.4;
-  h += Math.cos(z * 0.020 + 0.8 + S) * 3.0;
-  h += Math.sin((x + z * 0.8) * 0.011 + 2.5 + S) * 4.0;
-  h += Math.sin(x * 0.085 + 3.1 + S) * 0.9;
-  h += Math.cos(z * 0.10 + 1.4 + S) * 0.7;
-  const dip = Math.max(0, Math.sin(x * 0.0075 + 1.2 + S));
-  h -= dip * dip * 5.5;
+        // --- Полого-холмистая база (до 1000 м) ---
+        h += Math.sin(x * 0.016 + 0.4 + S) * 5.5
+        h += Math.sin(x * 0.041 + 1.9 + S) * 2.4
+        h += Math.cos(z * 0.02 + 0.8 + S) * 3.0
+        h += Math.sin((x + z * 0.8) * 0.011 + 2.5 + S) * 4.0
+        h += Math.sin(x * 0.085 + 3.1 + S) * 0.9
+        h += Math.cos(z * 0.1 + 1.4 + S) * 0.7
+        const dip = Math.max(0, Math.sin(x * 0.0075 + 1.2 + S))
+        h -= dip * dip * 5.5
 
-   // --- Горы после 1000 м ---
-  const start_mountains = 1000;
-  const mt  = Math.min(1, Math.max(0, (x - start_mountains) / 1800));
-  const mt2 = mt * mt;
+        // --- Горы после 1000 м ---
+        const start_mountains = 1000
+        const mt = Math.min(1, Math.max(0, (x - start_mountains) / 1800))
+        const mt2 = mt * mt
 
-  // --- Глобальный рост: чем дальше вправо, тем выше и шире горы ---
-  // 0 до x=2800, потом линейно. На x=7800 → 1.5, x=12800 → 2.0 и т.д.
-  const far    = Math.max(0, (x - 2800) / 10000);
-  const growth = 1 + far;
+        // --- Глобальный рост: чем дальше вправо, тем выше и шире горы ---
+        // 0 до x=2800, потом линейно. На x=7800 → 1.5, x=12800 → 2.0 и т.д.
+        const far = Math.max(0, (x - 2800) / 10000)
+        const growth = 1 + far
 
-  const ridge = (u, v, freq, seed, sharp) => {
-    const s = Math.sin(u * freq + v * freq * 0.55 + seed + S);
-    return Math.pow(1 - Math.abs(s), sharp);
-  };
+        const ridge = (u, v, freq, seed, sharp) => {
+          const s = Math.sin(u * freq + v * freq * 0.55 + seed + S)
+          return Math.pow(1 - Math.abs(s), sharp)
+        }
 
-  const r =
-      ridge(x,  z, 0.00085, 0.4, 5.2) * 300
-    + ridge(x,  z, 0.0022,  1.1, 4.0) * 130
-    + ridge(x,  z, 0.0055,  2.9, 2.4) *  45
-    + ridge(x,  z, 0.0135,  3.6, 1.3) *  15
-    + ridge(z, -x, 0.0013, 5.2, 3.5) * 180
-    + ridge(z, -x, 0.0041, 6.8, 1.4) *  60;
+        const r =
+          ridge(x, z, 0.00085, 0.4, 5.2) * 300 +
+          ridge(x, z, 0.0022, 1.1, 4.0) * 130 +
+          ridge(x, z, 0.0055, 2.9, 2.4) * 45 +
+          ridge(x, z, 0.0135, 3.6, 1.3) * 15 +
+          ridge(z, -x, 0.0013, 5.2, 3.5) * 180 +
+          ridge(z, -x, 0.0041, 6.8, 1.4) * 60
 
-  // Плато + хребты, всё умножено на growth
-  h += mt2 * (80 + r * 0.65) * growth;
+        // Плато + хребты, всё умножено на growth
+        h += mt2 * (80 + r * 0.65) * growth
 
-  // --- Шум, разбивающий регулярные линии синусовой генерации ---
-  // Амплитуда линейно растёт от высоты: 0 м → 0%, 500 м → 100%.
-  // Низменности и равнина остаются чистыми, горы становятся рваными.
-  const t = Math.min(1, Math.max(0, h / 500 ));
-  if (t > 0) {
-    // Крупный шум — искривляет сами хребты, ломает диагонали.
-    const big   = (fbm2(x * 0.0035, z * 0.0035, 3) - 0.5) * 2;
-    // Мелкий — колючки на гранях, «скалистость».
-    const small = (fbm2(x * 0.018,  z * 0.018,  2) - 0.5) * 2;
-    h += (big * 200 + small * 80) * t;
-  }
+        // --- Шум, разбивающий регулярные линии синусовой генерации ---
+        // Амплитуда линейно растёт от высоты: 0 м → 0%, 500 м → 100%.
+        // Низменности и равнина остаются чистыми, горы становятся рваными.
+        const t = Math.min(1, Math.max(0, h / 500))
+        if (t > 0) {
+          // Крупный шум — искривляет сами хребты, ломает диагонали.
+          const big = (fbm2(x * 0.0035, z * 0.0035, 3) - 0.5) * 2
+          // Мелкий — колючки на гранях, «скалистость».
+          const small = (fbm2(x * 0.018, z * 0.018, 2) - 0.5) * 2
+          h += (big * 200 + small * 80) * t
+        }
 
-  return h;
+        return h
+      }
 
-}
+      function terrainHeight(x, z) {
+        const d = Math.hypot(x + 2.6, z)
+        const flat = Math.min(1, Math.max(0, (d - 6) / 14))
+        return terrainBase(x, z) * flat
+      }
 
-function terrainHeight(x, z) {
-  const d = Math.hypot(x + 2.6, z);
-  const flat = Math.min(1, Math.max(0, (d - 6) / 14));
-  return terrainBase(x, z) * flat;
-}
-
-/* ================================================================
+      /* ================================================================
    3a. HEIGHT-BASED TERRAIN COLOR
 ================================================================ */
 
-// Палитра по высоте. h — метры над «уровнем моря» (y=0 у равнины).
-// Между соседними стопами цвет плавно интерполируется.
-const TERRAIN_STOPS = [
-  { h: -20, color: new THREE.Color(0x1f3f15) },  // мокрые низины
-  { h: -10, color: new THREE.Color(0x3f6e2a) },  // низко — тёмно-зелёный
-  { h:  0, color: new THREE.Color(0x6cbf4a) },  // как сейчас (равнина)
-  { h: 50, color: new THREE.Color(0x89EC6A) },  // ещё чистая трава
-  { h: 150, color: new THREE.Color(0x91CE7E) },  // ещё чистая трава
-  { h: 250, color: new THREE.Color(0x8a8068) },  // трава + камень
-  { h: 300, color: new THREE.Color(0x55504a) },  // тёмный камень
-  { h: 400, color: new THREE.Color(0xeef3f8) },  // линия снега
-  { h: 620, color: new THREE.Color(0xffffff) },  // чистейший снег
-];
+      // Палитра по высоте. h — метры над «уровнем моря» (y=0 у равнины).
+      // Между соседними стопами цвет плавно интерполируется.
+      const TERRAIN_STOPS = [
+        { h: -20, color: new THREE.Color(0x1f3f15) }, // мокрые низины
+        { h: -10, color: new THREE.Color(0x3f6e2a) }, // низко — тёмно-зелёный
+        { h: 0, color: new THREE.Color(0x6cbf4a) }, // как сейчас (равнина)
+        { h: 50, color: new THREE.Color(0x89ec6a) }, // ещё чистая трава
+        { h: 150, color: new THREE.Color(0x91ce7e) }, // ещё чистая трава
+        { h: 250, color: new THREE.Color(0x8a8068) }, // трава + камень
+        { h: 300, color: new THREE.Color(0x55504a) }, // тёмный камень
+        { h: 400, color: new THREE.Color(0xeef3f8) }, // линия снега
+        { h: 620, color: new THREE.Color(0xffffff) }, // чистейший снег
+      ]
 
-const _terrCol = new THREE.Color();
-function heightToTerrainColor(h, out) {
-  const st = TERRAIN_STOPS;
-  if (h <= st[0].h) { out.copy(st[0].color); return; }
+      const _terrCol = new THREE.Color()
+      function heightToTerrainColor(h, out) {
+        const st = TERRAIN_STOPS
+        if (h <= st[0].h) {
+          out.copy(st[0].color)
+          return
+        }
 
-  const last = st.length - 1;
-  if (h >= st[last].h) { out.copy(st[last].color); return; }
+        const last = st.length - 1
+        if (h >= st[last].h) {
+          out.copy(st[last].color)
+          return
+        }
 
-  for (let i = 0; i < last; i++) {
-    const a = st[i], b = st[i + 1];
-    if (h >= a.h && h <= b.h) {
-      const t = (h - a.h) / (b.h - a.h);
-      out.copy(a.color).lerp(b.color, t);
-      return;
-    }
-  }
-}
+        for (let i = 0; i < last; i++) {
+          const a = st[i],
+            b = st[i + 1]
+          if (h >= a.h && h <= b.h) {
+            const t = (h - a.h) / (b.h - a.h)
+            out.copy(a.color).lerp(b.color, t)
+            return
+          }
+        }
+      }
 
-// --- Общая текстура земли (используется всеми чанками) ---
-const TILE = 6;
+      // --- Общая текстура земли (используется всеми чанками) ---
+      const TILE = 6
 
-function makeGroundTexture() {
-  const s = 256;
-  const c = document.createElement('canvas');
-  c.width = c.height = s;
-  const ctx = c.getContext('2d');
+      function makeGroundTexture() {
+        const s = 256
+        const c = document.createElement('canvas')
+        c.width = c.height = s
+        const ctx = c.getContext('2d')
 
-  // Нейтральная база: hue задаёт vertex color, текстура — только фактура
-  ctx.fillStyle = '#e8e8e8';
-  ctx.fillRect(0, 0, s, s);
+        // Нейтральная база: hue задаёт vertex color, текстура — только фактура
+        ctx.fillStyle = '#e8e8e8'
+        ctx.fillRect(0, 0, s, s)
 
-  for (let i = 0; i < 420; i++) {
-    const v = Math.random() > .5 ? 0 : 255;
-    const a = 0.04 + Math.random() * 0.05;
-    ctx.fillStyle = `rgba(${v},${v},${v},${a})`;
-    ctx.beginPath();
-    ctx.arc(Math.random() * s, Math.random() * s, 3 + Math.random() * 16, 0, 6.284);
-    ctx.fill();
-  }
+        for (let i = 0; i < 420; i++) {
+          const v = Math.random() > 0.5 ? 0 : 255
+          const a = 0.04 + Math.random() * 0.05
+          ctx.fillStyle = `rgba(${v},${v},${v},${a})`
+          ctx.beginPath()
+          ctx.arc(
+            Math.random() * s,
+            Math.random() * s,
+            3 + Math.random() * 16,
+            0,
+            6.284
+          )
+          ctx.fill()
+        }
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.07)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(0, 1.5); ctx.lineTo(s, 1.5);
-  ctx.moveTo(1.5, 0); ctx.lineTo(1.5, s);
-  ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.07)'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(0, 1.5)
+        ctx.lineTo(s, 1.5)
+        ctx.moveTo(1.5, 0)
+        ctx.lineTo(1.5, s)
+        ctx.stroke()
 
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  return t;
-}
-const groundTex = makeGroundTexture();
-const groundMat = new THREE.MeshStandardMaterial({
-  map: groundTex, vertexColors: true, roughness: 1, metalness: 0,
-});
+        const t = new THREE.CanvasTexture(c)
+        t.wrapS = t.wrapT = THREE.RepeatWrapping
+        t.anisotropy = renderer.capabilities.getMaxAnisotropy()
+        return t
+      }
+      const groundTex = makeGroundTexture()
+      const groundMat = new THREE.MeshStandardMaterial({
+        map: groundTex,
+        vertexColors: true,
+        roughness: 1,
+        metalness: 0,
+      })
 
-
-
-
-/* ================================================================
+      /* ================================================================
    3b. CHUNK SYSTEM — 3D мир
 ================================================================ */
-const CHUNK_SIZE        = 200; //Размер чанка в метрах. Один меш земли + его пропсы.
-const CHUNK_SEG         = 40; //Сколько квадов на сторону чанка. Детализация рельефа.
-// Асимметричная зона: вперёд дальше, назад и по бокам — ближе.
-// Камера/ракета всегда движется в +X, поэтому выигрыш реальный.
-const LOAD_FWD_CHUNKS  = 5;   // 1000 м вперёд
-const LOAD_BACK_CHUNKS = 1;   // 200 м назад
-const LOAD_SIDE_CHUNKS = 3;   // 600 м по бокам Z
-const UNLOAD_MARGIN    = 1;   // чанк выгружается через 1 «лишний» ряд
-const CHUNKS_PER_FRAME = 3;
-const COUNT = 2000; //Плотность леса
+      const CHUNK_SIZE = 200 //Размер чанка в метрах. Один меш земли + его пропсы.
+      const CHUNK_SEG = 40 //Сколько квадов на сторону чанка. Детализация рельефа.
+      // Асимметричная зона: вперёд дальше, назад и по бокам — ближе.
+      // Камера/ракета всегда движется в +X, поэтому выигрыш реальный.
+      const LOAD_FWD_CHUNKS = 5 // 1000 м вперёд
+      const LOAD_BACK_CHUNKS = 1 // 200 м назад
+      const LOAD_SIDE_CHUNKS = 3 // 600 м по бокам Z
+      const UNLOAD_MARGIN = 1 // чанк выгружается через 1 «лишний» ряд
+      const CHUNKS_PER_FRAME = 3
+      const COUNT = 2000 //Плотность леса
 
-const chunks     = new Map();   // "cx,cz" -> { mesh, props }
-let   showing3D  = true;        // флаг для управления видимостью пропсов из updateLOD
+      const chunks = new Map() // "cx,cz" -> { mesh, props }
+      let showing3D = true // флаг для управления видимостью пропсов из updateLOD
 
-function makeChunkMesh(cx, cz) {
-  const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEG, CHUNK_SEG);
-  geo.rotateX(-Math.PI / 2);
+      function makeChunkMesh(cx, cz) {
+        const geo = new THREE.PlaneGeometry(
+          CHUNK_SIZE,
+          CHUNK_SIZE,
+          CHUNK_SEG,
+          CHUNK_SEG
+        )
+        geo.rotateX(-Math.PI / 2)
 
-  const cxw = cx * CHUNK_SIZE + CHUNK_SIZE / 2;
-  const czw = cz * CHUNK_SIZE + CHUNK_SIZE / 2;
+        const cxw = cx * CHUNK_SIZE + CHUNK_SIZE / 2
+        const czw = cz * CHUNK_SIZE + CHUNK_SIZE / 2
 
-  const pos = geo.attributes.position;
-  const uv  = geo.attributes.uv;
+        const pos = geo.attributes.position
+        const uv = geo.attributes.uv
 
-  const colArr = new Float32Array(pos.count * 3);
-  const col    = new THREE.Color();
+        const colArr = new Float32Array(pos.count * 3)
+        const col = new THREE.Color()
 
-  for (let i = 0; i < pos.count; i++) {
-    const wx = cxw + pos.getX(i);
-    const wz = czw + pos.getZ(i);
-    const h  = terrainHeight(wx, wz);
+        for (let i = 0; i < pos.count; i++) {
+          const wx = cxw + pos.getX(i)
+          const wz = czw + pos.getZ(i)
+          const h = terrainHeight(wx, wz)
 
-    pos.setY(i, h);
-    uv.setXY(i, wx / TILE, wz / TILE);
+          pos.setY(i, h)
+          uv.setXY(i, wx / TILE, wz / TILE)
 
-    heightToTerrainColor(h, col);
-    colArr[i * 3    ] = col.r;
-    colArr[i * 3 + 1] = col.g;
-    colArr[i * 3 + 2] = col.b;
-  }
-  pos.needsUpdate = true;
-  uv.needsUpdate  = true;
-  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
-  geo.computeVertexNormals();
+          heightToTerrainColor(h, col)
+          colArr[i * 3] = col.r
+          colArr[i * 3 + 1] = col.g
+          colArr[i * 3 + 2] = col.b
+        }
+        pos.needsUpdate = true
+        uv.needsUpdate = true
+        geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
+        geo.computeVertexNormals()
 
-  const mesh = new THREE.Mesh(geo, groundMat);
-  mesh.position.set(cxw, 0, czw);
-  mesh.receiveShadow = false;
-  return mesh;
-}
+        const mesh = new THREE.Mesh(geo, groundMat)
+        mesh.position.set(cxw, 0, czw)
+        mesh.receiveShadow = false
+        return mesh
+      }
 
-const _dummyObj = new THREE.Object3D();
+      const _dummyObj = new THREE.Object3D()
 
-function spawnChunkProps(cx, cz) {
-  const seed = hash2i(cx + 0x9E37, cz + 0x79B9) ^ WORLD_SEED;
-  const old  = currentRng;
-  currentRng = mulberry32(seed);
+      function spawnChunkProps(cx, cz) {
+        const seed = hash2i(cx + 0x9e37, cz + 0x79b9) ^ WORLD_SEED
+        const old = currentRng
+        currentRng = mulberry32(seed)
 
-  const baseX = cx * CHUNK_SIZE;
-  const baseZ = cz * CHUNK_SIZE;
+        const baseX = cx * CHUNK_SIZE
+        const baseZ = cz * CHUNK_SIZE
 
-  // Группируем по типу — по одной InstancedMesh на каждый
-  const groups = { pine: [], oak: [], bush: [], rock: [] };
+        // Группируем по типу — по одной InstancedMesh на каждый
+        const groups = { pine: [], oak: [], bush: [], rock: [] }
 
-  for (let i = 0; i < COUNT; i++) {
-    const wx = baseX + rnd() * CHUNK_SIZE;
-    const wz = baseZ + rnd() * CHUNK_SIZE;
-    if (Math.hypot(wx + 2.6, wz) < 16) continue;
+        for (let i = 0; i < COUNT; i++) {
+          const wx = baseX + rnd() * CHUNK_SIZE
+          const wz = baseZ + rnd() * CHUNK_SIZE
+          if (Math.hypot(wx + 2.6, wz) < 16) continue
 
-    const r = rnd();
-    let kind;
-    if      (r < 0.45) kind = 'pine';
-    else if (r < 0.60) kind = 'oak';
-    else if (r < 0.82) kind = 'bush';
-    else               kind = 'rock';
+          const r = rnd()
+          let kind
+          if (r < 0.45) kind = 'pine'
+          else if (r < 0.6) kind = 'oak'
+          else if (r < 0.82) kind = 'bush'
+          else kind = 'rock'
 
-    const scale = (kind === 'rock') ? (0.6 + rnd() * 1.4) : (0.75 + rnd() * 0.7);
-    const rotY  = rnd() * 6.28;
-    const y     = terrainHeight(wx, wz);
+          const scale = kind === 'rock' ? 0.6 + rnd() * 1.4 : 0.75 + rnd() * 0.7
+          const rotY = rnd() * 6.28
+          const y = terrainHeight(wx, wz)
 
-    groups[kind].push({ x: wx, y, z: wz, scale, rotY });
-  }
+          groups[kind].push({ x: wx, y, z: wz, scale, rotY })
+        }
 
-  currentRng = old;
+        currentRng = old
 
-  // Собираем InstancedMesh-ы
-  const meshes = [];
-  const allShadows = [];
+        // Собираем InstancedMesh-ы
+        const meshes = []
+        const allShadows = []
 
-  for (const kind of ['pine', 'oak', 'bush', 'rock']) {
-    const items = groups[kind];
-    if (items.length === 0) continue;
+        for (const kind of ['pine', 'oak', 'bush', 'rock']) {
+          const items = groups[kind]
+          if (items.length === 0) continue
 
-    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, items.length);
-    inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    inst.castShadow    = false;   // ← ключ: без shadow pass
-    inst.receiveShadow = false;
-    inst.frustumCulled = true;
+          const inst = new THREE.InstancedMesh(
+            TEMPLATES[kind],
+            propMat,
+            items.length
+          )
+          inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+          inst.castShadow = false // ← ключ: без shadow pass
+          inst.receiveShadow = false
+          inst.frustumCulled = true
 
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      _dummyObj.position.set(it.x, it.y, it.z);
-      _dummyObj.rotation.set(0, it.rotY, 0);
-      _dummyObj.scale.setScalar(it.scale);
-      _dummyObj.updateMatrix();
-      inst.setMatrixAt(i, _dummyObj.matrix);
+          for (let i = 0; i < items.length; i++) {
+            const it = items[i]
+            _dummyObj.position.set(it.x, it.y, it.z)
+            _dummyObj.rotation.set(0, it.rotY, 0)
+            _dummyObj.scale.setScalar(it.scale)
+            _dummyObj.updateMatrix()
+            inst.setMatrixAt(i, _dummyObj.matrix)
 
-      allShadows.push(it);
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    scene.add(inst);
-    meshes.push(inst);
-  }
+            allShadows.push(it)
+          }
+          inst.instanceMatrix.needsUpdate = true
+          scene.add(inst)
+          meshes.push(inst)
+        }
 
-  // --- Запечённые тени: один InstancedMesh на все деревья чанка ---
-  if (allShadows.length > 0) {
-    const shadowInst = new THREE.InstancedMesh(shadowDiskGeo, shadowDiskMat, allShadows.length);
-    shadowInst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    shadowInst.renderOrder = 1;
-    shadowInst.castShadow = false;
-    shadowInst.receiveShadow = false;
+        // --- Запечённые тени: один InstancedMesh на все деревья чанка ---
+        if (allShadows.length > 0) {
+          const shadowInst = new THREE.InstancedMesh(
+            shadowDiskGeo,
+            shadowDiskMat,
+            allShadows.length
+          )
+          shadowInst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+          shadowInst.renderOrder = 1
+          shadowInst.castShadow = false
+          shadowInst.receiveShadow = false
 
-    for (let i = 0; i < allShadows.length; i++) {
-      const p = allShadows[i];
-      _dummyObj.position.set(p.x, p.y + 0.12, p.z);
-      _dummyObj.rotation.set(0, 0, 0);
-      _dummyObj.scale.set(p.scale * 1.6, 1, p.scale * 1.6);
-      _dummyObj.updateMatrix();
-      shadowInst.setMatrixAt(i, _dummyObj.matrix);
-    }
-    shadowInst.instanceMatrix.needsUpdate = true;
-    scene.add(shadowInst);
-    meshes.push(shadowInst);
-  }
+          for (let i = 0; i < allShadows.length; i++) {
+            const p = allShadows[i]
+            _dummyObj.position.set(p.x, p.y + 0.12, p.z)
+            _dummyObj.rotation.set(0, 0, 0)
+            _dummyObj.scale.set(p.scale * 1.6, 1, p.scale * 1.6)
+            _dummyObj.updateMatrix()
+            shadowInst.setMatrixAt(i, _dummyObj.matrix)
+          }
+          shadowInst.instanceMatrix.needsUpdate = true
+          scene.add(shadowInst)
+          meshes.push(shadowInst)
+        }
 
-  return meshes;
-}
+        return meshes
+      }
 
-function loadChunk(cx, cz) {
-  const key = cx + ',' + cz;
-  if (chunks.has(key)) return;
-  const mesh  = makeChunkMesh(cx, cz);
-  const props = spawnChunkProps(cx, cz);
-  scene.add(mesh);
-  for (const p of props) p.visible = showing3D;
-  chunks.set(key, { mesh, props });
-}
+      function loadChunk(cx, cz) {
+        const key = cx + ',' + cz
+        if (chunks.has(key)) return
+        const mesh = makeChunkMesh(cx, cz)
+        const props = spawnChunkProps(cx, cz)
+        scene.add(mesh)
+        for (const p of props) p.visible = showing3D
+        chunks.set(key, { mesh, props })
+      }
 
-function unloadChunk(key) {
-  const c = chunks.get(key);
-  if (!c) return;
-  scene.remove(c.mesh);
-  c.mesh.geometry.dispose();
-  for (const p of c.props) scene.remove(p);
-  chunks.delete(key);
-}
+      function unloadChunk(key) {
+        const c = chunks.get(key)
+        if (!c) return
+        scene.remove(c.mesh)
+        c.mesh.geometry.dispose()
+        for (const p of c.props) scene.remove(p)
+        chunks.delete(key)
+      }
 
-function updateChunks(camX, camZ, initial = false) {
-  const cxi = Math.floor(camX / CHUNK_SIZE);
-  const czi = Math.floor(camZ / CHUNK_SIZE);
+      function updateChunks(camX, camZ, initial = false) {
+        const cxi = Math.floor(camX / CHUNK_SIZE)
+        const czi = Math.floor(camZ / CHUNK_SIZE)
 
-  const toLoad = [];
-  for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
-    for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
-      const cx = cxi + dx, cz = czi + dz;
-      if (!chunks.has(cx + ',' + cz)) toLoad.push([cx, cz]);
-    }
-  }
+        const toLoad = []
+        for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
+          for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
+            const cx = cxi + dx,
+              cz = czi + dz
+            if (!chunks.has(cx + ',' + cz)) toLoad.push([cx, cz])
+          }
+        }
 
-  if (initial) {
-    for (const [cx, cz] of toLoad) loadChunk(cx, cz);
-  } else {
-    const n = Math.min(CHUNKS_PER_FRAME, toLoad.length);
-    for (let i = 0; i < n; i++) loadChunk(toLoad[i][0], toLoad[i][1]);
-  }
+        if (initial) {
+          for (const [cx, cz] of toLoad) loadChunk(cx, cz)
+        } else {
+          const n = Math.min(CHUNKS_PER_FRAME, toLoad.length)
+          for (let i = 0; i < n; i++) loadChunk(toLoad[i][0], toLoad[i][1])
+        }
 
-  // Выгрузка — с запасом, чтобы не мигало на границе
-  const toUnload = [];
-  for (const key of chunks.keys()) {
-    const [cs, czs] = key.split(',');
-    const dx = +cs - cxi, dz = +czs - czi;
-    if (dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
-        dx >  (LOAD_FWD_CHUNKS  + UNLOAD_MARGIN) ||
-        Math.abs(dz) > (LOAD_SIDE_CHUNKS + UNLOAD_MARGIN)) {
-      toUnload.push(key);
-    }
-  }
-  for (const k of toUnload) unloadChunk(k);
-}
+        // Выгрузка — с запасом, чтобы не мигало на границе
+        const toUnload = []
+        for (const key of chunks.keys()) {
+          const [cs, czs] = key.split(',')
+          const dx = +cs - cxi,
+            dz = +czs - czi
+          if (
+            dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
+            dx > LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
+            Math.abs(dz) > LOAD_SIDE_CHUNKS + UNLOAD_MARGIN
+          ) {
+            toUnload.push(key)
+          }
+        }
+        for (const k of toUnload) unloadChunk(k)
+      }
 
-
-
-/* ================================================================
+      /* ================================================================
    3c. FAR GROUND TILES — грубый ландшафт для 2D-режима
 ================================================================ */
-const FAR_TILE_SIZE  = 1600;   // 1600×1600 м на тайл — совпадает с overlay
-const FAR_TILE_SEG   = 120;     // 40 м на квад — грубо, но издалека не видно
-const FAR_LOAD_R     = 2;      // 5×5 тайлов → ~±3200 м от центрального тайла
-const FAR_UNLOAD_R   = 3;
-const FAR_PER_FRAME  = 3;
+      const FAR_TILE_SIZE = 1600 // 1600×1600 м на тайл — совпадает с overlay
+      const FAR_TILE_SEG = 120 // 40 м на квад — грубо, но издалека не видно
+      const FAR_LOAD_R = 2 // 5×5 тайлов → ~±3200 м от центрального тайла
+      const FAR_UNLOAD_R = 3
+      const FAR_PER_FRAME = 3
 
-// Свой материал — нужен отдельный opacity для плавного перехода
-const farGroundMat = new THREE.MeshStandardMaterial({
-  map: groundTex, vertexColors: true, roughness: 1, metalness: 0,
-  transparent: true, opacity: 0,
-});
+      // Свой материал — нужен отдельный opacity для плавного перехода
+      const farGroundMat = new THREE.MeshStandardMaterial({
+        map: groundTex,
+        vertexColors: true,
+        roughness: 1,
+        metalness: 0,
+        transparent: true,
+        opacity: 0,
+      })
 
-const farTiles = new Map();
+      const farTiles = new Map()
 
-function makeFarTileGeometry(fx, fz) {
-  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, FAR_TILE_SEG, FAR_TILE_SEG);
-  geo.rotateX(-Math.PI / 2);
+      function makeFarTileGeometry(fx, fz) {
+        const geo = new THREE.PlaneGeometry(
+          FAR_TILE_SIZE,
+          FAR_TILE_SIZE,
+          FAR_TILE_SEG,
+          FAR_TILE_SEG
+        )
+        geo.rotateX(-Math.PI / 2)
 
-  const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2;
-  const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2;
+        const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+        const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
 
-  const pos = geo.attributes.position;
-  const uv  = geo.attributes.uv;
+        const pos = geo.attributes.position
+        const uv = geo.attributes.uv
 
-  const colArr = new Float32Array(pos.count * 3);
-  const col    = new THREE.Color();
+        const colArr = new Float32Array(pos.count * 3)
+        const col = new THREE.Color()
 
-  for (let i = 0; i < pos.count; i++) {
-    const wx = cxw + pos.getX(i);
-    const wz = czw + pos.getZ(i);
-    const h  = terrainHeight(wx, wz);
+        for (let i = 0; i < pos.count; i++) {
+          const wx = cxw + pos.getX(i)
+          const wz = czw + pos.getZ(i)
+          const h = terrainHeight(wx, wz)
 
-    pos.setY(i, h);
-    uv.setXY(i, wx / TILE, wz / TILE);
+          pos.setY(i, h)
+          uv.setXY(i, wx / TILE, wz / TILE)
 
-    heightToTerrainColor(h, col);
-    colArr[i * 3    ] = col.r;
-    colArr[i * 3 + 1] = col.g;
-    colArr[i * 3 + 2] = col.b;
-  }
-  pos.needsUpdate = true;
-  uv.needsUpdate  = true;
-  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
-  geo.computeVertexNormals();
-  return geo;
-}
+          heightToTerrainColor(h, col)
+          colArr[i * 3] = col.r
+          colArr[i * 3 + 1] = col.g
+          colArr[i * 3 + 2] = col.b
+        }
+        pos.needsUpdate = true
+        uv.needsUpdate = true
+        geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
+        geo.computeVertexNormals()
+        return geo
+      }
 
-function loadFarTile(fx, fz) {
-  const key = fx + ',' + fz;
-  if (farTiles.has(key)) return;
-  const geo  = makeFarTileGeometry(fx, fz);
-  const mesh = new THREE.Mesh(geo, farGroundMat);
-  mesh.position.set(
-    fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2, 0,
-    fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
-  );
-  mesh.receiveShadow = false;   // издалека тени не нужны
-  mesh.visible = false;         // покажем через updateLOD
-  scene.add(mesh);
-  farTiles.set(key, { mesh, geo });
-}
+      function loadFarTile(fx, fz) {
+        const key = fx + ',' + fz
+        if (farTiles.has(key)) return
+        const geo = makeFarTileGeometry(fx, fz)
+        const mesh = new THREE.Mesh(geo, farGroundMat)
+        mesh.position.set(
+          fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2,
+          0,
+          fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
+        )
+        mesh.receiveShadow = false // издалека тени не нужны
+        mesh.visible = false // покажем через updateLOD
+        scene.add(mesh)
+        farTiles.set(key, { mesh, geo })
+      }
 
-function unloadFarTile(key) {
-  const c = farTiles.get(key);
-  if (!c) return;
-  scene.remove(c.mesh);
-  c.geo.dispose();
-  farTiles.delete(key);
-}
+      function unloadFarTile(key) {
+        const c = farTiles.get(key)
+        if (!c) return
+        scene.remove(c.mesh)
+        c.geo.dispose()
+        farTiles.delete(key)
+      }
 
-function updateFarTiles(camX, camZ, initial = false) {
-  const fxi = Math.floor(camX / FAR_TILE_SIZE);
-  const fzi = Math.floor(camZ / FAR_TILE_SIZE);
+      function updateFarTiles(camX, camZ, initial = false) {
+        const fxi = Math.floor(camX / FAR_TILE_SIZE)
+        const fzi = Math.floor(camZ / FAR_TILE_SIZE)
 
-  const toLoad = [];
-  for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
-    for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
-      const fx = fxi + dx, fz = fzi + dz;
-      if (!farTiles.has(fx + ',' + fz)) toLoad.push([fx, fz]);
-    }
-  }
+        const toLoad = []
+        for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
+          for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
+            const fx = fxi + dx,
+              fz = fzi + dz
+            if (!farTiles.has(fx + ',' + fz)) toLoad.push([fx, fz])
+          }
+        }
 
-  if (initial) {
-    for (const [fx, fz] of toLoad) loadFarTile(fx, fz);
-  } else {
-    const n = Math.min(FAR_PER_FRAME, toLoad.length);
-    for (let i = 0; i < n; i++) loadFarTile(toLoad[i][0], toLoad[i][1]);
-  }
+        if (initial) {
+          for (const [fx, fz] of toLoad) loadFarTile(fx, fz)
+        } else {
+          const n = Math.min(FAR_PER_FRAME, toLoad.length)
+          for (let i = 0; i < n; i++) loadFarTile(toLoad[i][0], toLoad[i][1])
+        }
 
-  const toUnload = [];
-  for (const key of farTiles.keys()) {
-    const [fxs, fzs] = key.split(',');
-    if (Math.abs(+fxs - fxi) > FAR_UNLOAD_R ||
-        Math.abs(+fzs - fzi) > FAR_UNLOAD_R) {
-      toUnload.push(key);
-    }
-  }
-  for (const k of toUnload) unloadFarTile(k);
-}
+        const toUnload = []
+        for (const key of farTiles.keys()) {
+          const [fxs, fzs] = key.split(',')
+          if (
+            Math.abs(+fxs - fxi) > FAR_UNLOAD_R ||
+            Math.abs(+fzs - fzi) > FAR_UNLOAD_R
+          ) {
+            toUnload.push(key)
+          }
+        }
+        for (const k of toUnload) unloadFarTile(k)
+      }
 
-
-/* ================================================================
+      /* ================================================================
    4. PROPS: единые templates + InstancedMesh
    Вместо Group из десятков Mesh — одна merged geometry на тип.
 ================================================================ */
 
-// Один материал на все пропсы. Цвет задаётся vertex colors.
-const propMat = new THREE.MeshStandardMaterial({
-  vertexColors: true,
-  roughness: 0.92,
-  metalness: 0,
-  flatShading: false,
-});
+      // Один материал на все пропсы. Цвет задаётся vertex colors.
+      const propMat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.92,
+        metalness: 0,
+        flatShading: false,
+      })
 
-// Плоский диск для запечённой тени. Один на всю сцену.
-const shadowDiskGeo = new THREE.CircleGeometry(1, 8);
-shadowDiskGeo.rotateX(-Math.PI / 2);
-const shadowDiskMat = new THREE.MeshBasicMaterial({
-  color: 0x0a1a10,
-  transparent: true,
-  opacity: 0.32,
-  depthWrite: false,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1,
-});
+      // Плоский диск для запечённой тени. Один на всю сцену.
+      const shadowDiskGeo = new THREE.CircleGeometry(1, 8)
+      shadowDiskGeo.rotateX(-Math.PI / 2)
+      const shadowDiskMat = new THREE.MeshBasicMaterial({
+        color: 0x0a1a10,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      })
 
-// Утилита: красит все вершины geometry в hex.
-function setGeoColor(geo, hex) {
-  const c = new THREE.Color(hex);
-  const n = geo.attributes.position.count;
-  const arr = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    arr[i * 3    ] = c.r;
-    arr[i * 3 + 1] = c.g;
-    arr[i * 3 + 2] = c.b;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-  return geo;
-}
+      // Утилита: красит все вершины geometry в hex.
+      function setGeoColor(geo, hex) {
+        const c = new THREE.Color(hex)
+        const n = geo.attributes.position.count
+        const arr = new Float32Array(n * 3)
+        for (let i = 0; i < n; i++) {
+          arr[i * 3] = c.r
+          arr[i * 3 + 1] = c.g
+          arr[i * 3 + 2] = c.b
+        }
+        geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
+        return geo
+      }
 
-// --- Шаблоны. Строятся один раз при инициализации. ---
+      // --- Шаблоны. Строятся один раз при инициализации. ---
 
-function buildPineTemplate() {
-  const geos = [];
-  const h = 3.6;
-  const trunk = new THREE.CylinderGeometry(0.18, 0.28, h, 6);
-  trunk.translate(0, h / 2, 0);
-  geos.push(setGeoColor(trunk, 0x7a4a24));
+      function buildPineTemplate() {
+        const geos = []
+        const h = 3.6
+        const trunk = new THREE.CylinderGeometry(0.18, 0.28, h, 6)
+        trunk.translate(0, h / 2, 0)
+        geos.push(setGeoColor(trunk, 0x7a4a24))
 
-  const layers = 3;
-  for (let i = 0; i < layers; i++) {
-    const r  = 1.55 - i * 0.32;
-    const lh = 1.8  - i * 0.15;
-    const cone = new THREE.ConeGeometry(r, lh, 7);
-    cone.translate(0, h + i * (lh * 0.5) + lh * 0.3, 0);
-    geos.push(setGeoColor(cone, 0x2f7d32));
-  }
-  return mergeGeometries(geos);
-}
+        const layers = 3
+        for (let i = 0; i < layers; i++) {
+          const r = 1.55 - i * 0.32
+          const lh = 1.8 - i * 0.15
+          const cone = new THREE.ConeGeometry(r, lh, 7)
+          cone.translate(0, h + i * (lh * 0.5) + lh * 0.3, 0)
+          geos.push(setGeoColor(cone, 0x2f7d32))
+        }
+        return mergeGeometries(geos)
+      }
 
-function buildOakTemplate() {
-  const geos = [];
-  const th = 2.2;
-  const trunk = new THREE.CylinderGeometry(0.22, 0.34, th, 6);
-  trunk.translate(0, th / 2, 0);
-  geos.push(setGeoColor(trunk, 0x7a4a24));
+      function buildOakTemplate() {
+        const geos = []
+        const th = 2.2
+        const trunk = new THREE.CylinderGeometry(0.22, 0.34, th, 6)
+        trunk.translate(0, th / 2, 0)
+        geos.push(setGeoColor(trunk, 0x7a4a24))
 
-  // Фиксированный набор блобов, но при желании можно рандомить.
-  const blobs = [
-    [ 0.0, th + 0.9,  0.0, 1.15],
-    [ 0.6, th + 1.3, -0.4, 0.95],
-    [-0.5, th + 1.4,  0.5, 0.90],
-    [ 0.2, th + 1.9, -0.1, 0.85],
-  ];
-  for (const [x, y, z, r] of blobs) {
-    const s = new THREE.SphereGeometry(r, 8, 6);
-    s.translate(x, y, z);
-    geos.push(setGeoColor(s, 0x3f9440));
-  }
-  return mergeGeometries(geos);
-}
+        // Фиксированный набор блобов, но при желании можно рандомить.
+        const blobs = [
+          [0.0, th + 0.9, 0.0, 1.15],
+          [0.6, th + 1.3, -0.4, 0.95],
+          [-0.5, th + 1.4, 0.5, 0.9],
+          [0.2, th + 1.9, -0.1, 0.85],
+        ]
+        for (const [x, y, z, r] of blobs) {
+          const s = new THREE.SphereGeometry(r, 8, 6)
+          s.translate(x, y, z)
+          geos.push(setGeoColor(s, 0x3f9440))
+        }
+        return mergeGeometries(geos)
+      }
 
-function buildBushTemplate() {
-  const geos = [];
-  const blobs = [
-    [ 0.0, 0.55,  0.0, 0.65],
-    [ 0.4, 0.45, -0.3, 0.55],
-    [-0.35, 0.50, 0.35, 0.55],
-  ];
-  for (const [x, y, z, r] of blobs) {
-    const s = new THREE.SphereGeometry(r, 7, 5);
-    s.translate(x, y, z);
-    geos.push(setGeoColor(s, 0x2f7d32));
-  }
-  return mergeGeometries(geos);
-}
+      function buildBushTemplate() {
+        const geos = []
+        const blobs = [
+          [0.0, 0.55, 0.0, 0.65],
+          [0.4, 0.45, -0.3, 0.55],
+          [-0.35, 0.5, 0.35, 0.55],
+        ]
+        for (const [x, y, z, r] of blobs) {
+          const s = new THREE.SphereGeometry(r, 7, 5)
+          s.translate(x, y, z)
+          geos.push(setGeoColor(s, 0x2f7d32))
+        }
+        return mergeGeometries(geos)
+      }
 
-function buildRockTemplate() {
-  const g = new THREE.IcosahedronGeometry(1, 0);
-  g.scale(1, 0.75, 1);
-  return setGeoColor(g, 0x8a8479);
-}
+      function buildRockTemplate() {
+        const g = new THREE.IcosahedronGeometry(1, 0)
+        g.scale(1, 0.75, 1)
+        return setGeoColor(g, 0x8a8479)
+      }
 
-// Строим все шаблоны один раз
-const TEMPLATES = {
-  pine: buildPineTemplate(),
-  oak:  buildOakTemplate(),
-  bush: buildBushTemplate(),
-  rock: buildRockTemplate(),
-};
+      // Строим все шаблоны один раз
+      const TEMPLATES = {
+        pine: buildPineTemplate(),
+        oak: buildOakTemplate(),
+        bush: buildBushTemplate(),
+        rock: buildRockTemplate(),
+      }
 
-
-
-/* ================================================================
+      /* ================================================================
    5. BOSS (босс из коробок)
 ================================================================ */
-const boss = new THREE.Group();
-boss.position.set(-2.6, 0, 0);
+      const boss = new THREE.Group()
+      boss.position.set(-2.6, 0, 0)
 
-const skinMat   = new THREE.MeshStandardMaterial({ color: 0xd94f6b, roughness: .55 });
-const darkMat   = new THREE.MeshStandardMaterial({ color: 0x2b2233, roughness: .8 });
-const accentMat = new THREE.MeshStandardMaterial({ color: 0xffd75e, roughness: .4, metalness: .3 });
+      const skinMat = new THREE.MeshStandardMaterial({
+        color: 0xd94f6b,
+        roughness: 0.55,
+      })
+      const darkMat = new THREE.MeshStandardMaterial({
+        color: 0x2b2233,
+        roughness: 0.8,
+      })
+      const accentMat = new THREE.MeshStandardMaterial({
+        color: 0xffd75e,
+        roughness: 0.4,
+        metalness: 0.3,
+      })
 
-function box(w, h, d, mat) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.castShadow = true; m.receiveShadow = true;
-  return m;
-}
+      function box(w, h, d, mat) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+        m.castShadow = true
+        m.receiveShadow = true
+        return m
+      }
 
-// Торс
-const torso = box(2.0, 2.4, 1.4, skinMat);
-torso.position.y = 3.8;
-boss.add(torso);
+      // Торс
+      const torso = box(2.0, 2.4, 1.4, skinMat)
+      torso.position.y = 3.8
+      boss.add(torso)
 
-// Грудь-акцент
-const chest = box(1.1, 0.9, 0.15, accentMat);
-chest.position.set(0, 4.0, 0.75);
-boss.add(chest);
+      // Грудь-акцент
+      const chest = box(1.1, 0.9, 0.15, accentMat)
+      chest.position.set(0, 4.0, 0.75)
+      boss.add(chest)
 
-// Голова
-const head = box(1.25, 1.2, 1.2, skinMat);
-head.position.y = 5.7;
-boss.add(head);
+      // Голова
+      const head = box(1.25, 1.2, 1.2, skinMat)
+      head.position.y = 5.7
+      boss.add(head)
 
-// Глаза
-for (const zz of [0.62, -0.62]) {
-  const eye = box(0.3, 0.22, 0.1, darkMat);
-  eye.position.set(0.3, 5.85, zz);
-  eye.rotation.y = 0;
-  boss.add(eye);
-}
-// Брови (злые)
-const brow = box(0.36, 0.1, 0.12, darkMat);
-brow.position.set(0.32, 6.05, 0.62); brow.rotation.z = -0.35; boss.add(brow);
-const brow2 = brow.clone(); brow2.position.z = -0.62; brow2.rotation.z = 0.35; boss.add(brow2);
+      // Глаза
+      for (const zz of [0.62, -0.62]) {
+        const eye = box(0.3, 0.22, 0.1, darkMat)
+        eye.position.set(0.3, 5.85, zz)
+        eye.rotation.y = 0
+        boss.add(eye)
+      }
+      // Брови (злые)
+      const brow = box(0.36, 0.1, 0.12, darkMat)
+      brow.position.set(0.32, 6.05, 0.62)
+      brow.rotation.z = -0.35
+      boss.add(brow)
+      const brow2 = brow.clone()
+      brow2.position.z = -0.62
+      brow2.rotation.z = 0.35
+      boss.add(brow2)
 
-// Руки
-const armL = box(0.55, 2.1, 0.55, skinMat);
-armL.position.set(0, 3.6, 1.05);
-armL.geometry.translate(0, -1.05, 0);
-armL.position.y = 4.7;
-boss.add(armL);
+      // Руки
+      const armL = box(0.55, 2.1, 0.55, skinMat)
+      armL.position.set(0, 3.6, 1.05)
+      armL.geometry.translate(0, -1.05, 0)
+      armL.position.y = 4.7
+      boss.add(armL)
 
-const armR = box(0.55, 2.1, 0.55, skinMat);
-armR.geometry.translate(0, -1.05, 0);
-armR.position.set(0, 4.7, -1.05);
-boss.add(armR);
+      const armR = box(0.55, 2.1, 0.55, skinMat)
+      armR.geometry.translate(0, -1.05, 0)
+      armR.position.set(0, 4.7, -1.05)
+      boss.add(armR)
 
-// Ноги — пивот в бедре
-function makeLeg() {
-  const pivot = new THREE.Group();
-  const upper = box(0.72, 1.4, 0.72, darkMat);
-  upper.position.y = -0.7;
-  pivot.add(upper);
-  const lower = box(0.62, 1.3, 0.62, darkMat);
-  lower.position.y = -2.0;
-  pivot.add(lower);
-  const foot = box(0.85, 0.4, 0.95, accentMat);
-  foot.position.set(0.18, -2.75, 0);
-  pivot.add(foot);
-  return pivot;
-}
+      // Ноги — пивот в бедре
+      function makeLeg() {
+        const pivot = new THREE.Group()
+        const upper = box(0.72, 1.4, 0.72, darkMat)
+        upper.position.y = -0.7
+        pivot.add(upper)
+        const lower = box(0.62, 1.3, 0.62, darkMat)
+        lower.position.y = -2.0
+        pivot.add(lower)
+        const foot = box(0.85, 0.4, 0.95, accentMat)
+        foot.position.set(0.18, -2.75, 0)
+        pivot.add(foot)
+        return pivot
+      }
 
-const legBack = makeLeg();
-legBack.position.set(0, 2.6, -0.5);
-boss.add(legBack);
+      const legBack = makeLeg()
+      legBack.position.set(0, 2.6, -0.5)
+      boss.add(legBack)
 
-const legKick = makeLeg();
-legKick.position.set(0, 2.6, 0.5);
-boss.add(legKick);
+      const legKick = makeLeg()
+      legKick.position.set(0, 2.6, 0.5)
+      boss.add(legKick)
 
-scene.add(boss);
+      scene.add(boss)
 
-
-
-/* ================================================================
+      /* ================================================================
    5b. VEG OVERLAY CHUNKS — 2D-точки, размер 1600×1600
 ================================================================ */
-const OVERLAY_SIZE     = 1600;
-// = OVERLAY_SIZE / (CHUNK_SIZE / CHUNK_SEG) — совпадает с разрешением земли,
-// иначе overlay «проваливается» под рельеф на пиках, и туман рисуется пятнами.
-const OVERLAY_SEG      = 120;
-const OVERLAY_CANVAS   = 1024;   // 1.6 м/пиксель — точки чётче, без «каши»
-const OVERLAY_LOAD_R   = 2;
-const OVERLAY_UNLOAD_R = 3;
-const OVERLAY_PER_FRAME= 1;
+      const OVERLAY_SIZE = 1600
+      // = OVERLAY_SIZE / (CHUNK_SIZE / CHUNK_SEG) — совпадает с разрешением земли,
+      // иначе overlay «проваливается» под рельеф на пиках, и туман рисуется пятнами.
+      const OVERLAY_SEG = 120
+      const OVERLAY_CANVAS = 1024 // 1.6 м/пиксель — точки чётче, без «каши»
+      const OVERLAY_LOAD_R = 2
+      const OVERLAY_UNLOAD_R = 3
+      const OVERLAY_PER_FRAME = 1
 
-const overlayChunks = new Map(); // "ox,oz" -> { mesh, mat, tex, geo }
+      const overlayChunks = new Map() // "ox,oz" -> { mesh, mat, tex, geo }
 
-function makeOverlayGeometry(ox, oz) {
-  const geo = new THREE.PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE, OVERLAY_SEG, OVERLAY_SEG);
-  geo.rotateX(-Math.PI / 2);
+      function makeOverlayGeometry(ox, oz) {
+        const geo = new THREE.PlaneGeometry(
+          OVERLAY_SIZE,
+          OVERLAY_SIZE,
+          OVERLAY_SEG,
+          OVERLAY_SEG
+        )
+        geo.rotateX(-Math.PI / 2)
 
-  const cxw = ox * OVERLAY_SIZE + OVERLAY_SIZE / 2;
-  const czw = oz * OVERLAY_SIZE + OVERLAY_SIZE / 2;
+        const cxw = ox * OVERLAY_SIZE + OVERLAY_SIZE / 2
+        const czw = oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
 
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const wx = cxw + pos.getX(i);
-    const wz = czw + pos.getZ(i);
-    pos.setY(i, terrainHeight(wx, wz));
-  }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
-}
+        const pos = geo.attributes.position
+        for (let i = 0; i < pos.count; i++) {
+          const wx = cxw + pos.getX(i)
+          const wz = czw + pos.getZ(i)
+          pos.setY(i, terrainHeight(wx, wz))
+        }
+        pos.needsUpdate = true
+        geo.computeVertexNormals()
+        return geo
+      }
 
-function makeOverlayCanvas(ox, oz) {
-  const W = OVERLAY_CANVAS, H = OVERLAY_CANVAS;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
+      function makeOverlayCanvas(ox, oz) {
+        const W = OVERLAY_CANVAS,
+          H = OVERLAY_CANVAS
+        const canvas = document.createElement('canvas')
+        canvas.width = W
+        canvas.height = H
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, W, H)
 
-  const baseX = ox * OVERLAY_SIZE;
-  const baseZ = oz * OVERLAY_SIZE;
+        const baseX = ox * OVERLAY_SIZE
+        const baseZ = oz * OVERLAY_SIZE
 
-  // Свой seed — не совпадает с 3D-чанками
-  const seed = hash2i(ox + 0x51ED, oz + 0x270F) ^ WORLD_SEED;
-  const rng  = mulberry32(seed);
+        // Свой seed — не совпадает с 3D-чанками
+        const seed = hash2i(ox + 0x51ed, oz + 0x270f) ^ WORLD_SEED
+        const rng = mulberry32(seed)
 
-  const N = 2200;
-  for (let i = 0; i < N; i++) {
-    const wx = baseX + rng() * OVERLAY_SIZE;
-    const wz = baseZ + rng() * OVERLAY_SIZE;
-    if (Math.hypot(wx + 2.6, wz) < 16) continue;
+        const N = 2200
+        for (let i = 0; i < N; i++) {
+          const wx = baseX + rng() * OVERLAY_SIZE
+          const wz = baseZ + rng() * OVERLAY_SIZE
+          if (Math.hypot(wx + 2.6, wz) < 16) continue
 
-    const px = (wx - baseX) / OVERLAY_SIZE * W;
-    const py = (wz - baseZ) / OVERLAY_SIZE * H;
+          const px = ((wx - baseX) / OVERLAY_SIZE) * W
+          const py = ((wz - baseZ) / OVERLAY_SIZE) * H
 
-    const isRock = rng() < 0.18;
-    if (isRock) {
-      ctx.fillStyle = 'rgba(110, 102, 90, 0.7)';
-      ctx.fillRect(px, py, 1, 1);
-    } else {
-      const isBig = rng() < 0.35;
-      ctx.fillStyle = isBig
-        ? 'rgba(18, 55, 16, 0.9)'
-        : 'rgba(28, 75, 22, 0.75)';
-      ctx.fillRect(px, py, 1, 1);
-      if (isBig) ctx.fillRect(px + 1, py, 1, 1);
-    }
-  }
+          const isRock = rng() < 0.18
+          if (isRock) {
+            ctx.fillStyle = 'rgba(110, 102, 90, 0.7)'
+            ctx.fillRect(px, py, 1, 1)
+          } else {
+            const isBig = rng() < 0.35
+            ctx.fillStyle = isBig
+              ? 'rgba(18, 55, 16, 0.9)'
+              : 'rgba(28, 75, 22, 0.75)'
+            ctx.fillRect(px, py, 1, 1)
+            if (isBig) ctx.fillRect(px + 1, py, 1, 1)
+          }
+        }
 
-  const tex = new THREE.CanvasTexture(canvas);
-  // NearestFilter: точки — пиксельные, без размазанных линейной интерполяцией
-  // зелёно-чёрных «ореолов», которые путают восприятие тумана.
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  return tex;
-}
+        const tex = new THREE.CanvasTexture(canvas)
+        // NearestFilter: точки — пиксельные, без размазанных линейной интерполяцией
+        // зелёно-чёрных «ореолов», которые путают восприятие тумана.
+        tex.minFilter = THREE.NearestFilter
+        tex.magFilter = THREE.NearestFilter
+        tex.generateMipmaps = false
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy()
+        return tex
+      }
 
-function loadOverlayChunk(ox, oz) {
-  const key = ox + ',' + oz;
-  if (overlayChunks.has(key)) return;
+      function loadOverlayChunk(ox, oz) {
+        const key = ox + ',' + oz
+        if (overlayChunks.has(key)) return
 
-  const geo  = makeOverlayGeometry(ox, oz);
-  const tex  = makeOverlayCanvas(ox, oz);
-  const mat  = new THREE.MeshBasicMaterial({
-    map: tex,
-    transparent: true,
-    depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -4,
-    polygonOffsetUnits: -4,
-  });
+        const geo = makeOverlayGeometry(ox, oz)
+        const tex = makeOverlayCanvas(ox, oz)
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -4,
+          polygonOffsetUnits: -4,
+        })
 
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(ox * OVERLAY_SIZE + OVERLAY_SIZE / 2, 0, oz * OVERLAY_SIZE + OVERLAY_SIZE / 2);
-  mesh.renderOrder = 2;
-  mesh.material.opacity = lodFade;
-  mesh.visible = lodFade > 0.005;
-  scene.add(mesh);
+        const mesh = new THREE.Mesh(geo, mat)
+        mesh.position.set(
+          ox * OVERLAY_SIZE + OVERLAY_SIZE / 2,
+          0,
+          oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
+        )
+        mesh.renderOrder = 2
+        mesh.material.opacity = lodFade
+        mesh.visible = lodFade > 0.005
+        scene.add(mesh)
 
-  overlayChunks.set(key, { mesh, mat, tex, geo });
-}
+        overlayChunks.set(key, { mesh, mat, tex, geo })
+      }
 
-function unloadOverlayChunk(key) {
-  const c = overlayChunks.get(key);
-  if (!c) return;
-  scene.remove(c.mesh);
-  c.geo.dispose();
-  c.tex.dispose();
-  c.mat.dispose();
-  overlayChunks.delete(key);
-}
+      function unloadOverlayChunk(key) {
+        const c = overlayChunks.get(key)
+        if (!c) return
+        scene.remove(c.mesh)
+        c.geo.dispose()
+        c.tex.dispose()
+        c.mat.dispose()
+        overlayChunks.delete(key)
+      }
 
-function updateOverlayChunks(camX, camZ, initial = false) {
-  const oxi = Math.floor(camX / OVERLAY_SIZE);
-  const ozi = Math.floor(camZ / OVERLAY_SIZE);
+      function updateOverlayChunks(camX, camZ, initial = false) {
+        const oxi = Math.floor(camX / OVERLAY_SIZE)
+        const ozi = Math.floor(camZ / OVERLAY_SIZE)
 
-  const toLoad = [];
-  for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
-    for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
-      const ox = oxi + dx, oz = ozi + dz;
-      if (!overlayChunks.has(ox + ',' + oz)) toLoad.push([ox, oz]);
-    }
-  }
+        const toLoad = []
+        for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
+          for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
+            const ox = oxi + dx,
+              oz = ozi + dz
+            if (!overlayChunks.has(ox + ',' + oz)) toLoad.push([ox, oz])
+          }
+        }
 
-  if (initial) {
-    for (const [ox, oz] of toLoad) loadOverlayChunk(ox, oz);
-  } else {
-    const n = Math.min(OVERLAY_PER_FRAME, toLoad.length);
-    for (let i = 0; i < n; i++) loadOverlayChunk(toLoad[i][0], toLoad[i][1]);
-  }
+        if (initial) {
+          for (const [ox, oz] of toLoad) loadOverlayChunk(ox, oz)
+        } else {
+          const n = Math.min(OVERLAY_PER_FRAME, toLoad.length)
+          for (let i = 0; i < n; i++)
+            loadOverlayChunk(toLoad[i][0], toLoad[i][1])
+        }
 
-  const toUnload = [];
-  for (const key of overlayChunks.keys()) {
-    const [oxs, ozs] = key.split(',');
-    if (Math.abs(+oxs - oxi) > OVERLAY_UNLOAD_R ||
-        Math.abs(+ozs - ozi) > OVERLAY_UNLOAD_R) toUnload.push(key);
-  }
-  for (const k of toUnload) unloadOverlayChunk(k);
-}
+        const toUnload = []
+        for (const key of overlayChunks.keys()) {
+          const [oxs, ozs] = key.split(',')
+          if (
+            Math.abs(+oxs - oxi) > OVERLAY_UNLOAD_R ||
+            Math.abs(+ozs - ozi) > OVERLAY_UNLOAD_R
+          )
+            toUnload.push(key)
+        }
+        for (const k of toUnload) unloadOverlayChunk(k)
+      }
 
-// Флаги LOD
-let in2DMode = false;
-let lodFade  = 0;
+      // Флаги LOD
+      let in2DMode = false
+      let lodFade = 0
 
-const FOG_3D_NEAR = 90,  FOG_3D_FAR  = 620;
-const FOG_2D_NEAR = 500, FOG_2D_FAR  = 2000;
+      const FOG_3D_NEAR = 90,
+        FOG_3D_FAR = 620
+      const FOG_2D_NEAR = 500,
+        FOG_2D_FAR = 2000
 
-
-/* ================================================================
+      /* ================================================================
    6. ROCKET
 ================================================================ */
-const rocket = new THREE.Group();
+      const rocket = new THREE.Group()
 
-const bodyMat   = new THREE.MeshStandardMaterial({ color: 0xf2f4f8, metalness: .55, roughness: .3 });
-const redMat    = new THREE.MeshStandardMaterial({ color: 0xe63946, metalness: .3, roughness: .45 });
-const glassMat  = new THREE.MeshStandardMaterial({ color: 0x2b3a55, metalness: .9, roughness: .15 });
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0xf2f4f8,
+        metalness: 0.55,
+        roughness: 0.3,
+      })
+      const redMat = new THREE.MeshStandardMaterial({
+        color: 0xe63946,
+        metalness: 0.3,
+        roughness: 0.45,
+      })
+      const glassMat = new THREE.MeshStandardMaterial({
+        color: 0x2b3a55,
+        metalness: 0.9,
+        roughness: 0.15,
+      })
 
-// Корпус
-const rBody = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 2.2, 16), bodyMat);
-rBody.rotation.z = Math.PI / 2;
-rBody.castShadow = true;
-rocket.add(rBody);
+      // Корпус
+      const rBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.36, 0.36, 2.2, 16),
+        bodyMat
+      )
+      rBody.rotation.z = Math.PI / 2
+      rBody.castShadow = true
+      rocket.add(rBody)
 
-// Нос
-const rNose = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.0, 16), redMat);
-rNose.rotation.z = -Math.PI / 2;
-rNose.position.x = 1.6;
-rNose.castShadow = true;
-rocket.add(rNose);
+      // Нос
+      const rNose = new THREE.Mesh(
+        new THREE.ConeGeometry(0.36, 1.0, 16),
+        redMat
+      )
+      rNose.rotation.z = -Math.PI / 2
+      rNose.position.x = 1.6
+      rNose.castShadow = true
+      rocket.add(rNose)
 
-// Иллюминатор
-const port = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 12), glassMat);
-port.rotation.x = Math.PI / 2;
-port.position.set(0.5, 0.3, 0.33);
-rocket.add(port);
+      // Иллюминатор
+      const port = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.17, 0.17, 0.06, 12),
+        glassMat
+      )
+      port.rotation.x = Math.PI / 2
+      port.position.set(0.5, 0.3, 0.33)
+      rocket.add(port)
 
-// Плавники
-const finShape = new THREE.Shape();
-finShape.moveTo(0, 0);
-finShape.lineTo(-1.0, 0);
-finShape.lineTo(-1.0, 0.55);
-finShape.closePath();
-const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.07, bevelEnabled: false });
-finGeo.translate(0, 0, -0.035);
+      // Плавники
+      const finShape = new THREE.Shape()
+      finShape.moveTo(0, 0)
+      finShape.lineTo(-1.0, 0)
+      finShape.lineTo(-1.0, 0.55)
+      finShape.closePath()
+      const finGeo = new THREE.ExtrudeGeometry(finShape, {
+        depth: 0.07,
+        bevelEnabled: false,
+      })
+      finGeo.translate(0, 0, -0.035)
 
-for (const sgn of [1, -1]) {
-  const fin = new THREE.Mesh(finGeo, redMat);
-  fin.position.set(-0.35, 0.34 * sgn, 0);
-  fin.scale.y = sgn;
-  fin.castShadow = true;
-  rocket.add(fin);
-}
+      for (const sgn of [1, -1]) {
+        const fin = new THREE.Mesh(finGeo, redMat)
+        fin.position.set(-0.35, 0.34 * sgn, 0)
+        fin.scale.y = sgn
+        fin.castShadow = true
+        rocket.add(fin)
+      }
 
-// Сопло
-const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.5, 0.5, 14), darkMat);
-nozzle.rotation.z = Math.PI / 2;
-nozzle.position.x = -1.25;
-rocket.add(nozzle);
+      // Сопло
+      const nozzle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.36, 0.5, 0.5, 14),
+        darkMat
+      )
+      nozzle.rotation.z = Math.PI / 2
+      nozzle.position.x = -1.25
+      rocket.add(nozzle)
 
-// Пламя
-const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb703, transparent: true, opacity: .95 });
-const flame = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.4, 12), flameMat);
-flame.rotation.z = Math.PI / 2;
-flame.position.x = -2.1;
-rocket.add(flame);
+      // Пламя
+      const flameMat = new THREE.MeshBasicMaterial({
+        color: 0xffb703,
+        transparent: true,
+        opacity: 0.95,
+      })
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(0.36, 1.4, 12),
+        flameMat
+      )
+      flame.rotation.z = Math.PI / 2
+      flame.position.x = -2.1
+      rocket.add(flame)
 
-const flameInner = new THREE.Mesh(
-  new THREE.ConeGeometry(0.2, 0.9, 10),
-  new THREE.MeshBasicMaterial({ color: 0xfff6d0 })
-);
-flameInner.rotation.z = Math.PI / 2;
-flameInner.position.x = -1.85;
-rocket.add(flameInner);
+      const flameInner = new THREE.Mesh(
+        new THREE.ConeGeometry(0.2, 0.9, 10),
+        new THREE.MeshBasicMaterial({ color: 0xfff6d0 })
+      )
+      flameInner.rotation.z = Math.PI / 2
+      flameInner.position.x = -1.85
+      rocket.add(flameInner)
 
-const exhaustLight = new THREE.PointLight(0xff9a3c, 0, 14);
-exhaustLight.position.set(-2.0, 0, 0);
-rocket.add(exhaustLight);
+      const exhaustLight = new THREE.PointLight(0xff9a3c, 0, 14)
+      exhaustLight.position.set(-2.0, 0, 0)
+      rocket.add(exhaustLight)
 
-scene.add(rocket);
+      scene.add(rocket)
 
-
-
-/* ================================================================
+      /* ================================================================
    7. GAME STATE
 ================================================================ */
-const GRAVITY = 9.8;                                       // м/с² — как в реальности
-const REST_Y  = 0.95;
-const LAUNCH_ANGLE = 20 * Math.PI / 180;                  // ~20° — оптимальный угол старта
+      const GRAVITY = 9.8 // м/с² — как в реальности
+      const REST_Y = 0.95
+      const LAUNCH_ANGLE = (20 * Math.PI) / 180 // ~20° — оптимальный угол старта
 
-// --- Угловая динамика (поворот носа W/S) ---
-const ANG_ACC  = 8.0;   // рад/с² — угловое ускорение от клавиши
-const ANG_DAMP = 0.8;    // 1/с   — вязкое затухание (чем больше — тем «гуще»)
-const ANG_MAX  = 18.0;    // рад/с — предохранитель от разгона
+      // --- Угловая динамика (поворот носа W/S) ---
+      const ANG_ACC = 8.0 // рад/с² — угловое ускорение от клавиши
+      const ANG_DAMP = 0.8 // 1/с   — вязкое затухание (чем больше — тем «гуще»)
+      const ANG_MAX = 18.0 // рад/с — предохранитель от разгона
 
-const G = {
-  phase: 'ready',        // ready | windup | strike | fly | landed
-  timer: 0,
-  coins: 0,
-  best: 0,
-  lastDist: 0,
-  fuel: 0,
-  upgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
-};
+      const G = {
+        phase: 'ready', // ready | windup | strike | fly | landed
+        timer: 0,
+        coins: 0,
+        best: 0,
+        lastDist: 0,
+        fuel: 0,
+        upgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
+      }
 
-const rocketState = {
-  pos: new THREE.Vector3(0, REST_Y, 0),
-  vel: new THREE.Vector3(),
-  angVel: 0,   // угловая скорость носа, рад/с
-};
+      const rocketState = {
+        pos: new THREE.Vector3(0, REST_Y, 0),
+        vel: new THREE.Vector3(),
+        angVel: 0, // угловая скорость носа, рад/с
+      }
 
-let boosting = false;
-let prevPhase = '';
+      let boosting = false
+      let prevPhase = ''
 
-const UPGRADES = [
-  { key: 'power',  icon: '🦵', name: 'Сила пинка',     desc: 'Дальше и выше',      base: 40, growth: 1.60 },
-  { key: 'aero',   icon: '🪶', name: 'Аэродинамика',   desc: 'Меньше торможения',  base: 45, growth: 1.60 },
-  { key: 'fuel',   icon: '⛽', name: 'Бак топлива',     desc: 'Дольше ускорение',   base: 35, growth: 1.55 },
-  { key: 'thrust', icon: '🔥', name: 'Тяга двигателя', desc: 'Сильнее ускорение',  base: 50, growth: 1.65 },
-];
+      const UPGRADES = [
+        {
+          key: 'power',
+          icon: '🦵',
+          name: 'Сила пинка',
+          desc: 'Дальше и выше',
+          base: 40,
+          growth: 1.6,
+        },
+        {
+          key: 'aero',
+          icon: '🪶',
+          name: 'Аэродинамика',
+          desc: 'Меньше торможения',
+          base: 45,
+          growth: 1.6,
+        },
+        {
+          key: 'fuel',
+          icon: '⛽',
+          name: 'Бак топлива',
+          desc: 'Дольше ускорение',
+          base: 35,
+          growth: 1.55,
+        },
+        {
+          key: 'thrust',
+          icon: '🔥',
+          name: 'Тяга двигателя',
+          desc: 'Сильнее ускорение',
+          base: 50,
+          growth: 1.65,
+        },
+      ]
 
-const costOf   = u => Math.floor(u.base * Math.pow(u.growth, G.upgrades[u.key] - 1));
+      const costOf = (u) =>
+        Math.floor(u.base * Math.pow(u.growth, G.upgrades[u.key] - 1))
 
-// Сила пинка — стартовая скорость в м/с
-const launchSpeed = () => 20 + G.upgrades.power * 6;        // Lv1: 26, Lv10: 80 м/с
+      // Сила пинка — стартовая скорость в м/с
+      const launchSpeed = () => 20 + G.upgrades.power * 6 // Lv1: 26, Lv10: 80 м/с
 
-// Бак — топливо в СЕКУНДАХ буста
-const maxFuel  = () => 2.0 + (G.upgrades.fuel - 1) * 0.45;  // Lv1: 2.0с, Lv10: 6.05с
+      // Бак — топливо в СЕКУНДАХ буста
+      const maxFuel = () => 2.0 + (G.upgrades.fuel - 1) * 0.45 // Lv1: 2.0с, Lv10: 6.05с
 
-// Тяга — чистое ускорение в м/с² вдоль носа ракеты
-const thrustAcc= () => 12 + (G.upgrades.thrust - 1) * 4;    // Lv1: 12, Lv10: 48 м/с²
+      // Тяга — чистое ускорение в м/с² вдоль носа ракеты
+      const thrustAcc = () => 12 + (G.upgrades.thrust - 1) * 4 // Lv1: 12, Lv10: 48 м/с²
 
-// Сопротивление воздуха: a_drag = k · v²  (квадратичное, как в аэродинамике)
-const dragCoef = () => 0.0025 / (1 + (G.upgrades.aero - 1) * 0.40);  // 1/м
+      // Сопротивление воздуха: a_drag = k · v²  (квадратичное, как в аэродинамике)
+      const dragCoef = () => 0.0025 / (1 + (G.upgrades.aero - 1) * 0.4) // 1/м
 
-const airDensity = (y) => Math.exp(-Math.max(0, y) / 20000);
+      const airDensity = (y) => Math.exp(-Math.max(0, y) / 20000)
 
-
-
-/* ================================================================
+      /* ================================================================
    8. UI
 ================================================================ */
-const $dist    = document.getElementById('dist');
-const $coins   = document.getElementById('coins');
-const $best    = document.getElementById('best');
-const $shop    = document.getElementById('shop');
-const $launch  = document.getElementById('launch');
-const $boostUI = document.getElementById('boostUI');
-const $fuelFill= document.getElementById('fuelFill');
-const $fuelText= document.getElementById('fuelText');
-const $alignText = document.getElementById('alignText');
-const $touchUI = document.getElementById('touchControls');
-const $toast   = document.getElementById('toast');
+      const $dist = document.getElementById('dist')
+      const $coins = document.getElementById('coins')
+      const $best = document.getElementById('best')
+      const $shop = document.getElementById('shop')
+      const $launch = document.getElementById('launch')
+      const $boostUI = document.getElementById('boostUI')
+      const $fuelFill = document.getElementById('fuelFill')
+      const $fuelText = document.getElementById('fuelText')
+      const $alignText = document.getElementById('alignText')
+      const $touchUI = document.getElementById('touchControls')
+      const $toast = document.getElementById('toast')
 
-function updateHUD() {
-  $dist.textContent  = Math.max(0, Math.floor(rocketState.pos.x));
-  $coins.textContent = G.coins;
-  $best.textContent  = Math.floor(G.best);
-}
+      function updateHUD() {
+        $dist.textContent = Math.max(0, Math.floor(rocketState.pos.x))
+        $coins.textContent = G.coins
+        $best.textContent = Math.floor(G.best)
+      }
 
-function renderShop() {
-  $shop.innerHTML = '';
-  for (const u of UPGRADES) {
-    const lvl  = G.upgrades[u.key];
-    const cost = costOf(u);
-    const can  = G.coins >= cost;
+      function renderShop() {
+        $shop.innerHTML = ''
+        for (const u of UPGRADES) {
+          const lvl = G.upgrades[u.key]
+          const cost = costOf(u)
+          const can = G.coins >= cost
 
-    const btn = document.createElement('button');
-    btn.className = 'upg' + (can ? '' : ' disabled');
-    btn.innerHTML = `
+          const btn = document.createElement('button')
+          btn.className = 'upg' + (can ? '' : ' disabled')
+          btn.innerHTML = `
       <div class="u-icon">${u.icon}</div>
       <div>
         <div class="u-name">${u.name} <span class="u-lvl">Lv.${lvl}</span></div>
         <div class="u-desc">${u.desc}</div>
       </div>
-      <div class="u-cost">💥 ${cost}</div>`;
-    btn.addEventListener('click', () => buy(u));
-    $shop.appendChild(btn);
-  }
-}
+      <div class="u-cost">💥 ${cost}</div>`
+          btn.addEventListener('click', () => buy(u))
+          $shop.appendChild(btn)
+        }
+      }
 
-function buy(u) {
-  const cost = costOf(u);
-  if (G.coins < cost) return;
-  G.coins -= cost;
-  G.upgrades[u.key]++;
-  updateHUD();
-  renderShop();
-  showToast(`${u.icon} Lv.${G.upgrades[u.key]}`, '#ffd75e');
-}
+      function buy(u) {
+        const cost = costOf(u)
+        if (G.coins < cost) return
+        G.coins -= cost
+        G.upgrades[u.key]++
+        updateHUD()
+        renderShop()
+        showToast(`${u.icon} Lv.${G.upgrades[u.key]}`, '#ffd75e')
+      }
 
-let toastTimer;
-function showToast(text, color = '#fff') {
-  $toast.textContent = text;
-  $toast.style.color = color;
-  $toast.classList.add('on');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $toast.classList.remove('on'), 900);
-}
+      let toastTimer
+      function showToast(text, color = '#fff') {
+        $toast.textContent = text
+        $toast.style.color = color
+        $toast.classList.add('on')
+        clearTimeout(toastTimer)
+        toastTimer = setTimeout(() => $toast.classList.remove('on'), 900)
+      }
 
-/* ================================================================
+      /* ================================================================
    9. INPUT
 ================================================================ */
-const input = { boost: false };
-const keys       = { W: false, S: false };  // клавиатура
-const touchKeys  = { W: false, S: false };  // тач-кнопки
+      const input = { boost: false }
+      const keys = { W: false, S: false } // клавиатура
+      const touchKeys = { W: false, S: false } // тач-кнопки
 
-addEventListener('keydown', e => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    input.boost = true;
-    if (G.phase === 'ready' || G.phase === 'landed') startKick();
-  }
-  if (e.code === 'KeyW') { keys.W = true; e.preventDefault(); }
-  if (e.code === 'KeyS') { keys.S = true; e.preventDefault(); }
-});
-addEventListener('keyup', e => {
-  if (e.code === 'Space') input.boost = false;
-  if (e.code === 'KeyW') keys.W = false;
-  if (e.code === 'KeyS') keys.S = false;
-});
+      addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+          e.preventDefault()
+          input.boost = true
+          if (G.phase === 'ready' || G.phase === 'landed') startKick()
+        }
+        if (e.code === 'KeyW') {
+          keys.W = true
+          e.preventDefault()
+        }
+        if (e.code === 'KeyS') {
+          keys.S = true
+          e.preventDefault()
+        }
+      })
+      addEventListener('keyup', (e) => {
+        if (e.code === 'Space') input.boost = false
+        if (e.code === 'KeyW') keys.W = false
+        if (e.code === 'KeyS') keys.S = false
+      })
 
-// --- Тач-кнопки поворота ---
-const $rotUp    = document.getElementById('rotUp');
-const $rotDown  = document.getElementById('rotDown');
+      // --- Тач-кнопки поворота ---
+      const $rotUp = document.getElementById('rotUp')
+      const $rotDown = document.getElementById('rotDown')
 
-function bindHold(el, setter) {
-  el.addEventListener('pointerdown', e => { e.preventDefault(); setter(true); });
-  el.addEventListener('pointerup',   () => setter(false));
-  el.addEventListener('pointerleave',() => setter(false));
-  el.addEventListener('pointercancel',() => setter(false));
-}
-bindHold($rotUp,   v => touchKeys.W = v);
-bindHold($rotDown, v => touchKeys.S = v);
+      function bindHold(el, setter) {
+        el.addEventListener('pointerdown', (e) => {
+          e.preventDefault()
+          setter(true)
+        })
+        el.addEventListener('pointerup', () => setter(false))
+        el.addEventListener('pointerleave', () => setter(false))
+        el.addEventListener('pointercancel', () => setter(false))
+      }
+      bindHold($rotUp, (v) => (touchKeys.W = v))
+      bindHold($rotDown, (v) => (touchKeys.S = v))
 
-// Тап/клик по сцене
-renderer.domElement.addEventListener('pointerdown', e => {
-  if (G.phase === 'fly') { input.boost = true; }
-  else if (G.phase === 'ready' || G.phase === 'landed') { startKick(); }
-});
-addEventListener('pointerup', () => { input.boost = false; });
-addEventListener('pointercancel', () => { input.boost = false; });
+      // Тап/клик по сцене
+      renderer.domElement.addEventListener('pointerdown', (e) => {
+        if (G.phase === 'fly') {
+          input.boost = true
+        } else if (G.phase === 'ready' || G.phase === 'landed') {
+          startKick()
+        }
+      })
+      addEventListener('pointerup', () => {
+        input.boost = false
+      })
+      addEventListener('pointercancel', () => {
+        input.boost = false
+      })
 
-$launch.addEventListener('click', e => {
-  e.stopPropagation();
-  if (G.phase === 'ready' || G.phase === 'landed') startKick();
-});
+      $launch.addEventListener('click', (e) => {
+        e.stopPropagation()
+        if (G.phase === 'ready' || G.phase === 'landed') startKick()
+      })
 
-/* ================================================================
+      /* ================================================================
    10. GAME LOGIC
 ================================================================ */
-function startKick() {
-  if (G.phase !== 'ready' && G.phase !== 'landed') return;
-  resetRocket();
-  G.phase = 'windup';
-  G.timer = 0;
-    $launch.classList.add('hidden');
-  $shop.style.display = 'none';
-}
+      function startKick() {
+        if (G.phase !== 'ready' && G.phase !== 'landed') return
+        resetRocket()
+        G.phase = 'windup'
+        G.timer = 0
+        $launch.classList.add('hidden')
+        $shop.style.display = 'none'
+      }
 
-function resetRocket() {
-  const gY = terrainHeight(0, 0);
-  rocketState.pos.set(0, gY + REST_Y, 0);
-  rocketState.vel.set(0, 0, 0);
-  rocket.rotation.z = 0;
-  rocketState.angVel = 0;
-  rocket.position.copy(rocketState.pos);
-  G.fuel = maxFuel();
-  input.boost = false;
-}
+      function resetRocket() {
+        const gY = terrainHeight(0, 0)
+        rocketState.pos.set(0, gY + REST_Y, 0)
+        rocketState.vel.set(0, 0, 0)
+        rocket.rotation.z = 0
+        rocketState.angVel = 0
+        rocket.position.copy(rocketState.pos)
+        G.fuel = maxFuel()
+        input.boost = false
+      }
 
-function launch() {
-  const speed = launchSpeed();
-  rocketState.vel.set(
-    Math.cos(LAUNCH_ANGLE) * speed,
-    Math.sin(LAUNCH_ANGLE) * speed,
-    0
-  );
-  // Мгновенно ставим ракету под угол старта — она «вылетает из-под ноги» как надо
-  rocket.rotation.z = LAUNCH_ANGLE;
-  rocketState.angVel = 0;
-  G.phase = 'fly';
-  G.timer = 0;
-  boosting = false;
-  showToast('ПОЛЕТЕЛИ! 🚀', '#ffd75e');
-}
+      function launch() {
+        const speed = launchSpeed()
+        rocketState.vel.set(
+          Math.cos(LAUNCH_ANGLE) * speed,
+          Math.sin(LAUNCH_ANGLE) * speed,
+          0
+        )
+        // Мгновенно ставим ракету под угол старта — она «вылетает из-под ноги» как надо
+        rocket.rotation.z = LAUNCH_ANGLE
+        rocketState.angVel = 0
+        G.phase = 'fly'
+        G.timer = 0
+        boosting = false
+        showToast('ПОЛЕТЕЛИ! 🚀', '#ffd75e')
+      }
 
-function land() {
-  G.phase = 'landed';
-  G.timer = 0;
-  rocketState.angVel = 0;
-  const gY = terrainHeight(rocketState.pos.x, rocketState.pos.z);
-  rocketState.pos.y = gY + REST_Y;
-  rocketState.vel.set(0, 0, 0);
+      function land() {
+        G.phase = 'landed'
+        G.timer = 0
+        rocketState.angVel = 0
+        const gY = terrainHeight(rocketState.pos.x, rocketState.pos.z)
+        rocketState.pos.y = gY + REST_Y
+        rocketState.vel.set(0, 0, 0)
 
-  const dist   = Math.max(0, rocketState.pos.x);
-  const earned = Math.max(1, Math.floor(dist));
-  G.lastDist = dist;
-  G.coins += earned;
-  if (dist > G.best) G.best = dist;
+        const dist = Math.max(0, rocketState.pos.x)
+        const earned = Math.max(1, Math.floor(dist))
+        G.lastDist = dist
+        G.coins += earned
+        if (dist > G.best) G.best = dist
 
-  updateHUD();
-  renderShop();
+        updateHUD()
+        renderShop()
 
-  $launch.classList.remove('hidden');
-  $shop.style.display = '';
-  $launch.textContent = 'Пнуть снова! 🦵';
+        $launch.classList.remove('hidden')
+        $shop.style.display = ''
+        $launch.textContent = 'Пнуть снова! 🦵'
 
-  showToast(`${Math.floor(dist)} м  +${earned} 💥`, '#7dffa0');
+        showToast(`${Math.floor(dist)} м  +${earned} 💥`, '#7dffa0')
 
-  // Тряска камеры
-  shake = 0.9;
-}
+        // Тряска камеры
+        shake = 0.9
+      }
 
-let shake = 0;
+      let shake = 0
 
-/* ================================================================
+      /* ================================================================
    11. UPDATE
 ================================================================ */
-function update(dt) {
-  updateBoss(dt);
-  updateRocket(dt);
-  updateCamera(dt);
-  updateScenery();
-  updateChunks(camera.position.x, camera.position.z);
-  updateFarTiles(camera.position.x, camera.position.z);
-  updateOverlayChunks(camera.position.x, camera.position.z);
-  updateLOD(dt);
+      function update(dt) {
+        updateBoss(dt)
+        updateRocket(dt)
+        updateCamera(dt)
+        updateScenery()
+        updateChunks(camera.position.x, camera.position.z)
+        updateFarTiles(camera.position.x, camera.position.z)
+        updateOverlayChunks(camera.position.x, camera.position.z)
+        updateLOD(dt)
 
-  // Топливный бар
-  if (G.phase === 'fly') {
-    $boostUI.classList.add('on');
-    $touchUI.classList.remove('hidden');
-    $fuelFill.style.width = (G.fuel / maxFuel() * 100) + '%';
-    $fuelText.textContent = G.fuel.toFixed(1);
-  } else {
-    $boostUI.classList.remove('on');
-    $touchUI.classList.add('hidden');
-  }
+        // Топливный бар
+        if (G.phase === 'fly') {
+          $boostUI.classList.add('on')
+          $touchUI.classList.remove('hidden')
+          $fuelFill.style.width = (G.fuel / maxFuel()) * 100 + '%'
+          $fuelText.textContent = G.fuel.toFixed(1)
+        } else {
+          $boostUI.classList.remove('on')
+          $touchUI.classList.add('hidden')
+        }
 
-  if (G.phase === 'fly') updateHUD();
-}
+        if (G.phase === 'fly') updateHUD()
+      }
 
-/* ---------- Boss ---------- */
-function updateBoss(dt) {
-  const idle = performance.now() * 0.0022;
+      /* ---------- Boss ---------- */
+      function updateBoss(dt) {
+        const idle = performance.now() * 0.0022
 
-  if (G.phase === 'ready' || G.phase === 'landed') {
-    legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 12);
-    boss.position.y = Math.sin(idle) * 0.08;
-    torso.rotation.z = Math.sin(idle * 0.7) * 0.03;
-    head.rotation.z  = Math.sin(idle * 0.7) * 0.05;
-    legBack.rotation.z = Math.sin(idle) * 0.03;
-  }
-  else if (G.phase === 'windup') {
-    G.timer += dt;
-    const t = Math.min(1, G.timer / 0.30);
-    const e = 1 - Math.pow(1 - t, 3);
-    legKick.rotation.z = -0.85 * e;
-    torso.rotation.z = 0.12 * e;
-    boss.position.y = -0.12 * e;
+        if (G.phase === 'ready' || G.phase === 'landed') {
+          legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 12)
+          boss.position.y = Math.sin(idle) * 0.08
+          torso.rotation.z = Math.sin(idle * 0.7) * 0.03
+          head.rotation.z = Math.sin(idle * 0.7) * 0.05
+          legBack.rotation.z = Math.sin(idle) * 0.03
+        } else if (G.phase === 'windup') {
+          G.timer += dt
+          const t = Math.min(1, G.timer / 0.3)
+          const e = 1 - Math.pow(1 - t, 3)
+          legKick.rotation.z = -0.85 * e
+          torso.rotation.z = 0.12 * e
+          boss.position.y = -0.12 * e
 
-     if (t >= 1) {
-      G.phase = 'strike';
-      G.timer = 0;
-    }
-  }
-  else if (G.phase === 'strike') {
-    G.timer += dt;
-    const t = Math.min(1, G.timer / 0.11);
-    const e = t * t * (3 - 2 * t);
-    legKick.rotation.z = -0.85 + (2.05 + 0.85) * e;
-    torso.rotation.z = 0.12 - 0.28 * e;
-    boss.position.y = -0.12 + 0.20 * e;
+          if (t >= 1) {
+            G.phase = 'strike'
+            G.timer = 0
+          }
+        } else if (G.phase === 'strike') {
+          G.timer += dt
+          const t = Math.min(1, G.timer / 0.11)
+          const e = t * t * (3 - 2 * t)
+          legKick.rotation.z = -0.85 + (2.05 + 0.85) * e
+          torso.rotation.z = 0.12 - 0.28 * e
+          boss.position.y = -0.12 + 0.2 * e
 
-    if (t >= 1 && G.phase === 'strike') launch();
-  }
-  else if (G.phase === 'fly') {
-    legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 6);
-    torso.rotation.z += (0 - torso.rotation.z) * Math.min(1, dt * 6);
-    boss.position.y += (0 - boss.position.y) * Math.min(1, dt * 6);
-  }
-}
+          if (t >= 1 && G.phase === 'strike') launch()
+        } else if (G.phase === 'fly') {
+          legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 6)
+          torso.rotation.z += (0 - torso.rotation.z) * Math.min(1, dt * 6)
+          boss.position.y += (0 - boss.position.y) * Math.min(1, dt * 6)
+        }
+      }
 
-/* ---------- Rocket ---------- */
-function updateRocket(dt) {
-  const p = rocketState;
-  const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y;
+      /* ---------- Rocket ---------- */
+      function updateRocket(dt) {
+        const p = rocketState
+        const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
 
-  if (G.phase === 'fly') {
-    // --- Тяга: вектор вдоль носа ракеты (а не всегда вправо!) ---
-    boosting = input.boost && G.fuel > 0;
-    if (boosting) {
-      const ta  = thrustAcc();
-      const ang = rocket.rotation.z;
-      p.vel.x += Math.cos(ang) * ta * dt;
-      p.vel.y += Math.sin(ang) * ta * dt;
-      G.fuel = Math.max(0, G.fuel - dt);   // 1 секунда буста = 1 секунда топлива
-    }
+        if (G.phase === 'fly') {
+          // --- Тяга: вектор вдоль носа ракеты (а не всегда вправо!) ---
+          boosting = input.boost && G.fuel > 0
+          if (boosting) {
+            const ta = thrustAcc()
+            const ang = rocket.rotation.z
+            p.vel.x += Math.cos(ang) * ta * dt
+            p.vel.y += Math.sin(ang) * ta * dt
+            G.fuel = Math.max(0, G.fuel - dt) // 1 секунда буста = 1 секунда топлива
+          }
 
-    // --- Гравитация ---
-    p.vel.y -= GRAVITY * dt;
+          // --- Гравитация ---
+          p.vel.y -= GRAVITY * dt
 
-    // --- Сопротивление воздуха: a = k·ρ(y)·v² , действует против вектора скорости ---
-    const speed = p.vel.length();
-    if (speed > 0.01) {
-      const k = dragCoef() * airDensity(p.pos.y);
-      const aDrag = k * speed;             // 1/с (умножится на v ещё раз ниже)
-      p.vel.x -= p.vel.x * aDrag * dt;
-      p.vel.y -= p.vel.y * aDrag * dt;
-    }
+          // --- Сопротивление воздуха: a = k·ρ(y)·v² , действует против вектора скорости ---
+          const speed = p.vel.length()
+          if (speed > 0.01) {
+            const k = dragCoef() * airDensity(p.pos.y)
+            const aDrag = k * speed // 1/с (умножится на v ещё раз ниже)
+            p.vel.x -= p.vel.x * aDrag * dt
+            p.vel.y -= p.vel.y * aDrag * dt
+          }
 
-    // --- Интеграция ---
-    p.pos.addScaledVector(p.vel, dt);
+          // --- Интеграция ---
+          p.pos.addScaledVector(p.vel, dt)
 
-    if (p.pos.y <= restY && p.vel.y < 0) {
-      p.pos.y = restY;
-      land();
-    }  
-  } else if (G.phase === 'landed') {
-    p.pos.y += (restY - p.pos.y) * Math.min(1, dt * 8);
-    rocket.rotation.z += (0 - rocket.rotation.z) * Math.min(1, dt * 6);
-  }
+          if (p.pos.y <= restY && p.vel.y < 0) {
+            p.pos.y = restY
+            land()
+          }
+        } else if (G.phase === 'landed') {
+          p.pos.y += (restY - p.pos.y) * Math.min(1, dt * 8)
+          rocket.rotation.z += (0 - rocket.rotation.z) * Math.min(1, dt * 6)
+        }
 
-  rocket.position.copy(p.pos);
+        rocket.position.copy(p.pos)
 
-  // --- Угловая динамика: игрок управляет носом, вязкое затухание ---
-  if (G.phase === 'fly') {
-    const rotInput =
-      ((keys.W || touchKeys.W) ? 1 : 0) -
-      ((keys.S || touchKeys.S) ? 1 : 0);
+        // --- Угловая динамика: игрок управляет носом, вязкое затухание ---
+        if (G.phase === 'fly') {
+          const rotInput =
+            (keys.W || touchKeys.W ? 1 : 0) - (keys.S || touchKeys.S ? 1 : 0)
 
-    p.angVel += rotInput * ANG_ACC * dt;
-    p.angVel -= p.angVel * ANG_DAMP * dt;              // вязкое трение
-    p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel));
+          p.angVel += rotInput * ANG_ACC * dt
+          p.angVel -= p.angVel * ANG_DAMP * dt // вязкое трение
+          p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel))
 
-    rocket.rotation.z += p.angVel * dt;
-  }
+          rocket.rotation.z += p.angVel * dt
+        }
 
-  // --- Индикатор соосности носа и вектора скорости ---
-  if (G.phase === 'fly') {
-    let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x);
-    while (diff >  Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    const deg = Math.abs(diff) * 180 / Math.PI;
+        // --- Индикатор соосности носа и вектора скорости ---
+        if (G.phase === 'fly') {
+          let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          const deg = (Math.abs(diff) * 180) / Math.PI
 
-    if      (deg <  8) { $alignText.textContent = '🎯 0°';   $alignText.style.color = '#7dffa0'; }
-    else if (deg < 25) { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ffd75e'; }
-    else               { $alignText.textContent = Math.round(deg) + '°'; $alignText.style.color = '#ff7a7a'; }
+          if (deg < 8) {
+            $alignText.textContent = '🎯 0°'
+            $alignText.style.color = '#7dffa0'
+          } else if (deg < 25) {
+            $alignText.textContent = Math.round(deg) + '°'
+            $alignText.style.color = '#ffd75e'
+          } else {
+            $alignText.textContent = Math.round(deg) + '°'
+            $alignText.style.color = '#ff7a7a'
+          }
 
-    // Цвет пламени: соосно = голубое, мимо = оранжевое
-    if (boosting) {
-      flameMat.color.setHex(deg < 15 ? 0x9fe8ff : 0xffb703);
-    }
-  }
+          // Цвет пламени: соосно = голубое, мимо = оранжевое
+          if (boosting) {
+            flameMat.color.setHex(deg < 15 ? 0x9fe8ff : 0xffb703)
+          }
+        }
 
+        // Пламя
+        const boostAmt = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
+        const flick = 0.85 + Math.random() * 0.3
+        flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
+        flameInner.scale.set(
+          boostAmt * flick * 1.1,
+          boostAmt * flick,
+          boostAmt * flick
+        )
+        flame.visible = boostAmt > 0.05
+        flameInner.visible = flame.visible
+        flameMat.opacity = boosting ? 0.95 : 0.5
+        exhaustLight.intensity = boostAmt * (boosting ? 45 : 8)
+      }
 
-  // Пламя
-  const boostAmt = boosting ? 1 : (G.phase === 'fly' ? 0.35 : 0);
-  const flick = 0.85 + Math.random() * 0.3;
-  flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick);
-  flameInner.scale.set(boostAmt * flick * 1.1, boostAmt * flick, boostAmt * flick);
-  flame.visible = boostAmt > 0.05;
-  flameInner.visible = flame.visible;
-  flameMat.opacity = boosting ? 0.95 : 0.5;
-  exhaustLight.intensity = boostAmt * (boosting ? 45 : 8);
-}
+      /* ---------- Camera ---------- */
+      const camLook = new THREE.Vector3(0, 3, 0)
+      let camBlend = 0 // 0 = вид сбоку, 1 = вид сзади (плавный переход)
 
-/* ---------- Camera ---------- */
-const camLook = new THREE.Vector3(0, 3, 0);
-let camBlend = 0;   // 0 = вид сбоку, 1 = вид сзади (плавный переход)
+      function updateCamera(dt) {
+        const p = rocketState.pos
+        const gY = terrainHeight(p.x, 0)
+        const speed = rocketState.vel.length()
 
-function updateCamera(dt) {
-  const p = rocketState.pos;
-  const gY = terrainHeight(p.x, 0);
-  const speed = rocketState.vel.length();
+        // Куда стремимся: сзади — только в полёте
+        const wantBehind = G.phase === 'fly' ? 1 : 0
+        const blendSpeed = wantBehind > camBlend ? 3.0 : 1.8
+        camBlend += (wantBehind - camBlend) * Math.min(1, dt * blendSpeed)
+        if (camBlend < 0.001) camBlend = 0
+        if (camBlend > 0.999) camBlend = 1
 
-  // Куда стремимся: сзади — только в полёте
-  const wantBehind = (G.phase === 'fly') ? 1 : 0;
-  const blendSpeed = wantBehind > camBlend ? 3.0 : 1.8;
-  camBlend += (wantBehind - camBlend) * Math.min(1, dt * blendSpeed);
-  if (camBlend < 0.001) camBlend = 0;
-  if (camBlend > 0.999) camBlend = 1;
+        // --- Угол возвышения камеры зависит от высоты над рельефом ---
 
-  // --- Угол возвышения камеры зависит от высоты над рельефом ---
+        const MAX_VIEW_HEIGHT = 1000
+        const BASE_VIEW_HEIGHT_ANGLE = 20
+        const MAX_VIEW_HEIGHT_ANGLE = 60 - BASE_VIEW_HEIGHT_ANGLE
 
-  const MAX_VIEW_HEIGHT = 1000
-  const BASE_VIEW_HEIGHT_ANGLE = 20
-  const MAX_VIEW_HEIGHT_ANGLE = 60 - BASE_VIEW_HEIGHT_ANGLE
+        const alt = Math.max(0, p.y - gY)
+        const altT = Math.min(1, alt / MAX_VIEW_HEIGHT)
+        const elev =
+          ((BASE_VIEW_HEIGHT_ANGLE + MAX_VIEW_HEIGHT_ANGLE * altT) * Math.PI) /
+          180
 
+        // --- Камера на сфере радиуса R вокруг ракеты ---
+        // На высокой скорости чуть отъезжаем — ракета не «упирается» в верх экрана
+        const R = 22 + Math.min(20, speed * 0.12)
+        const hDist = R * Math.cos(elev)
+        const vDist = R * Math.sin(elev)
 
-  const alt   = Math.max(0, p.y - gY);
-  const altT  = Math.min(1, alt / MAX_VIEW_HEIGHT);
-  const elev  = (BASE_VIEW_HEIGHT_ANGLE + MAX_VIEW_HEIGHT_ANGLE * altT) * Math.PI / 180;
+        // --- Feed-forward: целимся туда, где ракета будет через 0.1 с ---
+        // Компенсирует инерцию сглаживания при разгоне.
+        const lead = -0.02
+        const px = p.x + rocketState.vel.x * lead
+        const py = p.y + rocketState.vel.y * lead
 
-  // --- Камера на сфере радиуса R вокруг ракеты ---
-  // На высокой скорости чуть отъезжаем — ракета не «упирается» в верх экрана
-  const R     = 22 + Math.min(20, speed * 0.12);
-  const hDist = R * Math.cos(elev);
-  const vDist = R * Math.sin(elev);
+        const camX = px - hDist * camBlend
+        const camY = py + vDist
+        const camZ = hDist * (1 - camBlend)
 
-  // --- Feed-forward: целимся туда, где ракета будет через 0.1 с ---
-  // Компенсирует инерцию сглаживания при разгоне.
-  const lead = -0.02;
-  const px = p.x + rocketState.vel.x * lead;
-  const py = p.y + rocketState.vel.y * lead;
+        // --- Адаптивная жёсткость: чем быстрее ракета, тем цепче камера ---
+        const follow = 7 + Math.min(18, speed * 0.15)
+        const s = 1 - Math.exp(-follow * dt)
 
-  const camX = px - hDist * camBlend;
-  const camY = py + vDist;
-  const camZ = hDist * (1 - camBlend);
+        camera.position.x += (camX - camera.position.x) * s
+        camera.position.y += (camY - camera.position.y) * s
+        camera.position.z += (camZ - camera.position.z) * s
 
-  // --- Адаптивная жёсткость: чем быстрее ракета, тем цепче камера ---
-  const follow = 7 + Math.min(18, speed * 0.15);
-  const s = 1 - Math.exp(-follow * dt);
+        // --- Точка обзора (тоже с feed-forward) ---
+        const lookAhead = (5 + 10 * camBlend) * (1 - altT * 0.8)
+        const lookX = px + lookAhead
+        const lookY = py
 
-  camera.position.x += (camX - camera.position.x) * s;
-  camera.position.y += (camY - camera.position.y) * s;
-  camera.position.z += (camZ - camera.position.z) * s;
+        camLook.x += (lookX - camLook.x) * s
+        camLook.y += (lookY - camLook.y) * s
+        camLook.z += (0 - camLook.z) * s
 
-  // --- Точка обзора (тоже с feed-forward) ---
-  const lookAhead = (5 + 10 * camBlend) * (1 - altT * 0.8);
-  const lookX = px + lookAhead;
-  const lookY = py;
+        // Тряска
+        if (shake > 0) {
+          shake = Math.max(0, shake - dt * 2.2)
+          const a = shake * shake * 0.5
+          camera.position.x += (Math.random() - 0.5) * a
+          camera.position.y += (Math.random() - 0.5) * a
+        }
 
-  camLook.x += (lookX - camLook.x) * s;
-  camLook.y += (lookY - camLook.y) * s;
-  camLook.z += (0 - camLook.z) * s;
+        camera.lookAt(camLook)
+      }
 
-  // Тряска
-  if (shake > 0) {
-    shake = Math.max(0, shake - dt * 2.2);
-    const a = shake * shake * 0.5;
-    camera.position.x += (Math.random() - .5) * a;
-    camera.position.y += (Math.random() - .5) * a;
-  }
+      /* ---------- Scenery recycling ---------- */
+      function updateScenery() {
+        // Пропсы теперь статичные — рецикл не нужен.
+        // Оставляем только переезд солнца, чтобы тени всегда были рядом с камерой.
+        const camX = camera.position.x
 
-  camera.lookAt(camLook);
-}
+        sun.position.set(camX + 28, 32, 22) // ← двигаем солнце в такт куполу
+        sun.target.position.set(camX, 0, 0)
+        sun.target.updateMatrixWorld()
 
-/* ---------- Scenery recycling ---------- */
-function updateScenery() {
-  // Пропсы теперь статичные — рецикл не нужен.
-  // Оставляем только переезд солнца, чтобы тени всегда были рядом с камерой.
-  const camX = camera.position.x;
+        // Купол всегда вокруг камеры — бесконечное небо
+        skyDome.position.copy(camera.position) // ← добавили
+      }
 
-  sun.position.set(camX + 28, 32, 22);   // ← двигаем солнце в такт куполу
-  sun.target.position.set(camX, 0, 0);
-  sun.target.updateMatrixWorld();
+      /* ---------- LOD: 3D-пропсы ↔ 2D-точки деревьев с плавным переходом ---------- */
+      function updateLOD(dt) {
+        // Высота смены отображения (м над рельефом)
+        const CHANGE_OVERLAY = 400
 
-  // Купол всегда вокруг камеры — бесконечное небо
-  skyDome.position.copy(camera.position);   // ← добавили
+        const p = rocketState.pos
+        const flying = G.phase === 'fly'
 
-}
+        // --- Высота до земли ---
+        // Раньше брали только точку СТРОГО под ракетой. Над долиной это давало
+        // большие «alt», и 2D-режим держался, даже если рядом (в 100–200 м)
+        // возвышается гора. Теперь сэмплируем рельеф по кольцу вокруг ракеты
+        // и берём САМУЮ ВЫСОКУЮ точку → минимальную высоту до земли.
+        const SAMPLE_R = 200 // радиус сканирования, м
+        const SAMPLES = 8 // точек по кольцу
 
-/* ---------- LOD: 3D-пропсы ↔ 2D-точки деревьев с плавным переходом ---------- */
-function updateLOD(dt) {
-  // Высота смены отображения (м над рельефом)
-  const CHANGE_OVERLAY = 400;
+        let alt = p.y - terrainHeight(p.x, p.z) // под ракетой
 
-  const p = rocketState.pos;
-  const flying = (G.phase === 'fly');
+        for (let i = 0; i < SAMPLES; i++) {
+          const a = (i / SAMPLES) * Math.PI * 2
+          const gx = p.x + Math.cos(a) * SAMPLE_R
+          const gz = p.z + Math.sin(a) * SAMPLE_R
+          const a2 = p.y - terrainHeight(gx, gz)
+          if (a2 < alt) alt = a2
+        }
+        if (alt < 0) alt = 0
 
-  // --- Высота до земли ---
-  // Раньше брали только точку СТРОГО под ракетой. Над долиной это давало
-  // большие «alt», и 2D-режим держался, даже если рядом (в 100–200 м)
-  // возвышается гора. Теперь сэмплируем рельеф по кольцу вокруг ракеты
-  // и берём САМУЮ ВЫСОКУЮ точку → минимальную высоту до земли.
-  const SAMPLE_R = 200;      // радиус сканирования, м
-  const SAMPLES  = 8;        // точек по кольцу
+        if (!in2DMode) {
+          if (flying && alt > CHANGE_OVERLAY) in2DMode = true
+        } else {
+          if (!flying || alt < CHANGE_OVERLAY - 50) in2DMode = false
+        }
 
-  let alt = p.y - terrainHeight(p.x, p.z);   // под ракетой
+        const targetFade = in2DMode ? 1 : 0
+        const speed = in2DMode ? 1.4 : 2.0
+        lodFade += (targetFade - lodFade) * Math.min(1, dt * speed)
+        if (lodFade < 0.005) lodFade = 0
+        if (lodFade > 0.995) lodFade = 1
 
-  for (let i = 0; i < SAMPLES; i++) {
-    const a  = (i / SAMPLES) * Math.PI * 2;
-    const gx = p.x + Math.cos(a) * SAMPLE_R;
-    const gz = p.z + Math.sin(a) * SAMPLE_R;
-    const a2 = p.y - terrainHeight(gx, gz);
-    if (a2 < alt) alt = a2;
-  }
-  if (alt < 0) alt = 0;
+        // --- Overlay: прозрачность ---
+        for (const c of overlayChunks.values()) {
+          c.mat.opacity = lodFade
+          c.mesh.visible = lodFade > 0.005
+        }
 
-  if (!in2DMode) {
-    if (flying && alt > CHANGE_OVERLAY) in2DMode = true;
-  } else {
-    if (!flying || alt < CHANGE_OVERLAY - 50) in2DMode = false;
-  }
+        // --- Дальние тайлы: прозрачность ---
+        farGroundMat.opacity = lodFade
+        const farVisible = lodFade > 0.005
+        for (const c of farTiles.values()) c.mesh.visible = farVisible
 
-  const targetFade = in2DMode ? 1 : 0;
-  const speed      = in2DMode ? 1.4 : 2.0;
-  lodFade += (targetFade - lodFade) * Math.min(1, dt * speed);
-  if (lodFade < 0.005) lodFade = 0;
-  if (lodFade > 0.995) lodFade = 1;
+        // --- Тонкие 3D-чанки: скрываем, когда дальние тайлы полностью проявились ---
+        // Иначе на пиках гор z-fight между 40 м и 10 м сеткой.
+        const showFine = lodFade < 0.95
+        for (const c of chunks.values()) c.mesh.visible = showFine
 
-  // --- Overlay: прозрачность ---
-  for (const c of overlayChunks.values()) {
-    c.mat.opacity = lodFade;
-    c.mesh.visible = lodFade > 0.005;
-  }
+        // --- 3D-пропсы: прячем раньше, чем меши (уже логика) ---
+        const want3D = lodFade < 0.15
+        if (want3D !== showing3D) {
+          for (const c of chunks.values()) {
+            for (const pr of c.props) pr.visible = want3D
+          }
+          boss.visible = want3D
+          showing3D = want3D
+        }
 
-  // --- Дальние тайлы: прозрачность ---
-  farGroundMat.opacity = lodFade;
-  const farVisible = lodFade > 0.005;
-  for (const c of farTiles.values()) c.mesh.visible = farVisible;
+        // --- Туман ---
+        scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade
+        scene.fog.far = FOG_3D_FAR + (FOG_2D_FAR - FOG_3D_FAR) * lodFade
+      }
 
-  // --- Тонкие 3D-чанки: скрываем, когда дальние тайлы полностью проявились ---
-  // Иначе на пиках гор z-fight между 40 м и 10 м сеткой.
-  const showFine = lodFade < 0.95;
-  for (const c of chunks.values()) c.mesh.visible = showFine;
-
-  // --- 3D-пропсы: прячем раньше, чем меши (уже логика) ---
-  const want3D = lodFade < 0.15;
-  if (want3D !== showing3D) {
-    for (const c of chunks.values()) {
-      for (const pr of c.props) pr.visible = want3D;
-    }
-    boss.visible = want3D;
-    showing3D = want3D;
-  }
-
-  // --- Туман ---
-  scene.fog.near = FOG_3D_NEAR + (FOG_2D_NEAR - FOG_3D_NEAR) * lodFade;
-  scene.fog.far  = FOG_3D_FAR  + (FOG_2D_FAR  - FOG_3D_FAR ) * lodFade;
-}
-
-
-/* ================================================================
+      /* ================================================================
    12. MAIN LOOP
 ================================================================ */
-let last = performance.now();
+      let last = performance.now()
 
-function loop(now) {
-  const dt = Math.min(0.033, (now - last) / 1000);
-  last = now;
+      function loop(now) {
+        const dt = Math.min(0.033, (now - last) / 1000)
+        last = now
 
-  update(dt);
-  renderer.render(scene, camera);
+        update(dt)
+        renderer.render(scene, camera)
 
-  requestAnimationFrame(loop);
-}
+        requestAnimationFrame(loop)
+      }
 
-/* ================================================================
+      /* ================================================================
    13. INIT
 ================================================================ */
 
-applySkyFog(groundMat);
-applySkyFog(farGroundMat);
-applySkyFog(propMat);
+      applySkyFog(groundMat)
+      applySkyFog(farGroundMat)
+      applySkyFog(propMat)
 
+      resetRocket()
+      rocket.position.copy(rocketState.pos)
+      G.fuel = maxFuel()
+      updateHUD()
+      renderShop()
 
-resetRocket();
-rocket.position.copy(rocketState.pos);
-G.fuel = maxFuel();
-updateHUD();
-renderShop();
+      // Первичная прогрузка — без неё первый кадр будет пустым
+      updateChunks(camera.position.x, camera.position.z, true)
+      updateFarTiles(camera.position.x, camera.position.z, true)
+      updateOverlayChunks(camera.position.x, camera.position.z, true)
 
-// Первичная прогрузка — без неё первый кадр будет пустым
-updateChunks(camera.position.x, camera.position.z, true);
-updateFarTiles(camera.position.x, camera.position.z, true);
-updateOverlayChunks(camera.position.x, camera.position.z, true);
+      requestAnimationFrame(loop)
 
-
-requestAnimationFrame(loop);
-
-// Приветствие
-setTimeout(() => showToast('ПНИ РАКЕТУ! 🦵', '#ffd75e'), 400);
-</script>
-</body>
+      // Приветствие
+      setTimeout(() => showToast('ПНИ РАКЕТУ! 🦵', '#ffd75e'), 400)
+    </script>
+  </body>
 </html>
