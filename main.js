@@ -666,11 +666,23 @@ function unloadChunk(key) {
   propsCache.delete(key)
 }
 
-function updateChunks(camX, camZ, initial = false) {
+/* ================================================================
+   ЧАНКИ: план (refill) / исполнение (process).
+
+   refillChunkQueue  — решает, что выгрузить, прунит кэш, собирает
+                        список toLoad в плоскую очередь. Дёргается
+                        РЕДКО: только на смене ячейки камеры.
+   processChunkQueue — берёт из очереди и грузит, пока не выйдет
+                        бюджет 4 мс. Дёргается КАЖДЫЙ кадр.
+================================================================ */
+const chunkLoadQueue = []
+let chunkQueueIdx = 0
+
+function refillChunkQueue(camX, camZ) {
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
 
-  // --- Выгрузка: всегда, чтобы не копить мусор ---
+  // --- Выгрузка ---
   const toUnload = []
   for (const key of chunks.keys()) {
     const [cs, czs] = key.split(',')
@@ -684,12 +696,13 @@ function updateChunks(camX, camZ, initial = false) {
       toUnload.push(key)
   }
   for (const k of toUnload) unloadChunk(k)
-  // Пруним кэш: всё, что ушло за пределы окна загрузки +1 ряд, не нужно.
+
+  // --- Прун кэша ---
   const padXf = LOAD_FWD_CHUNKS + 1
   const padXb = LOAD_BACK_CHUNKS + 1
   const padZ = LOAD_SIDE_CHUNKS + 1
   for (const key of propsCache.keys()) {
-    if (PERSISTENT_CHUNKS.has(key)) continue // ← не пруним
+    if (PERSISTENT_CHUNKS.has(key)) continue
     const [cs, czs] = key.split(',')
     const dx = +cs - cxi
     const dz = +czs - czi
@@ -697,32 +710,50 @@ function updateChunks(camX, camZ, initial = false) {
       propsCache.delete(key)
     }
   }
-  // --- НЕ грузим новые чанки, пока сидим в 2D ---
-  // lodFade > 0.5 значит уже глубоко в 2D-режиме, толку от детальных чанков нет.
-  if (!initial && lodFade > 0.5) return
 
-  // --- Загрузка ---
-  const toLoad = []
+  // --- Пересобираем очередь загрузки ---
+  chunkLoadQueue.length = 0
+  chunkQueueIdx = 0
   for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
     for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
       const cx = cxi + dx,
         cz = czi + dz
-      if (!chunks.has(cx + ',' + cz)) toLoad.push([cx, cz])
+      if (!chunks.has(cx + ',' + cz)) chunkLoadQueue.push([cx, cz])
     }
   }
+}
 
+function processChunkQueue() {
+  // В 2D-режиме 3D-чанки не нужны — земля всё равно не видна.
+  if (lodFade > 0.5) return
+  if (chunkQueueIdx >= chunkLoadQueue.length) return
+
+  const BUDGET_MS = 4
+  const t0 = performance.now()
+  while (chunkQueueIdx < chunkLoadQueue.length && performance.now() - t0 < BUDGET_MS) {
+    const [cx, cz] = chunkLoadQueue[chunkQueueIdx++]
+    // Перепроверка: за время в очереди чанк мог загрузиться
+    // как halo-сосед (collectShadowItems трогает getProps → loadChunk).
+    if (!chunks.has(cx + ',' + cz)) loadChunk(cx, cz)
+  }
+
+  if (chunkQueueIdx >= chunkLoadQueue.length) {
+    chunkLoadQueue.length = 0
+    chunkQueueIdx = 0
+  }
+}
+
+// Оставляем как обёртку для совместимости с initialLoad и другими местами.
+function updateChunks(camX, camZ, initial = false) {
+  refillChunkQueue(camX, camZ)
   if (initial) {
-    for (const [cx, cz] of toLoad) loadChunk(cx, cz)
-  } else {
-    // Бюджет по времени вместо фиксированного счётчика.
-    // Кадр никогда не провиснет: если генерация чанка дорогая —
-    // просто погрузим меньше, оставшиеся уйдут в следующий кадр.
-    const BUDGET_MS = 4
-    const t0 = performance.now()
-    for (const [cx, cz] of toLoad) {
-      if (performance.now() - t0 >= BUDGET_MS) break
-      loadChunk(cx, cz)
+    // Синхронная первичная загрузка — как было.
+    while (chunkQueueIdx < chunkLoadQueue.length) {
+      const [cx, cz] = chunkLoadQueue[chunkQueueIdx++]
+      if (!chunks.has(cx + ',' + cz)) loadChunk(cx, cz)
     }
+    chunkLoadQueue.length = 0
+    chunkQueueIdx = 0
   }
 }
 
@@ -855,11 +886,14 @@ function finalizeFarTile(key, fx, fz, geo) {
   farTiles.set(key, { mesh, geo })
 }
 
-function updateFarTiles(camX, camZ, initial = false) {
+/* ================================================================
+   FAR TILES: refill / process.
+================================================================ */
+function refillFarTiles(camX, camZ) {
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
 
-  // 1) Пополняем очередь — БЕЗ генерации.
+  // Пополняем очередь (без генерации).
   for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
     for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
       const fx = fxi + dx,
@@ -870,28 +904,7 @@ function updateFarTiles(camX, camZ, initial = false) {
     }
   }
 
-  // 2) Прогреваем очередь.
-  if (initial) {
-    // При первичной загрузке строим синхронно (один раз на старте — ок).
-    for (const [key, p] of pendingFarTiles) {
-      while (!p.builder.step(Infinity)) {}
-      finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
-    }
-    pendingFarTiles.clear()
-  } else {
-    const BUDGET_MS = 3
-    const t0 = performance.now()
-    for (const [key, p] of pendingFarTiles) {
-      const elapsed = performance.now() - t0
-      if (elapsed >= BUDGET_MS) break
-      if (p.builder.step(BUDGET_MS - elapsed)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
-        pendingFarTiles.delete(key)
-      }
-    }
-  }
-
-  // 3) Отменяем «уехавшие» pending-тайлы.
+  // Отменяем «уехавшие» pending-тайлы.
   for (const [key, p] of pendingFarTiles) {
     if (Math.abs(p.fx - fxi) > FAR_UNLOAD_R || Math.abs(p.fz - fzi) > FAR_UNLOAD_R) {
       p.builder.geo.dispose()
@@ -899,7 +912,7 @@ function updateFarTiles(camX, camZ, initial = false) {
     }
   }
 
-  // 4) Выгрузка — как было.
+  // Выгрузка.
   const toUnload = []
   for (const key of farTiles.keys()) {
     const [fxs, fzs] = key.split(',')
@@ -908,6 +921,32 @@ function updateFarTiles(camX, camZ, initial = false) {
     }
   }
   for (const k of toUnload) unloadFarTile(k)
+}
+
+function processFarTiles() {
+  if (pendingFarTiles.size === 0) return
+  const BUDGET_MS = 3
+  const t0 = performance.now()
+  for (const [key, p] of pendingFarTiles) {
+    const elapsed = performance.now() - t0
+    if (elapsed >= BUDGET_MS) break
+    if (p.builder.step(BUDGET_MS - elapsed)) {
+      finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+      pendingFarTiles.delete(key)
+    }
+  }
+}
+
+// Обёртка — оставляем для initialLoad.
+function updateFarTiles(camX, camZ, initial = false) {
+  refillFarTiles(camX, camZ)
+  if (initial) {
+    for (const [key, p] of pendingFarTiles) {
+      while (!p.builder.step(Infinity)) {}
+      finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+    }
+    pendingFarTiles.clear()
+  }
 }
 
 /* ================================================================
@@ -1264,11 +1303,12 @@ function unloadOverlayChunk(key) {
   overlayChunks.delete(key)
 }
 
-function updateOverlayChunks(camX, camZ, initial = false) {
-  // --- Overlay выключен: чистим всё, что успело построиться. ---
-  // Работает и при статичном конфиге (тогда просто пустой сетап),
-  // и при hot-toggle: переключил в false — чанки тут же удаляются.
+/* ================================================================
+   OVERLAY: refill / process.
+================================================================ */
+function refillOverlayChunks(camX, camZ) {
   if (!CFG.OVERLAY.enabled) {
+    // Чистим всё, что успело построиться.
     if (overlayChunks.size > 0) {
       for (const key of [...overlayChunks.keys()]) unloadOverlayChunk(key)
     }
@@ -1282,7 +1322,7 @@ function updateOverlayChunks(camX, camZ, initial = false) {
   const oxi = Math.floor(camX / OVERLAY_SIZE)
   const ozi = Math.floor(camZ / OVERLAY_SIZE)
 
-  // 1) Пополняем очередь.
+  // Пополняем очередь.
   for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
     for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
       const ox = oxi + dx,
@@ -1293,27 +1333,7 @@ function updateOverlayChunks(camX, camZ, initial = false) {
     }
   }
 
-  // 2) Прогреваем.
-  if (initial) {
-    for (const [key, p] of pendingOverlays) {
-      while (!p.builder.step(Infinity)) {}
-      finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
-    }
-    pendingOverlays.clear()
-  } else {
-    const BUDGET_MS = 3
-    const t0 = performance.now()
-    for (const [key, p] of pendingOverlays) {
-      const elapsed = performance.now() - t0
-      if (elapsed >= BUDGET_MS) break
-      if (p.builder.step(BUDGET_MS - elapsed)) {
-        finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
-        pendingOverlays.delete(key)
-      }
-    }
-  }
-
-  // 3) Отменяем «уехавшие» pending-чанки.
+  // Отменяем «уехавшие» pending-чанки.
   for (const [key, p] of pendingOverlays) {
     if (Math.abs(p.ox - oxi) > OVERLAY_UNLOAD_R || Math.abs(p.oz - ozi) > OVERLAY_UNLOAD_R) {
       p.builder.geo.dispose()
@@ -1321,7 +1341,7 @@ function updateOverlayChunks(camX, camZ, initial = false) {
     }
   }
 
-  // 4) Выгрузка — как было.
+  // Выгрузка.
   const toUnload = []
   for (const key of overlayChunks.keys()) {
     const [oxs, ozs] = key.split(',')
@@ -1329,6 +1349,32 @@ function updateOverlayChunks(camX, camZ, initial = false) {
       toUnload.push(key)
   }
   for (const k of toUnload) unloadOverlayChunk(k)
+}
+
+function processOverlayChunks() {
+  if (pendingOverlays.size === 0) return
+  const BUDGET_MS = 3
+  const t0 = performance.now()
+  for (const [key, p] of pendingOverlays) {
+    const elapsed = performance.now() - t0
+    if (elapsed >= BUDGET_MS) break
+    if (p.builder.step(BUDGET_MS - elapsed)) {
+      finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
+      pendingOverlays.delete(key)
+    }
+  }
+}
+
+// Обёртка — оставляем для initialLoad.
+function updateOverlayChunks(camX, camZ, initial = false) {
+  refillOverlayChunks(camX, camZ)
+  if (initial) {
+    for (const [key, p] of pendingOverlays) {
+      while (!p.builder.step(Infinity)) {}
+      finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
+    }
+    pendingOverlays.clear()
+  }
 }
 
 // Флаги LOD
@@ -1743,11 +1789,8 @@ function update(dt) {
   updateCamera(dt)
   updateScenery()
   updateFogEllipse(dt)
-  updateChunks(camera.position.x, camera.position.z)
-  updateFarTiles(camera.position.x, camera.position.z)
-  updateOverlayChunks(camera.position.x, camera.position.z)
   updateLOD(dt)
-  updatePersistentVisibility(camera.position.x, camera.position.z)
+  updateSceneryCells()
 
   if (G.phase === 'fly') {
     $boostUI.classList.add('on')
@@ -2091,6 +2134,74 @@ function updatePersistentVisibility(camX, camZ) {
 
     const pv = near && showProps
     for (const p of c.props) p.visible = pv
+  }
+}
+
+/* ================================================================
+   Кэш «последней ячейки» для per-cell update-функций.
+
+   Раньше updateChunks / updateFarTiles / updateOverlayChunks /
+   updatePersistentVisibility вызывались КАЖДЫЙ кадр, хотя реально
+   зависят от дискретных величин: номер ячейки, в которой сидит
+   камера, и от состояния LOD (showFine / showProps / loadingEnabled).
+
+   Теперь пересчёт идёт только когда эти величины изменились.
+   При 60 fps это снимает ~400 итераций × 60 ≈ 24 000 итераций/с,
+   а также убирает key.split(',') и аллокации из горячего пути.
+================================================================ */
+let _lastChunkCell = { x: NaN, z: NaN }
+let _lastFarCell = { x: NaN, z: NaN }
+let _lastOverlayCell = { x: NaN, z: NaN }
+let _lastPersistState = { cxi: NaN, czi: NaN, showFine: null, showProps: null }
+
+function updateSceneryCells() {
+  const camX = camera.position.x
+  const camZ = camera.position.z
+
+  // ---------- План (редко) ----------
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
+  if (cxi !== _lastChunkCell.x || czi !== _lastChunkCell.z) {
+    refillChunkQueue(camX, camZ)
+    _lastChunkCell.x = cxi
+    _lastChunkCell.z = czi
+  }
+
+  const fxi = Math.floor(camX / FAR_TILE_SIZE)
+  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
+  if (fxi !== _lastFarCell.x || fzi !== _lastFarCell.z) {
+    refillFarTiles(camX, camZ)
+    _lastFarCell.x = fxi
+    _lastFarCell.z = fzi
+  }
+
+  const oxi = Math.floor(camX / OVERLAY_SIZE)
+  const ozi = Math.floor(camZ / OVERLAY_SIZE)
+  if (oxi !== _lastOverlayCell.x || ozi !== _lastOverlayCell.z) {
+    refillOverlayChunks(camX, camZ)
+    _lastOverlayCell.x = oxi
+    _lastOverlayCell.z = ozi
+  }
+
+  // ---------- Исполнение (каждый кадр, но дешёвое) ----------
+  processChunkQueue()
+  processFarTiles()
+  processOverlayChunks()
+
+  // ---------- Persistent: видимость ----------
+  const showFine = lodFade < 0.95
+  const showProps = showing3D
+  if (
+    cxi !== _lastPersistState.cxi ||
+    czi !== _lastPersistState.czi ||
+    showFine !== _lastPersistState.showFine ||
+    showProps !== _lastPersistState.showProps
+  ) {
+    updatePersistentVisibility(camX, camZ)
+    _lastPersistState.cxi = cxi
+    _lastPersistState.czi = czi
+    _lastPersistState.showFine = showFine
+    _lastPersistState.showProps = showProps
   }
 }
 
