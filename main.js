@@ -1789,6 +1789,7 @@ function resetRocket() {
   rocketState.pos.set(0, gY + REST_Y, 0)
   rocketState.vel.set(0, 0, 0)
   rocket.rotation.z = 0
+  rocket.rotation.y = 0
   rocketState.angVel = 0
   rocket.position.copy(rocketState.pos)
   G.fuel = maxFuel()
@@ -1797,8 +1798,16 @@ function resetRocket() {
 
 function launch() {
   const speed = launchSpeed()
-  rocketState.vel.set(Math.cos(LAUNCH_ANGLE) * speed, Math.sin(LAUNCH_ANGLE) * speed, 0)
+  const yaw = CFG.GAME.flightYaw || 0
+  // Горизонтальная составляющая скорости делится между X и Z
+  // по углу flightYaw. yaw = 0 → чистый +X (как раньше).
+  const horiz = Math.cos(LAUNCH_ANGLE) * speed
+  rocketState.vel.set(Math.cos(yaw) * horiz, Math.sin(LAUNCH_ANGLE) * speed, Math.sin(yaw) * horiz)
   rocket.rotation.z = LAUNCH_ANGLE
+  // Нос доворачиваем в сторону полёта (yaw вокруг Y).
+  // Знак минус — из-за соглашения three.js: rotation.y вращает
+  // +X-ось в сторону −Z, а нам нужно в +Z.
+  rocket.rotation.y = -yaw
   rocketState.angVel = 0
   G.phase = 'fly'
   G.timer = 0
@@ -1906,8 +1915,15 @@ function updateRocket(dt) {
     if (boosting) {
       const ta = thrustAcc()
       const ang = rocket.rotation.z
-      p.vel.x += Math.cos(ang) * ta * dt
+      const yaw = CFG.GAME.flightYaw || 0
+      // Вектор тяги — вдоль носа ракеты, с учётом и тангажа (Z),
+      // и сноса (Y). Раньше Z не было, потому что не было yaw.
+      // cos(ang) — проекция «вперёд»; распределяем её между X и Z
+      // по углу yaw. sin(ang) — вертикальная составляющая (без yaw).
+      const c = Math.cos(ang)
+      p.vel.x += c * Math.cos(yaw) * ta * dt
       p.vel.y += Math.sin(ang) * ta * dt
+      p.vel.z += c * Math.sin(yaw) * ta * dt
       G.fuel = Math.max(0, G.fuel - dt)
     }
 
@@ -1919,6 +1935,9 @@ function updateRocket(dt) {
       const aDrag = k * speed
       p.vel.x -= p.vel.x * aDrag * dt
       p.vel.y -= p.vel.y * aDrag * dt
+      // Сопротивление по Z — чтобы соотношение X:Z сохранялось
+      // на всём полёте (иначе Z «плывёт» относительно X).
+      p.vel.z -= p.vel.z * aDrag * dt
     }
 
     p.pos.addScaledVector(p.vel, dt)
@@ -2003,10 +2022,13 @@ function updateCamera(dt) {
   const lead = CFG.CAMERA.leadTime
   const px = p.x + rocketState.vel.x * lead
   const py = p.y + rocketState.vel.y * lead
+  const pz = p.z + rocketState.vel.z * lead
 
   const camX = px - hDist * camBlend
   const camY = py + vDist
-  const camZ = hDist * (1 - camBlend)
+  // Камера должна следовать и по Z, иначе при сносе ракета
+  // будет «уползать» вбок из кадра.
+  const camZ = pz + hDist * (1 - camBlend)
 
   const follow =
     CFG.CAMERA.followBase + Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
@@ -2024,7 +2046,7 @@ function updateCamera(dt) {
 
   camLook.x += (lookX - camLook.x) * s
   camLook.y += (lookY - camLook.y) * s
-  camLook.z += (0 - camLook.z) * s
+  camLook.z += (pz - camLook.z) * s
 
   if (shake > 0) {
     shake = Math.max(0, shake - dt * CFG.CAMERA.shakeDecayK)
