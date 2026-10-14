@@ -1529,6 +1529,7 @@ function updateFogEllipse(dt) {
 
 function updateLOD(dt) {
   const CHANGE_OVERLAY = CFG.LOD.changeAltitude
+  const CHANGE_OVERLAY_BACK = CFG.LOD.changeBack
   const SAMPLE_R = CFG.LOD.sampleRadius
   const SAMPLES = CFG.LOD.sampleCount
 
@@ -1548,7 +1549,7 @@ function updateLOD(dt) {
   if (!in2DMode) {
     if (flying && alt > CHANGE_OVERLAY) in2DMode = true
   } else {
-    if (!flying || alt < CHANGE_OVERLAY - 50) in2DMode = false
+    if (!flying || alt < CHANGE_OVERLAY_BACK) in2DMode = false
   }
 
   const targetFade = in2DMode ? 1 : 0
