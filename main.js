@@ -2052,26 +2052,28 @@ applySkyFog(groundMat)
 applySkyFog(farGroundMat)
 applySkyFog(propMat)
 
-loadProgress() // ← сначала загружаем сейв
+loadProgress()
 resetRocket()
 rocket.position.copy(rocketState.pos)
 G.fuel = maxFuel()
-updateHUD() // показывает монеты/рекорд из сейва
-renderShop() // показывает уровни из сейва
+updateHUD()
+renderShop()
 
-updateChunks(camera.position.x, camera.position.z, true)
 /* ================================================================
    Первичная загрузка — порционная, с прогресс-баром.
-   Не блокирует UI, показывает сколько осталось.
 ================================================================ */
 async function initialLoad() {
-  // --- Собираем полный список чанков, которые нужно загрузить на старте ---
+  const $loading = document.getElementById('loading')
+  const $bar = document.getElementById('loadingBar')
+  const $text = document.getElementById('loadingText')
+  if ($loading) $loading.style.display = 'flex'
+
   const cxi = Math.floor(camera.position.x / CHUNK_SIZE)
   const czi = Math.floor(camera.position.z / CHUNK_SIZE)
 
+  // --- Собираем список нужных 3D-чанков ---
   const needed = []
   const seen = new Set()
-  // Динамическое окно вокруг камеры
   for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
     for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
       const key = cxi + dx + ',' + (czi + dz)
@@ -2081,26 +2083,26 @@ async function initialLoad() {
       }
     }
   }
-  // Плюс все persistent, если ещё не в списке
   for (const key of PERSISTENT_CHUNKS) {
     if (seen.has(key)) continue
     const [cs, czs] = key.split(',')
     needed.push([+cs, +czs])
   }
 
-  const total = needed.length
+  // Far-tiles и overlay заранее оцениваем для прогресс-бара
+  const FAR_NEEDED = (FAR_LOAD_R * 2 + 1) ** 2 // 25
+  const OVR_NEEDED = (OVERLAY_LOAD_R * 2 + 1) ** 2 // 9
+
+  const totalSteps = needed.length + FAR_NEEDED + OVR_NEEDED
   let done = 0
+  const updateProgress = (label = 'Загрузка мира') => {
+    if ($bar) $bar.style.width = ((done / totalSteps) * 100).toFixed(1) + '%'
+    if ($text) $text.textContent = `${label}… ${done} / ${totalSteps}`
+  }
+  updateProgress()
 
-  // Показываем оверлей загрузки
-  const $loading = document.getElementById('loading')
-  const $bar = document.getElementById('loadingBar')
-  const $text = document.getElementById('loadingText')
-  if ($loading) $loading.style.display = 'flex'
-
-  // --- Грузим по кадрам, бюджет 12 мс на кадр ---
-  const BUDGET_MS = 12 // больше, чем при обычной игре: мы на экране загрузки,
-  // FPS не важен, важно быстрее закрыть эту стадию
-
+  // ---------- 1) 3D-чанки ----------
+  const BUDGET_MS = 12
   for (let i = 0; i < needed.length; ) {
     const t0 = performance.now()
     while (i < needed.length && performance.now() - t0 < BUDGET_MS) {
@@ -2109,14 +2111,50 @@ async function initialLoad() {
       i++
       done++
     }
-    if ($bar) $bar.style.width = (done / total) * 100 + '%'
-    if ($text) $text.textContent = `Загрузка мира… ${done} / ${total}`
-    // Отдаём кадр браузеру — UI обновляется, вкладка не «зависает»
+    updateProgress()
     await new Promise((r) => requestAnimationFrame(r))
   }
 
-  // Дальние тайлы и overlay — тоже инкрементально, но их немного.
-  // Их стандартная очередь справится за секунду после старта игры.
+  // ---------- 2) Дальние тайлы: строим через тот же builder, но с бюджетом ----------
+  // Сначала пополняем очередь (без генерации)
+  updateFarTiles(camera.position.x, camera.position.z, false)
+
+  while (pendingFarTiles.size > 0) {
+    const t0 = performance.now()
+    while (performance.now() - t0 < BUDGET_MS && pendingFarTiles.size > 0) {
+      for (const [key, p] of pendingFarTiles) {
+        // по 4 мс на тайл — чтобы можно было переключаться между тайлами
+        if (p.builder.step(4)) {
+          finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+          pendingFarTiles.delete(key)
+          done++
+        }
+        if (performance.now() - t0 >= BUDGET_MS) break
+      }
+    }
+    updateProgress('Дальний рельеф')
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+
+  // ---------- 3) Overlay-чанки: то же самое ----------
+  updateOverlayChunks(camera.position.x, camera.position.z, false)
+
+  while (pendingOverlays.size > 0) {
+    const t0 = performance.now()
+    while (performance.now() - t0 < BUDGET_MS && pendingOverlays.size > 0) {
+      for (const [key, p] of pendingOverlays) {
+        if (p.builder.step(4)) {
+          finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
+          pendingOverlays.delete(key)
+          done++
+        }
+        if (performance.now() - t0 >= BUDGET_MS) break
+      }
+    }
+    updateProgress('Лес')
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+
   if ($loading) $loading.style.display = 'none'
 
   // Запускаем главный цикл
