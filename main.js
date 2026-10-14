@@ -308,10 +308,19 @@ const LOAD_FWD_CHUNKS = CFG.CHUNKS.loadForward
 const LOAD_BACK_CHUNKS = CFG.CHUNKS.loadBack
 const LOAD_SIDE_CHUNKS = CFG.CHUNKS.loadSide
 const UNLOAD_MARGIN = CFG.CHUNKS.unloadMargin
-const CHUNKS_PER_FRAME = CFG.CHUNKS.perFrame
 const COUNT = CFG.PROPS.density
 
 const chunks = new Map()
+// Persistent-чанки: ключи, которые unloadChunk не трогает.
+const PERSISTENT_CHUNKS = new Set()
+{
+  const P = CFG.CHUNKS.persistentStart
+  for (let cx = P.xMin; cx <= P.xMax; cx++) {
+    for (let cz = P.zMin; cz <= P.zMax; cz++) {
+      PERSISTENT_CHUNKS.add(cx + ',' + cz)
+    }
+  }
+}
 let showing3D = true
 
 /* Кэш props на чанк. Нужен, потому что props одного и того же чанка
@@ -622,6 +631,7 @@ function loadChunk(cx, cz) {
 }
 
 function unloadChunk(key) {
+  if (PERSISTENT_CHUNKS.has(key)) return // ← постоянные не выгружаем
   const c = chunks.get(key)
   if (!c) return
   scene.remove(c.mesh)
@@ -654,6 +664,7 @@ function updateChunks(camX, camZ, initial = false) {
   const padXb = LOAD_BACK_CHUNKS + 1
   const padZ = LOAD_SIDE_CHUNKS + 1
   for (const key of propsCache.keys()) {
+    if (PERSISTENT_CHUNKS.has(key)) continue // ← не пруним
     const [cs, czs] = key.split(',')
     const dx = +cs - cxi
     const dz = +czs - czi
@@ -678,8 +689,15 @@ function updateChunks(camX, camZ, initial = false) {
   if (initial) {
     for (const [cx, cz] of toLoad) loadChunk(cx, cz)
   } else {
-    const n = Math.min(CHUNKS_PER_FRAME, toLoad.length)
-    for (let i = 0; i < n; i++) loadChunk(toLoad[i][0], toLoad[i][1])
+    // Бюджет по времени вместо фиксированного счётчика.
+    // Кадр никогда не провиснет: если генерация чанка дорогая —
+    // просто погрузим меньше, оставшиеся уйдут в следующий кадр.
+    const BUDGET_MS = 4
+    const t0 = performance.now()
+    for (const [cx, cz] of toLoad) {
+      if (performance.now() - t0 >= BUDGET_MS) break
+      loadChunk(cx, cz)
+    }
   }
 }
 
@@ -690,7 +708,6 @@ const FAR_TILE_SIZE = CFG.FAR_TILES.size
 const FAR_TILE_SEG = CFG.FAR_TILES.segments
 const FAR_LOAD_R = CFG.FAR_TILES.loadRadius
 const FAR_UNLOAD_R = CFG.FAR_TILES.unloadRadius
-const FAR_PER_FRAME = CFG.FAR_TILES.perFrame
 
 const farGroundMat = new THREE.MeshStandardMaterial({
   map: groundTex,
@@ -976,7 +993,6 @@ const OVERLAY_SEG = CFG.OVERLAY.segments
 const OVERLAY_CANVAS = CFG.OVERLAY.canvasSize
 const OVERLAY_LOAD_R = CFG.OVERLAY.loadRadius
 const OVERLAY_UNLOAD_R = CFG.OVERLAY.unloadRadius
-const OVERLAY_PER_FRAME = CFG.OVERLAY.perFrame
 
 const overlayChunks = new Map()
 
@@ -2044,9 +2060,105 @@ updateHUD() // показывает монеты/рекорд из сейва
 renderShop() // показывает уровни из сейва
 
 updateChunks(camera.position.x, camera.position.z, true)
-updateFarTiles(camera.position.x, camera.position.z, true)
-updateOverlayChunks(camera.position.x, camera.position.z, true)
+/* ================================================================
+   Первичная загрузка — порционная, с прогресс-баром.
+   Не блокирует UI, показывает сколько осталось.
+================================================================ */
+async function initialLoad() {
+  // --- Собираем полный список чанков, которые нужно загрузить на старте ---
+  const cxi = Math.floor(camera.position.x / CHUNK_SIZE)
+  const czi = Math.floor(camera.position.z / CHUNK_SIZE)
 
-requestAnimationFrame(loop)
+  const needed = []
+  const seen = new Set()
+  // Динамическое окно вокруг камеры
+  for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
+    for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
+      const key = cxi + dx + ',' + (czi + dz)
+      if (!seen.has(key)) {
+        seen.add(key)
+        needed.push([cxi + dx, czi + dz])
+      }
+    }
+  }
+  // Плюс все persistent, если ещё не в списке
+  for (const key of PERSISTENT_CHUNKS) {
+    if (seen.has(key)) continue
+    const [cs, czs] = key.split(',')
+    needed.push([+cs, +czs])
+  }
 
-setTimeout(() => showToast('ПНИ РАКЕТУ! 🦵', CFG.UI.toastColors.upgrade), 400)
+  const total = needed.length
+  let done = 0
+
+  // Показываем оверлей загрузки
+  const $loading = document.getElementById('loading')
+  const $bar = document.getElementById('loadingBar')
+  const $text = document.getElementById('loadingText')
+  if ($loading) $loading.style.display = 'flex'
+
+  // --- Грузим по кадрам, бюджет 12 мс на кадр ---
+  const BUDGET_MS = 12 // больше, чем при обычной игре: мы на экране загрузки,
+  // FPS не важен, важно быстрее закрыть эту стадию
+
+  for (let i = 0; i < needed.length; ) {
+    const t0 = performance.now()
+    while (i < needed.length && performance.now() - t0 < BUDGET_MS) {
+      const [cx, cz] = needed[i]
+      loadChunk(cx, cz)
+      i++
+      done++
+    }
+    if ($bar) $bar.style.width = (done / total) * 100 + '%'
+    if ($text) $text.textContent = `Загрузка мира… ${done} / ${total}`
+    // Отдаём кадр браузеру — UI обновляется, вкладка не «зависает»
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+
+  // Дальние тайлы и overlay — тоже инкрементально, но их немного.
+  // Их стандартная очередь справится за секунду после старта игры.
+  if ($loading) $loading.style.display = 'none'
+
+  // Запускаем главный цикл
+  requestAnimationFrame(loop)
+
+  setTimeout(() => showToast('ПНИ РАКЕТУ! 🦵', CFG.UI.toastColors.upgrade), 400)
+}
+
+initialLoad()
+
+/* ================================================================
+   DEBUG — счётчики в консоли (вызывай вручную из консоли браузера)
+================================================================ */
+window.dbg = () => {
+  let persistentLoaded = 0
+  for (const key of chunks.keys()) {
+    if (PERSISTENT_CHUNKS.has(key)) persistentLoaded++
+  }
+  console.log(
+    `chunks=${chunks.size} (persistent=${persistentLoaded}/${PERSISTENT_CHUNKS.size}) ` +
+      `propsCache=${propsCache.size} ` +
+      `farTiles=${farTiles.size} ` +
+      `overlayChunks=${overlayChunks.size} ` +
+      `pendingFar=${pendingFarTiles.size} pendingOv=${pendingOverlays.size}`
+  )
+  console.log(
+    `lodFade=${lodFade.toFixed(2)} in2DMode=${in2DMode} ` +
+      `altSmooth=${lodAltSmooth.toFixed(0)} ` +
+      `rocketX=${rocketState.pos.x.toFixed(0)} rocketY=${rocketState.pos.y.toFixed(0)}`
+  )
+}
+
+/** Показать список persistent-чанков и их статус в сцене. */
+window.dbgPersistent = () => {
+  const list = []
+  for (const key of PERSISTENT_CHUNKS) {
+    const c = chunks.get(key)
+    list.push({
+      key,
+      loaded: !!c,
+      visible: c ? c.mesh.visible : null,
+    })
+  }
+  console.table(list)
+}
