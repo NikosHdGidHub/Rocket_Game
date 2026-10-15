@@ -225,15 +225,26 @@ function land() {
   cam.shake = CFG.CAMERA.shakeOnLand
 }
 
+function pickCard() {
+  const limit = CFG.CHESTS.cardTypeLimit
+  const allowed = CFG.CARDS.filter((c) => (G.cards[c.key] || 0) < limit)
+  if (allowed.length === 0) return null
+  return allowed[Math.floor(Math.random() * allowed.length)]
+}
+
 function openChest(chest) {
   chest.opened = true
   G.openedChests.add(chest.x)
   chest.group.visible = false
 
-  const card = CFG.CARDS[Math.floor(Math.random() * CFG.CARDS.length)]
-  G.cards[card.key] = (G.cards[card.key] || 0) + 1
+  const card = pickCard()
+  if (card) {
+    G.cards[card.key] = (G.cards[card.key] || 0) + 1
+    UI.showCardPopup(card)
+  } else {
+    UI.showToast('Все карточки собраны! 🎉', CFG.UI.toastColors.upgrade)
+  }
 
-  UI.showCardPopup(card)
   saveProgress()
 }
 

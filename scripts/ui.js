@@ -6,6 +6,7 @@
 import * as CFG from './config.js'
 import { G, input } from './state.js'
 import { renderer } from './scene.js'
+import * as Settings from './settings.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')
@@ -210,4 +211,40 @@ export function init(callbacks) {
     e.stopPropagation()
     _onReset && _onReset()
   })
+
+  /* ---------- Settings panel ---------- */
+  const $settingsBtn = document.getElementById('settingsBtn')
+  const $settingsPanel = document.getElementById('settingsPanel')
+  const $settingsClose = document.getElementById('settingsClose')
+  const $lowSpecToggle = document.getElementById('lowSpecToggle')
+
+  if ($lowSpecToggle) {
+    // Показать сохранённое значение
+    $lowSpecToggle.checked = Settings.settings.lowSpecMode
+
+    $lowSpecToggle.addEventListener('change', () => {
+      Settings.settings.lowSpecMode = $lowSpecToggle.checked
+      Settings.save()
+      // Мир уже загружен с прежней плотностью — перезагружаем страницу,
+      // чтобы settings.js применил новое значение до генерации чанков.
+      showToast('Применяем… 🔄', CFG.UI.toastColors.upgrade)
+      setTimeout(() => location.reload(), 350)
+    })
+  }
+
+  if ($settingsBtn && $settingsPanel) {
+    $settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      $settingsPanel.classList.add('on')
+    })
+    $settingsPanel.addEventListener('click', (e) => {
+      if (e.target === $settingsPanel) $settingsPanel.classList.remove('on')
+    })
+  }
+  if ($settingsClose && $settingsPanel) {
+    $settingsClose.addEventListener('click', (e) => {
+      e.stopPropagation()
+      $settingsPanel.classList.remove('on')
+    })
+  }
 }

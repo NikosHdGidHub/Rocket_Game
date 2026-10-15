@@ -4,6 +4,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
+import './settings.js' // side effect: применяет lowSpecMode к CFG.PROPS.density
 import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './scene.js'
 import { lod } from './state.js'
 import { TEMPLATES } from './world/props.js'
@@ -94,6 +95,7 @@ export function computeChunkProps(cx, cz) {
   const TH = CFG.PROPS.thresholds
   const SC = CFG.PROPS.scales
   const VEG_MAX_H = CFG.PROPS.vegMaxHeight
+  const VEG_MIN_H = CFG.PROPS.vegMinHeight
 
   const SAFE_R = CFG.PROPS.safeRadius
   const SAFE_R2 = SAFE_R * SAFE_R
@@ -126,13 +128,13 @@ export function computeChunkProps(cx, cz) {
       if (ex * ex + ez * ez < 1) continue
     }
 
+    const h = terrainHeight(wx, wz)
     if (kind !== 'rock') {
       const density = forestDensityFromSpheres(wx, wz, spheres)
       if (density <= 0) continue
       if (rng() > density) continue
-      if (terrainHeight(wx, wz) > VEG_MAX_H) continue
+      if (h > VEG_MAX_H || h < VEG_MIN_H) continue
     } else {
-      const h = terrainHeight(wx, wz)
       if (h <= VEG_MAX_H && rng() > CFG.PROPS.rockLowlandFrequency) continue
     }
 
