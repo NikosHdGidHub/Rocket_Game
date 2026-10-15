@@ -20,7 +20,7 @@ const FAR_TILE_SIZE = CFG.FAR_TILES.size
 const FAR_LOAD_R = CFG.FAR_TILES.loadRadius
 const FAR_UNLOAD_R = CFG.FAR_TILES.unloadRadius
 
-let farTileSeg = CFG.FAR_TILES.segments // ← мутабельно
+let farTileSeg = CFG.FAR_TILES.segments
 
 const TILE = CFG.GROUND_TEX.tile
 
@@ -593,18 +593,32 @@ function updateLOD(dt) {
     lod.showing3D = want3D
   }
 
-  // динамический туман по высоте
-  let dNear = FOG_3D_NEAR
-  let dFar = FOG_3D_FAR
+  // ─── 3D-туман (только до 2D-режима) ───
+  let dNear3D = FOG_3D_NEAR
+  let dFar3D = FOG_3D_FAR
   if (CFG.FOG.dynamicByAltitude) {
     const F = CFG.FOG
-    const t = Math.min(1, Math.max(0, lod.altSmooth / F.altRef))
-    dNear = F.nearGround + (FOG_3D_NEAR - F.nearGround) * t
-    dFar = F.farGround + (FOG_3D_FAR - F.farGround) * t
+    const t = Math.min(1, Math.max(0, lod.altSmooth / F.altRef3D))
+    dNear3D = F.nearGround + (FOG_3D_NEAR - F.nearGround) * t
+    dFar3D = F.farGround + (FOG_3D_FAR - F.farGround) * t
   }
 
-  scene.fog.near = dNear + (FOG_2D_NEAR - dNear) * lod.fade
-  scene.fog.far = dFar + (FOG_2D_FAR - dFar) * lod.fade
+  // ─── 2D-туман: от (nearGround2D, farGround2D) на высоте
+  //     переключения (LOD.changeAltitude) → до (near2D, far2D)
+  //     на высоте altRef2D. ───
+  let dNear2D = FOG_2D_NEAR
+  let dFar2D = FOG_2D_FAR
+  if (CFG.FOG.dynamicByAltitude) {
+    const F = CFG.FOG
+    const span = Math.max(1, F.altRef2D - CFG.LOD.changeAltitude)
+    const t = Math.min(1, Math.max(0, (lod.altSmooth - CFG.LOD.changeAltitude) / span))
+    dNear2D = F.nearGround2D + (FOG_2D_NEAR - F.nearGround2D) * t
+    dFar2D = F.farGround2D + (FOG_2D_FAR - F.farGround2D) * t
+  }
+
+  // ─── Смешение по fade: 0 = чистый 3D, 1 = чистый 2D ───
+  scene.fog.near = dNear3D + (dNear2D - dNear3D) * lod.fade
+  scene.fog.far = dFar3D + (dFar2D - dFar3D) * lod.fade
 }
 
 // Локальный доступ к фазе без импорта game.js (избегаем циклов)
