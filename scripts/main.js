@@ -14,7 +14,7 @@ import { G } from './state.js'
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
 ================================================================ */
-Scene.init() // renderer / camera / scene / ground
+Scene.init() // renderer / camera / sky / lights / ground
 Entities.init() // boss + rocket + chests
 UI.init({
   onLaunch: Game.startKick,
@@ -25,11 +25,12 @@ UI.init({
 })
 Game.init() // loadProgress + resetRocket + HUD
 
-// lod.js запрашивает G.phase — без прямого импорта game (циклов нет)
+Entities.resyncChests() // ← теперь флаги сундуков актуальны
+
 Lod.setPhaseGetter(() => G.phase)
 
 Chunks.init() // навешивает sky-fog на propMat
-Lod.update(0) // первичный прогон, чтобы LOD был в консистентном состоянии
+Lod.init() // создаёт farGroundMat (нужен groundTex)
 
 /* ================================================================
    2. Первичная загрузка с прогресс-баром.
@@ -40,26 +41,41 @@ async function initialLoad() {
   const $text = document.getElementById('loadingText')
   if ($loading) $loading.style.display = 'flex'
 
-  // Собираем примерный total (chunks + far + overlay) для прогресс-бара.
-  // Точные значения сообщит каждый модуль через onProgress.
-  let phaseLabel = 'Загрузка мира'
-  const setProgress = (done, total) => {
-    const pct = total > 0 ? (done / total) * 100 : 0
+  // ---------- Считаем общий объём ----------
+  const totalChunks = Chunks.countInitial()
+  const totalFar = Lod.countInitialFar()
+  const totalOverlays = Lod.countInitialOverlays()
+  const total = totalChunks + totalFar + totalOverlays
+
+  let label = 'Загрузка мира'
+  let doneGlobal = 0
+  const setBar = () => {
+    const pct = total > 0 ? (doneGlobal / total) * 100 : 0
     if ($bar) $bar.style.width = pct.toFixed(1) + '%'
-    if ($text) $text.textContent = `${phaseLabel}… ${done} / ${total}`
+    if ($text) $text.textContent = `${label}… ${doneGlobal} / ${total}`
   }
+  setBar()
 
   // ---------- 1) 3D-чанки ----------
-  phaseLabel = 'Загрузка мира'
-  await Chunks.loadInitial(setProgress)
+  label = 'Загрузка мира'
+  await Chunks.loadInitial((done) => {
+    doneGlobal = done
+    setBar()
+  })
 
   // ---------- 2) Дальние тайлы ----------
-  phaseLabel = 'Дальний рельеф'
-  await Lod.loadInitialFar(setProgress)
+  label = 'Дальний рельеф'
+  await Lod.loadInitialFar((done) => {
+    doneGlobal = totalChunks + done
+    setBar()
+  })
 
   // ---------- 3) Overlay (точечные деревья) ----------
-  phaseLabel = 'Лес'
-  await Lod.loadInitialOverlays(setProgress)
+  label = 'Лес'
+  await Lod.loadInitialOverlays((done) => {
+    doneGlobal = totalChunks + totalFar + done
+    setBar()
+  })
 
   if ($loading) $loading.style.display = 'none'
 

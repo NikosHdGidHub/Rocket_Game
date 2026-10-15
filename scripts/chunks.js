@@ -4,13 +4,18 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
-import { scene, groundMat, SUN_DIR, camera } from './scene.js'
+import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './scene.js'
 import { lod } from './state.js'
 import { TEMPLATES } from './world/props.js'
 import {
-  WORLD_SEED, hash2i, mulberry32,
-  terrainHeight, heightToTerrainColor, terrainBrightnessNoise,
-  collectForestSpheres, forestDensityFromSpheres,
+  WORLD_SEED,
+  hash2i,
+  mulberry32,
+  terrainHeight,
+  heightToTerrainColor,
+  terrainBrightnessNoise,
+  collectForestSpheres,
+  forestDensityFromSpheres,
 } from './world/world.js'
 
 /* ---------- Константы из конфига ---------- */
@@ -92,7 +97,7 @@ export function computeChunkProps(cx, cz) {
 
   const SAFE_R = CFG.PROPS.safeRadius
   const SAFE_R2 = SAFE_R * SAFE_R
-  const SAFE_TREES_FWD  = CFG.PROPS.safeRadiusTrees
+  const SAFE_TREES_FWD = CFG.PROPS.safeRadiusTrees
   const SAFE_TREES_BACK = SAFE_R
   const SAFE_TREES_SIDE = SAFE_R
 
@@ -156,7 +161,7 @@ function makeChunkMesh(cx, cz, items) {
   const baseZ = cz * CHUNK_SIZE
 
   const pos = geo.attributes.position
-  const uv  = geo.attributes.uv
+  const uv = geo.attributes.uv
   const nrm = geo.attributes.normal
 
   const colArr = new Float32Array(pos.count * 3)
@@ -172,7 +177,7 @@ function makeChunkMesh(cx, cz, items) {
     const wx = cxw + pos.getX(i)
     const wz = czw + pos.getZ(i)
 
-    const h  = terrainHeight(wx, wz)
+    const h = terrainHeight(wx, wz)
     const hx = terrainHeight(wx + step, wz)
     const hz = terrainHeight(wx, wz + step)
 
@@ -191,24 +196,24 @@ function makeChunkMesh(cx, cz, items) {
 
     heightToTerrainColor(h, col)
     const b = terrainBrightnessNoise(wx, wz)
-    colArr[i * 3]     = col.r * b
+    colArr[i * 3] = col.r * b
     colArr[i * 3 + 1] = col.g * b
     colArr[i * 3 + 2] = col.b * b
   }
 
   /* ---------- Проход 2: запекание теней ---------- */
   const shLenXZ = Math.hypot(SUN_DIR.x, SUN_DIR.z) || 1
-  const shDirX  = -SUN_DIR.x / shLenXZ
-  const shDirZ  = -SUN_DIR.z / shLenXZ
+  const shDirX = -SUN_DIR.x / shLenXZ
+  const shDirZ = -SUN_DIR.z / shLenXZ
 
   const shStrength = CFG.PROPS.shadow.strength
-  const shScale    = CFG.PROPS.shadow.scale
-  const shSoft     = CFG.PROPS.shadow.softness
-  const shDist     = CFG.PROPS.shadow.offset
+  const shScale = CFG.PROPS.shadow.scale
+  const shSoft = CFG.PROPS.shadow.softness
+  const shDist = CFG.PROPS.shadow.offset
 
   const treeRadius = (kind) => {
     if (kind === 'pine') return 1.6
-    if (kind === 'oak')  return 1.8
+    if (kind === 'oak') return 1.8
     if (kind === 'bush') return 0.8
     return 0
   }
@@ -260,14 +265,14 @@ function makeChunkMesh(cx, cz, items) {
   for (let i = 0; i < pos.count; i++) {
     const s = shadowB[i]
     if (s < 1) {
-      colArr[i * 3]     *= s
+      colArr[i * 3] *= s
       colArr[i * 3 + 1] *= s
       colArr[i * 3 + 2] *= s
     }
   }
 
   pos.needsUpdate = true
-  uv.needsUpdate  = true
+  uv.needsUpdate = true
   nrm.needsUpdate = true
   geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
 
@@ -281,13 +286,25 @@ function makeChunkMesh(cx, cz, items) {
     const gx = (x - baseX) * stepRecip
     const gz = (z - baseZ) * stepRecip
 
-    let ix = Math.floor(gx), iz = Math.floor(gz)
-    let fx = gx - ix, fz = gz - iz
+    let ix = Math.floor(gx),
+      iz = Math.floor(gz)
+    let fx = gx - ix,
+      fz = gz - iz
 
-    if (ix < 0) { ix = 0; fx = 0 }
-    else if (ix > VPR - 2) { ix = VPR - 2; fx = 1 }
-    if (iz < 0) { iz = 0; fz = 0 }
-    else if (iz > VPR - 2) { iz = VPR - 2; fz = 1 }
+    if (ix < 0) {
+      ix = 0
+      fx = 0
+    } else if (ix > VPR - 2) {
+      ix = VPR - 2
+      fx = 1
+    }
+    if (iz < 0) {
+      iz = 0
+      fz = 0
+    } else if (iz > VPR - 2) {
+      iz = VPR - 2
+      fz = 1
+    }
 
     const i00 = iz * VPR + ix
     const i10 = i00 + 1
@@ -392,19 +409,21 @@ export function refillChunkQueue(camX, camZ) {
   const toUnload = []
   for (const key of chunks.keys()) {
     const [cs, czs] = key.split(',')
-    const dx = +cs - cxi, dz = +czs - czi
+    const dx = +cs - cxi,
+      dz = +czs - czi
     if (
       dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
-      dx >   LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
+      dx > LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
       Math.abs(dz) > LOAD_SIDE_CHUNKS + UNLOAD_MARGIN
-    ) toUnload.push(key)
+    )
+      toUnload.push(key)
   }
   for (const k of toUnload) unloadChunk(k)
 
   // --- Прун кэша ---
   const padXf = LOAD_FWD_CHUNKS + 1
   const padXb = LOAD_BACK_CHUNKS + 1
-  const padZ  = LOAD_SIDE_CHUNKS + 1
+  const padZ = LOAD_SIDE_CHUNKS + 1
   for (const key of propsCache.keys()) {
     if (PERSISTENT_CHUNKS.has(key)) continue
     const [cs, czs] = key.split(',')
@@ -420,7 +439,8 @@ export function refillChunkQueue(camX, camZ) {
   chunkQueueIdx = 0
   for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
     for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
-      const cx = cxi + dx, cz = czi + dz
+      const cx = cxi + dx,
+        cz = czi + dz
       if (!chunks.has(cx + ',' + cz)) chunkLoadQueue.push([cx, cz])
     }
   }
@@ -453,7 +473,7 @@ function updatePersistentVisibility(camX, camZ) {
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
 
-  const showFine  = lod.fade < 0.95
+  const showFine = lod.fade < 0.95
   const showProps = lod.showing3D
 
   for (const key of PERSISTENT_CHUNKS) {
@@ -490,11 +510,13 @@ export function update() {
 
   processChunkQueue()
 
-  const showFine  = lod.fade < 0.95
+  const showFine = lod.fade < 0.95
   const showProps = lod.showing3D
   if (
-    cxi !== _lastPersist.cxi || czi !== _lastPersist.czi ||
-    showFine !== _lastPersist.showFine || showProps !== _lastPersist.showProps
+    cxi !== _lastPersist.cxi ||
+    czi !== _lastPersist.czi ||
+    showFine !== _lastPersist.showFine ||
+    showProps !== _lastPersist.showProps
   ) {
     updatePersistentVisibility(camX, camZ)
     _lastPersist = { cxi, czi, showFine, showProps }
@@ -505,7 +527,7 @@ export function update() {
    loadInitial — порционная загрузка нужных чанков с progress-колбэком.
    Возвращает Promise.
 ================================================================ */
-export async function loadInitial(onProgress) {
+export async function loadInitial(onStep) {
   const camX = camera.position.x
   const camZ = camera.position.z
   const cxi = Math.floor(camX / CHUNK_SIZE)
@@ -515,8 +537,11 @@ export async function loadInitial(onProgress) {
   const seen = new Set()
   for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
     for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
-      const key = (cxi + dx) + ',' + (czi + dz)
-      if (!seen.has(key)) { seen.add(key); needed.push([cxi + dx, czi + dz]) }
+      const key = cxi + dx + ',' + (czi + dz)
+      if (!seen.has(key)) {
+        seen.add(key)
+        needed.push([cxi + dx, czi + dz])
+      }
     }
   }
   for (const key of PERSISTENT_CHUNKS) {
@@ -525,9 +550,8 @@ export async function loadInitial(onProgress) {
     needed.push([+cs, +czs])
   }
 
-  const total = needed.length
   let done = 0
-  onProgress(done, total)
+  onStep(done)
 
   const BUDGET_MS = 12
   for (let i = 0; i < needed.length; ) {
@@ -535,12 +559,43 @@ export async function loadInitial(onProgress) {
     while (i < needed.length && performance.now() - t0 < BUDGET_MS) {
       const [cx, cz] = needed[i]
       loadChunk(cx, cz)
-      i++; done++
+      i++
+      done++
     }
-    onProgress(done, total)
+    onStep(done)
     await new Promise((r) => requestAnimationFrame(r))
   }
-  return total
+  return done
+}
+
+/* ================================================================
+   countInitial — сколько чанков нужно загрузить (без загрузки).
+   Используется для единого прогресс-бара.
+================================================================ */
+export function countInitial() {
+  const camX = camera.position.x
+  const camZ = camera.position.z
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
+
+  const seen = new Set()
+  let n = 0
+  for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
+    for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
+      const key = cxi + dx + ',' + (czi + dz)
+      if (!seen.has(key)) {
+        seen.add(key)
+        n++
+      }
+    }
+  }
+  for (const key of PERSISTENT_CHUNKS) {
+    if (!seen.has(key)) {
+      seen.add(key)
+      n++
+    }
+  }
+  return n
 }
 
 /* ================================================================

@@ -945,7 +945,7 @@ export const GAME = /** @type {const} */ ({
   initialBest: 0,
 
   /** Начальные уровни апгрейдов. Каждый начинается с 1. */
-  initialUpgrades: { power: 1, aero: 1, fuel: 100, thrust: 100 },
+  initialUpgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
 })
 
 /* ================================================================

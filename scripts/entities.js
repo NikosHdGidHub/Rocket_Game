@@ -16,7 +16,11 @@ boss.position.set(...CFG.BOSS.position)
 
 const skinMat = new THREE.MeshStandardMaterial({ color: CFG.BOSS.colors.skin, roughness: 0.55 })
 const darkMat = new THREE.MeshStandardMaterial({ color: CFG.BOSS.colors.dark, roughness: 0.8 })
-const accentMat = new THREE.MeshStandardMaterial({ color: CFG.BOSS.colors.accent, roughness: 0.4, metalness: 0.3 })
+const accentMat = new THREE.MeshStandardMaterial({
+  color: CFG.BOSS.colors.accent,
+  roughness: 0.4,
+  metalness: 0.3,
+})
 
 function box(w, h, d, mat) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
@@ -91,16 +95,23 @@ scene.add(boss)
 export const rocket = new THREE.Group()
 
 const bodyMat = new THREE.MeshStandardMaterial({
-  color: CFG.ROCKET.colors.body, metalness: 0.55, roughness: 0.3,
+  color: CFG.ROCKET.colors.body,
+  metalness: 0.55,
+  roughness: 0.3,
 })
 const redMat = new THREE.MeshStandardMaterial({
-  color: CFG.ROCKET.colors.red, metalness: 0.3, roughness: 0.45,
+  color: CFG.ROCKET.colors.red,
+  metalness: 0.3,
+  roughness: 0.45,
 })
 const glassMat = new THREE.MeshStandardMaterial({
-  color: CFG.ROCKET.colors.glass, metalness: 0.9, roughness: 0.15,
+  color: CFG.ROCKET.colors.glass,
+  metalness: 0.9,
+  roughness: 0.15,
 })
 const rocketDarkMat = new THREE.MeshStandardMaterial({
-  color: CFG.BOSS.colors.dark, roughness: 0.8,
+  color: CFG.BOSS.colors.dark,
+  roughness: 0.8,
 })
 
 const rBody = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 2.2, 16), bodyMat)
@@ -141,7 +152,9 @@ nozzle.position.x = -1.25
 rocket.add(nozzle)
 
 export const flameMat = new THREE.MeshBasicMaterial({
-  color: CFG.ROCKET.flame.outer, transparent: true, opacity: 0.95,
+  color: CFG.ROCKET.flame.outer,
+  transparent: true,
+  opacity: 0.95,
 })
 export const flame = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.4, 12), flameMat)
 flame.rotation.z = Math.PI / 2
@@ -174,11 +187,16 @@ function buildChestMesh(x, z) {
   const g = new THREE.Group()
 
   const bodyMatC = new THREE.MeshStandardMaterial({
-    color: 0x6b3a14, roughness: 0.7, metalness: 0.1,
+    color: 0x6b3a14,
+    roughness: 0.7,
+    metalness: 0.1,
   })
   const trimMat = new THREE.MeshStandardMaterial({
-    color: 0xffd75e, roughness: 0.35, metalness: 0.8,
-    emissive: 0xffb300, emissiveIntensity: 0.6,
+    color: 0xffd75e,
+    roughness: 0.35,
+    metalness: 0.8,
+    emissive: 0xffb300,
+    emissiveIntensity: 0.6,
   })
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 1.6), bodyMatC)
   body.position.y = 0.7
@@ -211,8 +229,12 @@ function buildChestMesh(x, z) {
   })
   const beam = new THREE.Mesh(
     new THREE.CylinderGeometry(
-      CFG.CHESTS.beamRadius, CFG.CHESTS.beamRadius * 1.8,
-      CFG.CHESTS.beamHeight, 12, 1, true
+      CFG.CHESTS.beamRadius,
+      CFG.CHESTS.beamRadius * 1.8,
+      CFG.CHESTS.beamHeight,
+      12,
+      1,
+      true
     ),
     beamMat
   )
@@ -223,9 +245,11 @@ function buildChestMesh(x, z) {
 
   const glowMat = new THREE.MeshBasicMaterial({
     color: CFG.CHESTS.glowColor,
-    transparent: true, opacity: 0.5,
+    transparent: true,
+    opacity: 0.5,
     blending: THREE.AdditiveBlending,
-    depthWrite: false, fog: false,
+    depthWrite: false,
+    fog: false,
   })
   const glow = new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), glowMat)
   glow.position.y = 1.2
@@ -257,6 +281,18 @@ export function initChests() {
     group.visible = !opened
     chestGroup.add(group)
     chests.push({ x, z, group, beam, glow, light, opened })
+  }
+}
+
+/**
+ * Синхронизирует флаги открытых сундуков с G.openedChests.
+ * Нужно потому, что initChests() выполняется ДО loadProgress() —
+ * на момент создания chests[] массив G.openedChests ещё пуст.
+ */
+export function resyncChests() {
+  for (const c of chests) {
+    c.opened = G.openedChests.has(c.x)
+    c.group.visible = !c.opened
   }
 }
 

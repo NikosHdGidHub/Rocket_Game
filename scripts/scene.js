@@ -11,16 +11,23 @@ import { makeGroundTexture, GROUND_TILE } from './world/world.js'
 
 /* ---------- Мутабельные экспорты (заполняются в init) ---------- */
 export let renderer
-export let scene
 export let camera
 export let sun
 export let skyDome
 export let groundTex
 export let groundMat
-export let SUN_DIR
-export let SKY_ZENITH
-export let SKY_HORIZON
-export let SUN_COLOR
+
+/* ---------- Создаём сразу на этапе загрузки модуля ----------
+   Эти объекты используют в top-level коде другие модули
+   (entities.js → scene.add, lod.js → map/applySkyFog).
+   Если их создавать в init() — top-level код упадёт с undefined. */
+export const SKY_ZENITH = new THREE.Color(CFG.SKY.zenith)
+export const SKY_HORIZON = new THREE.Color(CFG.SKY.horizon)
+export const SUN_COLOR = new THREE.Color(CFG.SKY.sun)
+export const SUN_DIR = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
+
+export const scene = new THREE.Scene()
+scene.fog = new THREE.Fog(CFG.SKY.horizon, CFG.FOG.initialNear, CFG.FOG.initialFar)
 
 /** Метров на один повтор текстуры земли. */
 export const TILE = GROUND_TILE
@@ -30,8 +37,8 @@ export const TILE = GROUND_TILE
    applySkyFog. Обновляется каждый кадр в lod.update().
 */
 export const fogU = {
-  center:    { value: new THREE.Vector2(0, 0) },
-  dir:       { value: new THREE.Vector2(1, 0) },
+  center: { value: new THREE.Vector2(0, 0) },
+  dir: { value: new THREE.Vector2(1, 0) },
   shapeSide: { value: CFG.FOG.ellipseSide },
   shapeBack: { value: CFG.FOG.ellipseBack },
 }
@@ -155,7 +162,10 @@ export function init() {
 
   /* ---------- Camera ---------- */
   camera = new THREE.PerspectiveCamera(
-    CFG.CAMERA.fov, innerWidth / innerHeight, CFG.CAMERA.near, CFG.CAMERA.far
+    CFG.CAMERA.fov,
+    innerWidth / innerHeight,
+    CFG.CAMERA.near,
+    CFG.CAMERA.far
   )
   camera.position.set(...CFG.CAMERA.initial)
 
@@ -165,33 +175,23 @@ export function init() {
     renderer.setSize(innerWidth, innerHeight)
   })
 
-  /* ---------- Sky palette ---------- */
-  SKY_ZENITH  = new THREE.Color(CFG.SKY.zenith)
-  SKY_HORIZON = new THREE.Color(CFG.SKY.horizon)
-  SUN_COLOR   = new THREE.Color(CFG.SKY.sun)
-  SUN_DIR     = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
-
-  /* ---------- Scene + Fog ---------- */
-  scene = new THREE.Scene()
-  scene.fog = new THREE.Fog(CFG.SKY.horizon, CFG.FOG.initialNear, CFG.FOG.initialFar)
-
   /* ---------- Sky-dome (шейдер) ---------- */
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
     uniforms: {
-      topColor:    { value: SKY_ZENITH.clone() },
+      topColor: { value: SKY_ZENITH.clone() },
       bottomColor: { value: SKY_HORIZON.clone() },
-      sunColor:    { value: SUN_COLOR.clone() },
-      sunDir:      { value: SUN_DIR.clone() },
-      exponent:    { value: CFG.SKY.exponent },
-      hazeColor:   { value: new THREE.Vector3(...CFG.SKY.hazeColor) },
-      hazePow:     { value: CFG.SKY.hazePow },
-      glowPow:     { value: CFG.SKY.glowPow },
-      glowAmt:     { value: CFG.SKY.glowAmt },
-      corePow:     { value: CFG.SKY.corePow },
-      coreAmt:     { value: CFG.SKY.coreAmt },
+      sunColor: { value: SUN_COLOR.clone() },
+      sunDir: { value: SUN_DIR.clone() },
+      exponent: { value: CFG.SKY.exponent },
+      hazeColor: { value: new THREE.Vector3(...CFG.SKY.hazeColor) },
+      hazePow: { value: CFG.SKY.hazePow },
+      glowPow: { value: CFG.SKY.glowPow },
+      glowAmt: { value: CFG.SKY.glowAmt },
+      corePow: { value: CFG.SKY.corePow },
+      coreAmt: { value: CFG.SKY.coreAmt },
     },
     vertexShader: `
       varying vec3 vWorldPos;
@@ -243,21 +243,21 @@ export function init() {
   scene.add(skyDome)
 
   /* ---------- Lights ---------- */
-  scene.add(new THREE.HemisphereLight(
-    CFG.LIGHTS.hemiSky, CFG.LIGHTS.hemiGround, CFG.LIGHTS.hemiIntensity
-  ))
+  scene.add(
+    new THREE.HemisphereLight(CFG.LIGHTS.hemiSky, CFG.LIGHTS.hemiGround, CFG.LIGHTS.hemiIntensity)
+  )
 
   sun = new THREE.DirectionalLight(CFG.LIGHTS.sunColor, CFG.LIGHTS.sunIntensity)
   sun.position.set(...CFG.LIGHTS.sunOffset)
   sun.castShadow = CFG.LIGHTS.shadow.enabled
   sun.shadow.mapSize.set(CFG.LIGHTS.shadow.mapSize, CFG.LIGHTS.shadow.mapSize)
   const sc = sun.shadow.camera
-  sc.left   = -CFG.LIGHTS.shadow.cameraSize
-  sc.right  =  CFG.LIGHTS.shadow.cameraSize
-  sc.top    =  CFG.LIGHTS.shadow.cameraSize
+  sc.left = -CFG.LIGHTS.shadow.cameraSize
+  sc.right = CFG.LIGHTS.shadow.cameraSize
+  sc.top = CFG.LIGHTS.shadow.cameraSize
   sc.bottom = -CFG.LIGHTS.shadow.cameraSize
-  sc.near   = CFG.LIGHTS.shadow.near
-  sc.far    = CFG.LIGHTS.shadow.far
+  sc.near = CFG.LIGHTS.shadow.near
+  sc.far = CFG.LIGHTS.shadow.far
   sun.shadow.bias = CFG.LIGHTS.shadow.bias
   scene.add(sun)
   scene.add(sun.target)

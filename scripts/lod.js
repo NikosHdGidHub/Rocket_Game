@@ -7,35 +7,35 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
-import {
-  scene, camera, groundTex, applySkyFog, fogU,
-} from './scene.js'
+import { scene, camera, groundTex, applySkyFog, fogU } from './scene.js'
 import { lod, rocketState } from './state.js'
 import { boss } from './entities.js'
-import {
-  CHUNK_SIZE, chunks, PERSISTENT_CHUNKS, computeChunkProps,
-} from './chunks.js'
+import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS, computeChunkProps } from './chunks.js'
 import { terrainHeight, heightToTerrainColor, hash2i } from './world/world.js'
 
 /* ================================================================
    FAR TILES
 ================================================================ */
 const FAR_TILE_SIZE = CFG.FAR_TILES.size
-const FAR_TILE_SEG  = CFG.FAR_TILES.segments
-const FAR_LOAD_R    = CFG.FAR_TILES.loadRadius
-const FAR_UNLOAD_R  = CFG.FAR_TILES.unloadRadius
+const FAR_TILE_SEG = CFG.FAR_TILES.segments
+const FAR_LOAD_R = CFG.FAR_TILES.loadRadius
+const FAR_UNLOAD_R = CFG.FAR_TILES.unloadRadius
 
 const TILE = CFG.GROUND_TEX.tile
 
-const farGroundMat = new THREE.MeshStandardMaterial({
-  map: groundTex,
-  vertexColors: true,
-  roughness: 1,
-  metalness: 0,
-  transparent: true,
-  opacity: 0,
-})
-applySkyFog(farGroundMat)
+let farGroundMat = null
+
+export function init() {
+  farGroundMat = new THREE.MeshStandardMaterial({
+    map: groundTex, // к этому моменту scene.init() уже отработал
+    vertexColors: true,
+    roughness: 1,
+    metalness: 0,
+    transparent: true,
+    opacity: 0,
+  })
+  applySkyFog(farGroundMat)
+}
 
 const farTiles = new Map()
 const pendingFarTiles = new Map()
@@ -45,7 +45,7 @@ function createFarTileBuilder(fx, fz) {
   geo.rotateX(-Math.PI / 2)
 
   const pos = geo.attributes.position
-  const uv  = geo.attributes.uv
+  const uv = geo.attributes.uv
   const nrm = geo.attributes.normal
   const colArr = new Float32Array(pos.count * 3)
   geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
@@ -69,7 +69,7 @@ function createFarTileBuilder(fx, fz) {
         for (let i = start; i < end; i++) {
           const wx = cxw + pos.getX(i)
           const wz = czw + pos.getZ(i)
-          const h  = terrainHeight(wx, wz)
+          const h = terrainHeight(wx, wz)
           const hx = terrainHeight(wx + eps, wz)
           const hz = terrainHeight(wx, wz + eps)
           pos.setY(i, h)
@@ -79,7 +79,7 @@ function createFarTileBuilder(fx, fz) {
           const len = Math.hypot(nx, 1, nz)
           nrm.setXYZ(i, nx / len, 1 / len, nz / len)
           heightToTerrainColor(h, col)
-          colArr[i * 3]     = col.r
+          colArr[i * 3] = col.r
           colArr[i * 3 + 1] = col.g
           colArr[i * 3 + 2] = col.b
         }
@@ -87,7 +87,7 @@ function createFarTileBuilder(fx, fz) {
       }
       if (row >= totalRows) {
         pos.needsUpdate = true
-        uv.needsUpdate  = true
+        uv.needsUpdate = true
         nrm.needsUpdate = true
         geo.attributes.color.needsUpdate = true
         return true
@@ -124,7 +124,8 @@ export function refillFarTiles(camX, camZ) {
 
   for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
     for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
-      const fx = fxi + dx, fz = fzi + dz
+      const fx = fxi + dx,
+        fz = fzi + dz
       const key = fx + ',' + fz
       if (farTiles.has(key) || pendingFarTiles.has(key)) continue
       pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
@@ -165,10 +166,10 @@ export function processFarTiles() {
 /* ================================================================
    OVERLAY CHUNKS — точечные деревья
 ================================================================ */
-const OVERLAY_SIZE     = CFG.OVERLAY.size
-const OVERLAY_SEG      = CFG.OVERLAY.segments
-const OVERLAY_CANVAS   = CFG.OVERLAY.canvasSize
-const OVERLAY_LOAD_R   = CFG.OVERLAY.loadRadius
+const OVERLAY_SIZE = CFG.OVERLAY.size
+const OVERLAY_SEG = CFG.OVERLAY.segments
+const OVERLAY_CANVAS = CFG.OVERLAY.canvasSize
+const OVERLAY_LOAD_R = CFG.OVERLAY.loadRadius
 const OVERLAY_UNLOAD_R = CFG.OVERLAY.unloadRadius
 
 const overlayChunks = new Map()
@@ -210,14 +211,14 @@ function plotPoint(pix, W, H, cx, cy, offsets, r, g, b, a, merge) {
       if (outA <= 0) continue
       const k = 1 / outA
 
-      pix[i4]     = (r * sa + pix[i4]     * da * inv) * k
+      pix[i4] = (r * sa + pix[i4] * da * inv) * k
       pix[i4 + 1] = (g * sa + pix[i4 + 1] * da * inv) * k
       pix[i4 + 2] = (b * sa + pix[i4 + 2] * da * inv) * k
       pix[i4 + 3] = outA * 255
     } else {
       const curA = pix[i4 + 3]
       if (a > curA) {
-        pix[i4]     = r
+        pix[i4] = r
         pix[i4 + 1] = g
         pix[i4 + 2] = b
         pix[i4 + 3] = a
@@ -255,12 +256,12 @@ function createOverlayBuilder(ox, oz) {
 
   const O = CFG.OVERLAY
   const PINE_RGB = hexToRgb(O.colors.pine)
-  const OAK_RGB  = hexToRgb(O.colors.oak)
+  const OAK_RGB = hexToRgb(O.colors.oak)
   const DISC = makeDiscOffsets(O.pointSize)
-  const JIT  = O.colorJitter
+  const JIT = O.colorJitter
   const MERGE = O.mergeAlpha
   const BASE_ALPHA = O.pointAlpha * 255
-  const ALPHA_JIT  = O.alphaJitter
+  const ALPHA_JIT = O.alphaJitter
 
   const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v)
 
@@ -360,11 +361,7 @@ function finalizeOverlayChunk(key, ox, oz, builder) {
   applySkyFog(mat)
 
   const mesh = new THREE.Mesh(builder.geo, mat)
-  mesh.position.set(
-    ox * OVERLAY_SIZE + OVERLAY_SIZE / 2,
-    0,
-    oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
-  )
+  mesh.position.set(ox * OVERLAY_SIZE + OVERLAY_SIZE / 2, 0, oz * OVERLAY_SIZE + OVERLAY_SIZE / 2)
   mesh.renderOrder = 2
   mesh.material.opacity = lod.fade
   mesh.visible = lod.fade > 0.005
@@ -400,7 +397,8 @@ export function refillOverlayChunks(camX, camZ) {
 
   for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
     for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
-      const ox = oxi + dx, oz = ozi + dz
+      const ox = oxi + dx,
+        oz = ozi + dz
       const key = ox + ',' + oz
       if (overlayChunks.has(key) || pendingOverlays.has(key)) continue
       pendingOverlays.set(key, { ox, oz, builder: createOverlayBuilder(ox, oz) })
@@ -466,18 +464,18 @@ export function updateFogEllipse(dt) {
    динамический туман по высоте.
 ================================================================ */
 const FOG_3D_NEAR = CFG.FOG.near3D
-const FOG_3D_FAR  = CFG.FOG.far3D
+const FOG_3D_FAR = CFG.FOG.far3D
 const FOG_2D_NEAR = CFG.FOG.near2D
-const FOG_2D_FAR  = CFG.FOG.far2D
+const FOG_2D_FAR = CFG.FOG.far2D
 
 function updateLOD(dt) {
-  const CHANGE_OVERLAY      = CFG.LOD.changeAltitude
+  const CHANGE_OVERLAY = CFG.LOD.changeAltitude
   const CHANGE_OVERLAY_BACK = CFG.LOD.changeBack
   const SAMPLE_R = CFG.LOD.sampleRadius
-  const SAMPLES  = CFG.LOD.sampleCount
+  const SAMPLES = CFG.LOD.sampleCount
 
   const p = rocketState.pos
-  const flying = (G_PHASE() === 'fly')
+  const flying = G_PHASE() === 'fly'
 
   let alt = p.y - terrainHeight(p.x, p.z)
   for (let i = 0; i < SAMPLES; i++) {
@@ -536,21 +534,23 @@ function updateLOD(dt) {
 
   // динамический туман по высоте
   let dNear = FOG_3D_NEAR
-  let dFar  = FOG_3D_FAR
+  let dFar = FOG_3D_FAR
   if (CFG.FOG.dynamicByAltitude) {
     const F = CFG.FOG
     const t = Math.min(1, Math.max(0, lod.altSmooth / F.altRef))
     dNear = F.nearGround + (FOG_3D_NEAR - F.nearGround) * t
-    dFar  = F.farGround  + (FOG_3D_FAR  - F.farGround)  * t
+    dFar = F.farGround + (FOG_3D_FAR - F.farGround) * t
   }
 
   scene.fog.near = dNear + (FOG_2D_NEAR - dNear) * lod.fade
-  scene.fog.far  = dFar  + (FOG_2D_FAR  - dFar)  * lod.fade
+  scene.fog.far = dFar + (FOG_2D_FAR - dFar) * lod.fade
 }
 
 // Локальный доступ к фазе без импорта game.js (избегаем циклов)
 let _getPhase = () => 'ready'
-export function setPhaseGetter(fn) { _getPhase = fn }
+export function setPhaseGetter(fn) {
+  _getPhase = fn
+}
 const G_PHASE = () => _getPhase()
 
 /* ================================================================
@@ -589,11 +589,10 @@ export function update(dt) {
 /* ================================================================
    loadInitialFar / loadInitialOverlays — порционная загрузка.
 ================================================================ */
-export async function loadInitialFar(onProgress) {
+export async function loadInitialFar(onStep) {
   refillFarTiles(camera.position.x, camera.position.z)
-  const total = pendingFarTiles.size
   let done = 0
-  onProgress(done, total)
+  onStep(done)
 
   const BUDGET_MS = 12
   while (pendingFarTiles.size > 0) {
@@ -606,17 +605,16 @@ export async function loadInitialFar(onProgress) {
       }
       if (performance.now() - t0 >= BUDGET_MS) break
     }
-    onProgress(done, total)
+    onStep(done)
     await new Promise((r) => requestAnimationFrame(r))
   }
-  return total
+  return done
 }
 
-export async function loadInitialOverlays(onProgress) {
+export async function loadInitialOverlays(onStep) {
   refillOverlayChunks(camera.position.x, camera.position.z)
-  const total = pendingOverlays.size
   let done = 0
-  onProgress(done, total)
+  onStep(done)
 
   const BUDGET_MS = 12
   while (pendingOverlays.size > 0) {
@@ -629,10 +627,24 @@ export async function loadInitialOverlays(onProgress) {
       }
       if (performance.now() - t0 >= BUDGET_MS) break
     }
-    onProgress(done, total)
+    onStep(done)
     await new Promise((r) => requestAnimationFrame(r))
   }
-  return total
+  return done
+}
+
+/* ================================================================
+   countInitialFar / countInitialOverlays — общий объём для прогресс-бара.
+   Заодно наполняет pending-очереди (refill идемпотентен).
+================================================================ */
+export function countInitialFar() {
+  refillFarTiles(camera.position.x, camera.position.z)
+  return pendingFarTiles.size
+}
+
+export function countInitialOverlays() {
+  refillOverlayChunks(camera.position.x, camera.position.z)
+  return pendingOverlays.size
 }
 
 /* ---------- Debug ---------- */
