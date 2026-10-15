@@ -1793,8 +1793,13 @@ document.getElementById('resetBtn').addEventListener('click', (e) => {
 function startKick() {
   if (G.phase !== 'ready' && G.phase !== 'landed') return
   resetRocket()
-  G.phase = 'windup'
+  G.phase = 'prekick'
   G.timer = 0
+  // Мгновенно сбрасываем camBlend — иначе камера будет «ползти»
+  // к боковому виду через медленный blendOut (~3 с). А так целевая
+  // точка сразу переключается, и позиция плавно едет через
+  // обычное follow-сглаживание (быстрее).
+  camBlend = 0
   $launch.classList.add('hidden')
   $shop.style.display = 'none'
 }
@@ -1895,6 +1900,23 @@ function updateBoss(dt) {
     torso.rotation.z = Math.sin(idle * 0.7) * 0.03
     head.rotation.z = Math.sin(idle * 0.7) * 0.05
     legBack.rotation.z = Math.sin(idle) * 0.03
+  } else if (G.phase === 'prekick') {
+    // Пауза перед замахом. Босс стоит в idle-позе, камера тем
+    // временем едет к стартовой точке.
+
+    // Отсчёт prekickDelay начинаем только когда камера «доехала».
+    const dist = camera.position.distanceTo(_camTarget)
+    if (dist <= CFG.GAME.prekickCamTolerance) {
+      G.timer += dt
+      if (G.timer >= CFG.GAME.prekickDelay) {
+        G.phase = 'windup'
+        G.timer = 0
+      }
+    } else {
+      // Камера ещё в пути — отсчёт сбрасываем, чтобы задержка
+      // была именно ПОСЛЕ возврата.
+      G.timer = 0
+    }
   } else if (G.phase === 'windup') {
     G.timer += dt
     const t = Math.min(1, G.timer / 0.3)
@@ -2044,6 +2066,10 @@ function updateRocket(dt) {
 
 const camLook = new THREE.Vector3(0, 3, 0)
 let camBlend = 0
+// Целевая позиция камеры (куда она стремится). Сохраняем её,
+// чтобы updateBoss мог понять, «доехала» ли камера до стартовой
+// точки перед замахом босса.
+const _camTarget = new THREE.Vector3()
 
 function updateCamera(dt) {
   const p = rocketState.pos
@@ -2076,6 +2102,9 @@ function updateCamera(dt) {
   // Камера должна следовать и по Z, иначе при сносе ракета
   // будет «уползать» вбок из кадра.
   const camZ = pz + hDist * (1 - camBlend)
+
+  // Запоминаем цель — updateBoss использует её в фазе prekick.
+  _camTarget.set(camX, camY, camZ)
 
   const follow =
     CFG.CAMERA.followBase + Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
