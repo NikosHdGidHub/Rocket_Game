@@ -945,7 +945,7 @@ export const GAME = /** @type {const} */ ({
   initialBest: 0,
 
   /** Начальные уровни апгрейдов. Каждый начинается с 1. */
-  initialUpgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
+  initialUpgrades: { power: 1, aero: 1, fuel: 100, thrust: 100 },
 })
 
 /* ================================================================
@@ -1087,6 +1087,83 @@ export const RULES = {
   upgradeCost: (u, lvl) =>
     Math.floor(u.base * Math.pow(u.growth * GAME.upgrade_cost_diff, lvl - 1)),
 }
+
+/* ================================================================
+   СУНДУКИ — статичные точки на земле, дают редкие карточки.
+   ================================================================ */
+
+export const CHESTS = /** @type {const} */ ({
+  enabled: true,
+
+  /**
+   * X-координаты сундуков (м). Расстояния растут — каждый
+   * следующий сложнее достать.
+   */
+  xPositions: [3000, 5000, 8000, 12000, 17000, 23000, 30000, 38000],
+
+  /**  Дополнительный сдвиг сундука ПОПЕРЁК траектории полёта (м).*/
+  zOffset: 30,
+
+  /** Радиус сбора (м, по XZ). */
+  pickupRadius: 100,
+
+  /** Высота столба света (м). */
+  beamHeight: 400,
+  beamRadius: 2.0,
+  beamColor: 0xffd75e,
+  beamOpacity: 0.4,
+
+  /** Яркость и цвет ядра сундука. */
+  glowColor: 0xffb300,
+  glowIntensity: 3.0,
+
+  /** На каком расстоянии (м) сундук «подсвечивается» ярче. */
+  nearRadius: 300,
+  /** Настройки бафов */
+  buffChests: [2.0, 1.5, 3.0, 0.7, 0.85],
+})
+
+/**
+ * Редкие карточки. Каждая — множитель, навсегда.
+ * Дубликаты перемножаются: 2× fuel2x = ×4 к топливу.
+ */
+export const CARDS = /** @type {const} */ ([
+  {
+    key: 'fuel2x',
+    icon: '⛽',
+    name: 'Двойной бак',
+    desc: 'Топливо ×' + CHESTS.buffChests[0],
+    color: 0xff9f1a,
+  },
+  {
+    key: 'thrust2x',
+    icon: '🔥',
+    name: 'Форсаж',
+    desc: 'Тяга ×' + CHESTS.buffChests[1],
+    color: 0xff5c33,
+  },
+  {
+    key: 'power2x',
+    icon: '🦵',
+    name: 'Могучий пинок',
+    desc: 'Сила пинка ×' + CHESTS.buffChests[2],
+    color: 0xffd75e,
+  },
+  {
+    key: 'aero2x',
+    icon: '🪶',
+    name: 'Обтекаемость',
+    desc: 'Сопротивление ×' + CHESTS.buffChests[3],
+    color: 0x9fe8ff,
+  },
+  {
+    key: 'airtime',
+    icon: '⏱️',
+    name: 'Планерист',
+    desc: 'Гравитация ×' + CHESTS.buffChests[4],
+    color: 0xc38bff,
+  },
+])
 
 /* ================================================================
    UI — всплывающие подсказки (toast)

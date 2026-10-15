@@ -609,3 +609,92 @@ canvas {
     font-size: 9px;
   }
 }
+
+/* ================================================================
+   Card popup — редкая карточка после сундука
+   ================================================================ */
+#cardPopup {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 16, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s;
+}
+#cardPopup.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.card {
+  position: relative;
+  width: min(300px, 78vw);
+  padding: 28px 22px 22px;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #1a2440, #0f1527 70%);
+  border: 2px solid #ffd75e;
+  box-shadow:
+    0 0 40px rgba(255, 215, 94, 0.45),
+    0 20px 60px rgba(0, 0, 0, 0.55),
+    inset 0 0 60px rgba(255, 215, 94, 0.08);
+  text-align: center;
+  color: #eaf2ff;
+  font-family: inherit;
+  transform: scale(0.7) rotate(-4deg);
+  transition: transform 0.4s cubic-bezier(0.2, 1.6, 0.5, 1);
+}
+#cardPopup.on .card {
+  transform: scale(1) rotate(0deg);
+}
+
+.card-glow {
+  position: absolute;
+  inset: -20px;
+  border-radius: 30px;
+  background: radial-gradient(circle, rgba(255, 215, 94, 0.35), transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.card-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ffd75e;
+  opacity: 0.85;
+  margin-bottom: 14px;
+}
+
+.card-icon {
+  font-size: 64px;
+  line-height: 1;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 6px 20px rgba(255, 215, 94, 0.6));
+}
+
+.card-name {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.card-desc {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffd75e;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+
+.card-hint {
+  font-size: 10px;
+  opacity: 0.5;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}

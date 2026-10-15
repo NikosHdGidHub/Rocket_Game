@@ -1444,6 +1444,121 @@ const FOG_2D_NEAR = CFG.FOG.near2D,
   FOG_2D_FAR = CFG.FOG.far2D
 
 /* ================================================================
+   5c. CHESTS — статичные сундуки с редкими карточками
+================================================================ */
+const chestGroup = new THREE.Group()
+scene.add(chestGroup)
+
+/** Известные сундуки: массив { x, z, y, mesh, beam, glow, opened } */
+const chests = []
+
+function buildChestMesh(x, z) {
+  const g = new THREE.Group()
+
+  // Тело сундука
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x6b3a14,
+    roughness: 0.7,
+    metalness: 0.1,
+  })
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0xffd75e,
+    roughness: 0.35,
+    metalness: 0.8,
+    emissive: 0xffb300,
+    emissiveIntensity: 0.6,
+  })
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 1.6), bodyMat)
+  body.position.y = 0.7
+  body.castShadow = true
+  g.add(body)
+
+  // Обручи
+  for (const dz of [-0.55, 0.55]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.5, 0.12), trimMat)
+    b.position.set(0, 0.7, dz)
+    g.add(b)
+  }
+
+  // Крышка (наклонная коробка сверху)
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.5, 1.7), bodyMat)
+  lid.position.set(0, 1.6, 0)
+  lid.castShadow = true
+  g.add(lid)
+
+  // Замок
+  const lock = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.15), trimMat)
+  lock.position.set(0, 0.85, 0.85)
+  g.add(lock)
+
+  // Световой столб — виден издалека, не тонет в тумане
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: CFG.CHESTS.beamColor,
+    transparent: true,
+    opacity: CFG.CHESTS.beamOpacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    side: THREE.DoubleSide,
+  })
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      CFG.CHESTS.beamRadius,
+      CFG.CHESTS.beamRadius * 1.8,
+      CFG.CHESTS.beamHeight,
+      12,
+      1,
+      true
+    ),
+    beamMat
+  )
+  beam.position.y = CFG.CHESTS.beamHeight / 2
+  beam.renderOrder = 5
+  beam.frustumCulled = false
+  g.add(beam)
+
+  // Ядро свечения у основания — «точка притяжения»
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: CFG.CHESTS.glowColor,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  })
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), glowMat)
+  glow.position.y = 1.2
+  glow.renderOrder = 4
+  glow.frustumCulled = false
+  g.add(glow)
+
+  // Точечный свет — освещает землю вокруг
+  const light = new THREE.PointLight(CFG.CHESTS.glowColor, CFG.CHESTS.glowIntensity, 40)
+  light.position.y = 2.0
+  g.add(light)
+
+  g.position.set(x, terrainHeight(x, z), z)
+  return { group: g, beam, glow, light }
+}
+
+/** Z-координата сундука на дистанции x — вдоль траектории полёта. */
+function chestZ(x) {
+  const yaw = CFG.GAME.flightYaw || 0
+  return x * Math.tan(yaw) + Math.random() * 2.0 * CFG.CHESTS.zOffset - CFG.CHESTS.zOffset
+}
+
+function initChests() {
+  for (const x of CFG.CHESTS.xPositions) {
+    const z = chestZ(x)
+    const opened = G.openedChests.has(x)
+    const { group, beam, glow, light } = buildChestMesh(x, z)
+    group.visible = !opened
+    chestGroup.add(group)
+    chests.push({ x, z, group, beam, glow, light, opened })
+  }
+}
+
+/* ================================================================
    6. ROCKET
 ================================================================ */
 const rocket = new THREE.Group()
@@ -1547,6 +1662,10 @@ const G = {
   lastDist: 0,
   fuel: 0,
   upgrades: { ...CFG.GAME.initialUpgrades },
+  // Карточки: { fuel2x: 0, thrust2x: 1, ... } — сколько раз получена.
+  cards: {},
+  // Открытые сундуки: Set<number> — X-координаты открытых.
+  openedChests: new Set(),
 }
 
 const rocketState = {
@@ -1559,11 +1678,25 @@ let boosting = false
 
 const UPGRADES = CFG.UPGRADES
 const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
-const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades)
-const maxFuel = () => CFG.RULES.maxFuel(G.upgrades)
-const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades)
-const dragCoefAtAngle = (alpha) => CFG.RULES.dragCoefAtAngle(G.upgrades, alpha)
+const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('power2x')
+const maxFuel = () => CFG.RULES.maxFuel(G.upgrades) * cardMul('fuel2x')
+const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades) * cardMul('thrust2x')
+const dragCoefAtAngle = (alpha) => CFG.RULES.dragCoefAtAngle(G.upgrades, alpha) * cardMul('aero2x')
 const airDensity = (y) => CFG.RULES.airDensity(y)
+// Гравитацию умножаем в updateRocket вручную — она не через функцию.
+const gravityMul = () => cardMul('airtime')
+
+/** Множитель к базовой величине от карточек. */
+const cardMul = (key) => {
+  const n = G.cards[key] || 0
+  if (n === 0) return 1
+  if (key === 'fuel2x') return Math.pow(CFG.CHESTS.buffChests[0], n)
+  if (key === 'thrust2x') return Math.pow(CFG.CHESTS.buffChests[1], n)
+  if (key === 'power2x') return Math.pow(CFG.CHESTS.buffChests[2], n)
+  if (key === 'aero2x') return Math.pow(CFG.CHESTS.buffChests[3], n)
+  if (key === 'airtime') return Math.pow(CFG.CHESTS.buffChests[4], n)
+  return 1
+}
 
 /* ================================================================
    7b. SAVE / LOAD — сохранение прогресса в localStorage
@@ -1583,6 +1716,8 @@ function saveProgress() {
       coins: G.coins,
       best: G.best,
       upgrades: { ...G.upgrades },
+      cards: { ...G.cards },
+      openedChests: [...G.openedChests],
     }
     localStorage.setItem(CFG.SAVE.key, JSON.stringify(data))
   } catch (e) {
@@ -1619,6 +1754,23 @@ function loadProgress() {
         // Иначе оставляем дефолт из CFG.GAME.initialUpgrades
       }
     }
+
+    // Карточки: только известные ключи, целые >= 0
+    if (data.cards && typeof data.cards === 'object') {
+      for (const c of CFG.CARDS) {
+        const v = data.cards[c.key]
+        if (typeof v === 'number' && isFinite(v) && v >= 0) {
+          G.cards[c.key] = Math.floor(v)
+        }
+      }
+    }
+
+    // Открытые сундуки
+    if (Array.isArray(data.openedChests)) {
+      for (const x of data.openedChests) {
+        if (typeof x === 'number' && isFinite(x)) G.openedChests.add(x)
+      }
+    }
   } catch (e) {
     console.warn('loadProgress failed:', e)
   }
@@ -1637,6 +1789,8 @@ function resetProgress() {
   G.coins = CFG.GAME.initialCoins
   G.best = CFG.GAME.initialBest
   G.upgrades = { ...CFG.GAME.initialUpgrades }
+  G.cards = {}
+  G.openedChests = new Set()
 
   updateHUD()
   renderShop()
@@ -1837,6 +1991,19 @@ function launch() {
 
 function land() {
   G.phase = 'landed'
+
+  // Проверка: не попали ли в радиус сундука?
+  const landedX = rocketState.pos.x
+  const landedZ = rocketState.pos.z
+  for (const c of chests) {
+    if (c.opened) continue
+    const dx = landedX - c.x
+    const dz = landedZ - c.z
+    if (dx * dx + dz * dz <= CFG.CHESTS.pickupRadius * CFG.CHESTS.pickupRadius) {
+      openChest(c)
+    }
+  }
+
   G.timer = 0
   rocketState.angVel = 0
   const gY = terrainHeight(rocketState.pos.x, rocketState.pos.z)
@@ -1862,12 +2029,47 @@ function land() {
   shake = CFG.CAMERA.shakeOnLand
 }
 
+function openChest(chest) {
+  chest.opened = true
+  G.openedChests.add(chest.x)
+
+  // Убираем сундук из сцены (он «открыт»)
+  chest.group.visible = false
+
+  // Случайная карточка
+  const card = CFG.CARDS[Math.floor(Math.random() * CFG.CARDS.length)]
+  G.cards[card.key] = (G.cards[card.key] || 0) + 1
+
+  showCardPopup(card)
+  saveProgress()
+
+  // Обновляем магазин — карточки влияют на формулы, но UI
+  // показывает только уровни апгрейдов, так что перерисовка
+  // не обязательна. Оставляем на всякий случай.
+  // renderShop()
+}
+
+let cardCloseHandler = null
+function showCardPopup(card) {
+  const $popup = document.getElementById('cardPopup')
+  document.getElementById('cardIcon').textContent = card.icon
+  document.getElementById('cardName').textContent = card.name
+  document.getElementById('cardDesc').textContent = card.desc
+  $popup.classList.add('on')
+
+  // Закрытие — тапом в любом месте
+  if (cardCloseHandler) $popup.removeEventListener('click', cardCloseHandler)
+  cardCloseHandler = () => $popup.classList.remove('on')
+  $popup.addEventListener('click', cardCloseHandler)
+}
+
 let shake = 0
 
 /* ================================================================
    11. UPDATE
 ================================================================ */
 function update(dt) {
+  updateChests(dt)
   updateBoss(dt)
   updateRocket(dt)
   updateCamera(dt)
@@ -1963,7 +2165,7 @@ function updateRocket(dt) {
       G.fuel = Math.max(0, G.fuel - dt)
     }
 
-    p.vel.y -= GRAVITY * dt
+    p.vel.y -= GRAVITY * gravityMul() * dt
 
     const speed = p.vel.length()
     if (speed > 0.01) {
@@ -2062,6 +2264,30 @@ function updateRocket(dt) {
   flameInner.visible = flame.visible
   flameMat.opacity = boosting ? 0.95 : 0.5
   exhaustLight.intensity = boostAmt * (boosting ? 45 : 8)
+}
+
+function updateChests(dt) {
+  const t = performance.now() * 0.001
+  const rx = rocketState.pos.x
+  const rz = rocketState.pos.z
+
+  for (const c of chests) {
+    if (c.opened) continue
+
+    // Пульсация столба
+    c.beam.material.opacity = CFG.CHESTS.beamOpacity * (0.75 + Math.sin(t * 2 + c.x * 0.001) * 0.25)
+
+    // Дистанция — в XZ-плоскости, чтобы «ярче» загоралось
+    // только когда мы реально приближаемся к сундуку,
+    // а не когда просто пролетаем по X мимо.
+    const dx = rx - c.x
+    const dz = rz - c.z
+    const dist = Math.hypot(dx, dz)
+    const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
+    c.glow.scale.setScalar(1 + near * 0.6)
+    c.glow.material.opacity = 0.35 + near * 0.4
+    c.light.intensity = CFG.CHESTS.glowIntensity * (1 + near * 2)
+  }
 }
 
 const camLook = new THREE.Vector3(0, 3, 0)
@@ -2381,6 +2607,7 @@ applySkyFog(farGroundMat)
 applySkyFog(propMat)
 
 loadProgress()
+initChests()
 resetRocket()
 rocket.position.copy(rocketState.pos)
 G.fuel = maxFuel()
