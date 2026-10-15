@@ -222,10 +222,10 @@ export const TERRAIN = /** @type {const} */ ({
    * [влияет] характер «обычной» земли без гор.
    */
   baseWaves: [
-    { amp: 5.5, freq: 0.016, phase: 0.4, axis: 'x', fn: 'sin' },
-    { amp: 2.4, freq: 0.041, phase: 1.9, axis: 'x', fn: 'sin' },
+    { amp: 6.5, freq: 0.016, phase: 0.4, axis: 'x', fn: 'sin' },
+    { amp: 4.1, freq: 0.011, phase: 2.5, axis: 'xz', fn: 'sin' },
     { amp: 3.0, freq: 0.02, phase: 0.8, axis: 'z', fn: 'cos' },
-    { amp: 4.0, freq: 0.011, phase: 2.5, axis: 'xz', fn: 'sin' },
+    { amp: 2.4, freq: 0.041, phase: 1.9, axis: 'x', fn: 'sin' },
     { amp: 0.9, freq: 0.085, phase: 3.1, axis: 'x', fn: 'sin' },
     { amp: 0.7, freq: 0.1, phase: 1.4, axis: 'z', fn: 'cos' },
   ],
@@ -245,22 +245,11 @@ export const TERRAIN = /** @type {const} */ ({
    */
   mountainsRamp: 1800,
 
-  /**
-   * Волнистость хребтов.
-   *
-   * Без этого ridged-noise рисует ПРЯМЫЕ хребты (синус вдоль оси).
-   * Здесь мы сдвигаем фазу синуса шумом — хребты становятся
-   * извилистыми, как настоящие горные цепи.
-   *
-   * [влияет] amp — насколько сильно «гуляет» хребет (метры);
-   *          freq — насколько крупные изгибы (1/м, меньше = плавнее);
-   *          octaves — детальность изгиба.
-   * [типично] amp: 100–600, freq: 0.0004–0.002.
-   */
+  /** Волнистость хребтов боковая. */
   ridgeWave: {
     enabled: true,
-    amp: 350,
-    freq: 0.0015,
+    amp: 350, //м
+    freq: 0.0017,
     octaves: 2,
   },
 
@@ -283,27 +272,15 @@ export const TERRAIN = /** @type {const} */ ({
     freqExp: 0.35,
     sharpExp: 1.6,
     minFreqScale: 0.76,
-    minSharpScale: 0.2,
+    minSharpScale: 0.12,
   },
 
-  /**
-   * Модуляция высоты вдоль хребта.
-   *
-   * Без этого высота вдоль гребня постоянна (пик ridge = 1 везде
-   * на гребне) — гребень выглядит как «полочка»/«шов».
-   * Модулятор — низкочастотный шум по (x, z), который «поднимает»
-   * одни участки хребта и «опускает» другие (седловины).
-   *
-   * [влияет] amp  — разброс (0.5 = ±50%, 0.6 = ±60%);
-   *          freq — длина «массивов» (меньше = длиннее);
-   *          octaves — детальность.
-   * [типично] amp 0.3–0.6, freq 0.0004–0.0012.
-   */
+  /** Модуляция высоты вдоль хребта.*/
   ridgeHeightMod: {
     enabled: true,
-    amp: 0.55,
-    freq: 0.0031,
-    octaves: 3,
+    amp: 0.65,
+    freq: 0.0037,
+    octaves: 2,
   },
 
   /**
@@ -327,7 +304,7 @@ export const TERRAIN = /** @type {const} */ ({
    * До этой точки growth = 1, дальше линейно растёт.
    * [влияет] где начинается «бесконечное усложнение» вглубь мира.
    */
-  growthStart: 4000,
+  growthStart: 2000,
 
   /**
    * Скорость роста (прибавка growth за 1 м по X).
@@ -335,7 +312,7 @@ export const TERRAIN = /** @type {const} */ ({
    * [влияет] чем больше, тем быстрее растут горы вдаль.
    * [типично] 1/20000 (медленно) ... 1/5000 (быстро).
    */
-  growthRate: 1 / 7500,
+  growthRate: 1 / 20000,
 
   /**
    * Ridged-noise компоненты (основа формы гор).
@@ -353,9 +330,12 @@ export const TERRAIN = /** @type {const} */ ({
     { freq: 0.0022, seed: 1.1, sharp: 4.0, amp: 130, swap: false }, // средни
     { freq: 0.0055, seed: 2.9, sharp: 2.4, amp: 15, swap: false, soft: true }, // мелкие скалы
     //{ freq: 0.0135, seed: 3.6, sharp: 1.3, amp: 15, swap: false, soft: true }, // микрорельеф
-    { freq: 0.0013, seed: 5.2, sharp: 2.5, amp: 180, swap: true }, // поперечный хребет
+    { freq: 0.0013, seed: 5.2, sharp: 2.5, amp: 180, swap: true, soft: true }, // поперечный хребет
     { freq: 0.0041, seed: 6.8, sharp: 1.4, amp: 60, swap: true, soft: true }, // поперечный мелкий
   ],
+
+  /*** Влияет на то, как сглаживается soft в ridges*/
+  ridgesSoftScale: 0.2,
 
   /**
    * Шум поверх гор — «ломает» правильные линии синусов.
@@ -371,10 +351,10 @@ export const TERRAIN = /** @type {const} */ ({
     /** Октав крупного шума. */
     bigOct: 3,
     /** Амплитуда крупного шума (м). */
-    bigAmp: 350,
+    bigAmp: 200,
 
     /** Частота мелкого шума (колючки на гранях). */
-    smallFreq: 0.015,
+    smallFreq: 0.017,
     /** Октав мелкого шума. */
     smallOct: 2,
     /** Амплитуда мелкого шума (м). */

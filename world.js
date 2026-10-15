@@ -1,6 +1,6 @@
 /* ================================================================
    world.js — шум, рельеф, палитра, текстура земли.
-   Никакого рендерера, никаких чанков — только «математика мира».
+   Никакого рендера, никаких чанков — только «математика мира».
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
@@ -20,6 +20,15 @@ export function hash2i(x, y) {
   h = (h ^ (h >>> 13)) * 1274126177
   h = h ^ (h >>> 16)
   return h >>> 0
+}
+
+/**
+ * Хеш для value-noise, учитывающий seed мира.
+ * Отдельный от hash2i, чтобы не XOR-ить seed дважды там,
+ * где он уже применяется снаружи (леса, пропсы).
+ */
+function noiseHash(x, y) {
+  return (hash2i(x, y) ^ WORLD_SEED) >>> 0
 }
 
 export function mulberry32(seed) {
@@ -42,10 +51,10 @@ export function vnoise(x, z) {
   const u = xf * xf * (3 - 2 * xf)
   const v = zf * zf * (3 - 2 * zf)
 
-  const a = hash2i(xi, zi) / 4294967296
-  const b = hash2i(xi + 1, zi) / 4294967296
-  const c = hash2i(xi, zi + 1) / 4294967296
-  const d = hash2i(xi + 1, zi + 1) / 4294967296
+  const a = noiseHash(xi, zi) / 4294967296
+  const b = noiseHash(xi + 1, zi) / 4294967296
+  const c = noiseHash(xi, zi + 1) / 4294967296
+  const d = noiseHash(xi + 1, zi + 1) / 4294967296
 
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
 }
@@ -251,7 +260,7 @@ export function makeGroundTexture(maxAnisotropy) {
     }
   }
 
-  // ---------- Тонкая крапивка (per-pixel, тайлящаяся) ----------
+  // ---------- Тонкая крапивка (per-pixel) ----------
   if (G.grain.enabled) {
     const img = ctx.getImageData(0, 0, S, S)
     const d = img.data

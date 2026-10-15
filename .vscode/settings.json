@@ -1,5 +1,54 @@
 {
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.tabSize": 2
+  "editor.tabSize": 2,
+  "editor.spellCheck": true,
+  "cSpell.language": "en,ru",
+  "files.associations": {
+    "*.md": "markdown"
+  },
+  "cSpell.enabledFileTypes": {
+    "markdown": true
+  },
+  "cSpell.useGitignore": false,
+  "cSpell.words": [
+    "Coef",
+    "hemi",
+    "horiz",
+    "lerp",
+    "metalness",
+    "njsproj",
+    "ntvs",
+    "prew",
+    "Recip",
+    "Rmax",
+    "Rmin",
+    "verts",
+    "vnoise",
+    "билдер",
+    "валидируются",
+    "доворачиваем",
+    "доворачивал",
+    "лаблы",
+    "Предсчёт",
+    "Промпт",
+    "Прун",
+    "прунит",
+    "рендера",
+    "синусоидные",
+    "сэмплер",
+    "тайл",
+    "тайла",
+    "тайлами",
+    "тайлы",
+    "тесселяции",
+    "Хелперы",
+    "хэша",
+    "хэшу",
+    "чанк",
+    "чанка",
+    "чанкам",
+    "чанки",
+    "чанков"
+  ]
 }
