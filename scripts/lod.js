@@ -17,9 +17,10 @@ import { terrainHeight, heightToTerrainColor, hash2i } from './world/world.js'
    FAR TILES
 ================================================================ */
 const FAR_TILE_SIZE = CFG.FAR_TILES.size
-const FAR_TILE_SEG = CFG.FAR_TILES.segments
 const FAR_LOAD_R = CFG.FAR_TILES.loadRadius
 const FAR_UNLOAD_R = CFG.FAR_TILES.unloadRadius
+
+let farTileSeg = CFG.FAR_TILES.segments // ← мутабельно
 
 const TILE = CFG.GROUND_TEX.tile
 
@@ -41,7 +42,7 @@ const farTiles = new Map()
 const pendingFarTiles = new Map()
 
 function createFarTileBuilder(fx, fz) {
-  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, FAR_TILE_SEG, FAR_TILE_SEG)
+  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, farTileSeg, farTileSeg)
   geo.rotateX(-Math.PI / 2)
 
   const pos = geo.attributes.position
@@ -54,9 +55,9 @@ function createFarTileBuilder(fx, fz) {
   const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
   const col = new THREE.Color()
 
-  const eps = FAR_TILE_SIZE / FAR_TILE_SEG
-  const vertsPerRow = FAR_TILE_SEG + 1
-  const totalRows = FAR_TILE_SEG + 1
+  const vertsPerRow = farTileSeg + 1
+  const totalRows = farTileSeg + 1
+  const eps = FAR_TILE_SIZE / farTileSeg
   let row = 0
 
   return {
@@ -97,7 +98,12 @@ function createFarTileBuilder(fx, fz) {
   }
 }
 
-function finalizeFarTile(key, fx, fz, geo) {
+function finalizeFarTile(key, fx, fz, geo, seg) {
+  const old = farTiles.get(key)
+  if (old) {
+    scene.remove(old.mesh)
+    old.geo.dispose()
+  }
   const mesh = new THREE.Mesh(geo, farGroundMat)
   mesh.position.set(
     fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2,
@@ -107,7 +113,22 @@ function finalizeFarTile(key, fx, fz, geo) {
   mesh.receiveShadow = false
   mesh.visible = lod.fade > 0.005
   scene.add(mesh)
-  farTiles.set(key, { mesh, geo })
+  farTiles.set(key, { mesh, geo, seg })
+}
+
+function maybeSwitchSeg(altSmooth) {
+  const F = CFG.FAR_TILES
+  let next = farTileSeg
+
+  if (farTileSeg === F.segments && altSmooth > F.altitudeHigh) {
+    next = F.segmentsHigh
+  } else if (farTileSeg === F.segmentsHigh && altSmooth < F.altitudeLow) {
+    next = F.segments
+  }
+
+  if (next === farTileSeg) return false
+  farTileSeg = next
+  return true
 }
 
 function unloadFarTile(key) {
@@ -127,11 +148,22 @@ export function refillFarTiles(camX, camZ) {
       const fx = fxi + dx,
         fz = fzi + dz
       const key = fx + ',' + fz
-      if (farTiles.has(key) || pendingFarTiles.has(key)) continue
+
+      const loaded = farTiles.get(key)
+      const pending = pendingFarTiles.get(key)
+
+      // Уже есть тайл, но SEG устарел → пересборка
+      if (loaded && loaded.seg !== farTileSeg) {
+        pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
+        continue
+      }
+      if (loaded || pending) continue
+
       pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
     }
   }
 
+  // Отменяем «уехавшие» pending — как было
   for (const [key, p] of pendingFarTiles) {
     if (Math.abs(p.fx - fxi) > FAR_UNLOAD_R || Math.abs(p.fz - fzi) > FAR_UNLOAD_R) {
       p.builder.geo.dispose()
@@ -139,6 +171,7 @@ export function refillFarTiles(camX, camZ) {
     }
   }
 
+  // Выгрузка — как было
   const toUnload = []
   for (const key of farTiles.keys()) {
     const [fxs, fzs] = key.split(',')
@@ -433,7 +466,7 @@ export function processLODWork() {
       const elapsed = performance.now() - t0
       if (elapsed >= BUDGET_TERRAIN_MS) break
       if (p.builder.step(BUDGET_TERRAIN_MS - elapsed)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, farTileSeg)
         pendingFarTiles.delete(key)
       }
     }
@@ -591,14 +624,21 @@ export function update(dt) {
   const camX = camera.position.x
   const camZ = camera.position.z
 
+  updateFogEllipse(dt)
+  updateLOD(dt) // обновляет lod.altSmooth
+
+  const segChanged = maybeSwitchSeg(lod.altSmooth) // SEG-решение
+
+  // far-тайлы: смена cell ИЛИ смена SEG → пересборка
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-  if (fxi !== _lastFar.x || fzi !== _lastFar.z) {
+  if (segChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
     refillFarTiles(camX, camZ)
     _lastFar.x = fxi
     _lastFar.z = fzi
   }
 
+  // overlay-чанки — как было
   const oxi = Math.floor(camX / OVERLAY_SIZE)
   const ozi = Math.floor(camZ / OVERLAY_SIZE)
   if (oxi !== _lastOverlay.x || ozi !== _lastOverlay.z) {
@@ -607,10 +647,7 @@ export function update(dt) {
     _lastOverlay.z = ozi
   }
 
-  processLODWork()
-
-  updateFogEllipse(dt)
-  updateLOD(dt)
+  processLODWork() // ← один вызов
 }
 
 /* ================================================================
@@ -626,7 +663,7 @@ export async function loadInitialFar(onStep) {
     const t0 = performance.now()
     for (const [key, p] of pendingFarTiles) {
       if (p.builder.step(4)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, farTileSeg)
         pendingFarTiles.delete(key)
         done++
       }
