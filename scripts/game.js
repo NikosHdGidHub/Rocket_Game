@@ -8,19 +8,28 @@ import { camera } from './scene.js'
 import { G, rocketState, cam, input, lod } from './state.js'
 import { terrainHeight } from './world/world.js'
 import {
-  rocket, flame, flameInner, flameMat, exhaustLight,
-  boss, torso, head, legKick, legBack,
+  rocket,
+  flame,
+  flameInner,
+  flameMat,
+  exhaustLight,
+  boss,
+  torso,
+  head,
+  legKick,
+  legBack,
   chests,
+  updateChests as updateChestsFX,
 } from './entities.js'
 import * as UI from './ui.js'
 
 /* ---------- Физические константы ---------- */
 const GRAVITY = CFG.GAME.gravity
-const REST_Y  = CFG.GAME.restY
+const REST_Y = CFG.GAME.restY
 const LAUNCH_ANGLE = CFG.GAME.launchAngle
-const ANG_ACC  = CFG.GAME.angAcc
+const ANG_ACC = CFG.GAME.angAcc
 const ANG_DAMP = CFG.GAME.angDamp
-const ANG_MAX  = CFG.GAME.angMax
+const ANG_MAX = CFG.GAME.angMax
 
 let boosting = false
 
@@ -33,17 +42,17 @@ export const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
 export const cardMul = (key) => {
   const n = G.cards[key] || 0
   if (n === 0) return 1
-  if (key === 'fuel2x')   return Math.pow(CFG.CHESTS.buffChests[0], n)
+  if (key === 'fuel2x') return Math.pow(CFG.CHESTS.buffChests[0], n)
   if (key === 'thrust2x') return Math.pow(CFG.CHESTS.buffChests[1], n)
-  if (key === 'power2x')  return Math.pow(CFG.CHESTS.buffChests[2], n)
-  if (key === 'aero2x')   return Math.pow(CFG.CHESTS.buffChests[3], n)
-  if (key === 'airtime')  return Math.pow(CFG.CHESTS.buffChests[4], n)
+  if (key === 'power2x') return Math.pow(CFG.CHESTS.buffChests[2], n)
+  if (key === 'aero2x') return Math.pow(CFG.CHESTS.buffChests[3], n)
+  if (key === 'airtime') return Math.pow(CFG.CHESTS.buffChests[4], n)
   return 1
 }
 
 export const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('power2x')
-export const maxFuel     = () => CFG.RULES.maxFuel(G.upgrades) * cardMul('fuel2x')
-export const thrustAcc   = () => CFG.RULES.thrustAcc(G.upgrades) * cardMul('thrust2x')
+export const maxFuel = () => CFG.RULES.maxFuel(G.upgrades) * cardMul('fuel2x')
+export const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades) * cardMul('thrust2x')
 export const dragCoefAtAngle = (a) => CFG.RULES.dragCoefAtAngle(G.upgrades, a) * cardMul('aero2x')
 export const airDensity = (y) => CFG.RULES.airDensity(y)
 export const gravityMul = () => cardMul('airtime')
@@ -110,7 +119,11 @@ export function loadProgress() {
 export function resetProgress() {
   const ok = confirm('Сбросить весь прогресс? Монеты, рекорд и апгрейды будут потеряны.')
   if (!ok) return
-  try { localStorage.removeItem(CFG.SAVE.key) } catch (e) { console.warn(e) }
+  try {
+    localStorage.removeItem(CFG.SAVE.key)
+  } catch (e) {
+    console.warn(e)
+  }
 
   G.coins = CFG.GAME.initialCoins
   G.best = CFG.GAME.initialBest
@@ -164,11 +177,7 @@ function launch() {
   const speed = launchSpeed()
   const yaw = CFG.GAME.flightYaw || 0
   const horiz = Math.cos(LAUNCH_ANGLE) * speed
-  rocketState.vel.set(
-    Math.cos(yaw) * horiz,
-    Math.sin(LAUNCH_ANGLE) * speed,
-    Math.sin(yaw) * horiz
-  )
+  rocketState.vel.set(Math.cos(yaw) * horiz, Math.sin(LAUNCH_ANGLE) * speed, Math.sin(yaw) * horiz)
   rocket.rotation.z = LAUNCH_ANGLE
   rocket.rotation.y = -yaw
   rocketState.angVel = 0
@@ -256,7 +265,10 @@ function updateBoss(dt) {
     legKick.rotation.z = -0.85 * e
     torso.rotation.z = 0.12 * e
     boss.position.y = -0.12 * e
-    if (t >= 1) { G.phase = 'strike'; G.timer = 0 }
+    if (t >= 1) {
+      G.phase = 'strike'
+      G.timer = 0
+    }
   } else if (G.phase === 'strike') {
     G.timer += dt
     const t = Math.min(1, G.timer / 0.11)
@@ -267,8 +279,8 @@ function updateBoss(dt) {
     if (t >= 1 && G.phase === 'strike') launch()
   } else if (G.phase === 'fly') {
     legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 6)
-    torso.rotation.z  += (0 - torso.rotation.z)  * Math.min(1, dt * 6)
-    boss.position.y   += (0 - boss.position.y)   * Math.min(1, dt * 6)
+    torso.rotation.z += (0 - torso.rotation.z) * Math.min(1, dt * 6)
+    boss.position.y += (0 - boss.position.y) * Math.min(1, dt * 6)
   }
 }
 
@@ -325,8 +337,7 @@ function updateRocket(dt) {
 
   if (G.phase === 'fly') {
     const rotInput =
-      ((input.keys.W || input.touch.W) ? 1 : 0) -
-      ((input.keys.S || input.touch.S) ? 1 : 0)
+      (input.keys.W || input.touch.W ? 1 : 0) - (input.keys.S || input.touch.S ? 1 : 0)
 
     p.angVel += rotInput * ANG_ACC * dt
     p.angVel -= p.angVel * ANG_DAMP * dt
@@ -336,12 +347,12 @@ function updateRocket(dt) {
 
     // Аэродинамическая стабилизация
     const ALIGN_RATE = CFG.GAME.aeroAlign
-    const MIN_SPEED  = CFG.GAME.aeroAlignMinSpeed
+    const MIN_SPEED = CFG.GAME.aeroAlignMinSpeed
     const spd = p.vel.length()
     if (ALIGN_RATE > 0 && spd > MIN_SPEED) {
       const desired = Math.atan2(p.vel.y, Math.hypot(p.vel.x, p.vel.z))
       let diff = desired - rocket.rotation.z
-      while (diff >  Math.PI) diff -= Math.PI * 2
+      while (diff > Math.PI) diff -= Math.PI * 2
       while (diff < -Math.PI) diff += Math.PI * 2
       const maxStep = ALIGN_RATE * dt
       const step = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
@@ -352,7 +363,7 @@ function updateRocket(dt) {
   // Индикатор выравнивания + цвет пламени
   if (G.phase === 'fly') {
     let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
-    while (diff >  Math.PI) diff -= Math.PI * 2
+    while (diff > Math.PI) diff -= Math.PI * 2
     while (diff < -Math.PI) diff += Math.PI * 2
     const deg = (Math.abs(diff) * 180) / Math.PI
 
@@ -363,7 +374,7 @@ function updateRocket(dt) {
     }
   }
 
-  const boostAmt = boosting ? 1 : (G.phase === 'fly' ? 0.35 : 0)
+  const boostAmt = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
   const flick = 0.85 + Math.random() * 0.3
   flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
   flameInner.scale.set(boostAmt * flick * 1.1, boostAmt * flick, boostAmt * flick)
@@ -387,13 +398,13 @@ function updateCamera(dt) {
   if (cam.blend < 0.001) cam.blend = 0
   if (cam.blend > 0.999) cam.blend = 1
 
-  const alt  = Math.max(0, p.y - gY)
+  const alt = Math.max(0, p.y - gY)
   const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
   const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
   const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
 
-  const R = CFG.CAMERA.baseRadius +
-            Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)
+  const R =
+    CFG.CAMERA.baseRadius + Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)
   const hDist = R * Math.cos(elev)
   const vDist = R * Math.sin(elev)
 
@@ -408,8 +419,8 @@ function updateCamera(dt) {
 
   cam.target.set(camX, camY, camZ)
 
-  const follow = CFG.CAMERA.followBase +
-                 Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
+  const follow =
+    CFG.CAMERA.followBase + Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
   const s = 1 - Math.exp(-follow * dt)
 
   camera.position.x += (camX - camera.position.x) * s
@@ -424,7 +435,7 @@ function updateCamera(dt) {
 
   cam.look.x += (lookX - cam.look.x) * s
   cam.look.y += (lookY - cam.look.y) * s
-  cam.look.z += (pz    - cam.look.z) * s
+  cam.look.z += (pz - cam.look.z) * s
 
   if (cam.shake > 0) {
     cam.shake = Math.max(0, cam.shake - dt * CFG.CAMERA.shakeDecayK)
@@ -437,35 +448,10 @@ function updateCamera(dt) {
 }
 
 /* ================================================================
-   updateChests — анимация сундуков.
-================================================================ */
-function updateChests() {
-  const t  = performance.now() * 0.001
-  const rx = rocketState.pos.x
-  const rz = rocketState.pos.z
-
-  for (const c of chests) {
-    c.group.visible = !c.opened  // синхронизация с G.openedChests
-    if (c.opened) continue
-
-    c.beam.material.opacity = CFG.CHESTS.beamOpacity * (0.75 + Math.sin(t * 2 + c.x * 0.001) * 0.25)
-
-    const dx = rx - c.x
-    const dz = rz - c.z
-    const dist = Math.hypot(dx, dz)
-    const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
-
-    c.glow.scale.setScalar(1 + near * 0.6)
-    c.glow.material.opacity = 0.35 + near * 0.4
-    c.light.intensity = CFG.CHESTS.glowIntensity * (1 + near * 2)
-  }
-}
-
-/* ================================================================
    Общий update.
 ================================================================ */
 export function update(dt) {
-  updateChests()
+  updateChestsFX(dt, rocketState.pos.x, rocketState.pos.z) // ← вместо локальной
   updateBoss(dt)
   updateRocket(dt)
   updateCamera(dt)

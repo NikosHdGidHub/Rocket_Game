@@ -181,88 +181,95 @@ scene.add(rocket)
 export const chestGroup = new THREE.Group()
 scene.add(chestGroup)
 
-export const chests = [] // { x, z, group, beam, glow, light, opened }
+export const chests = [] // { x, z, group, beam, glow, opened }
+
+/* ---------- Общие материалы (создаются ОДИН раз) ---------- */
+const chestBodyMat = new THREE.MeshStandardMaterial({
+  color: 0x6b3a14,
+  roughness: 0.7,
+  metalness: 0.1,
+})
+const chestTrimMat = new THREE.MeshStandardMaterial({
+  color: 0xffd75e,
+  roughness: 0.35,
+  metalness: 0.8,
+  emissive: 0xffb300,
+  emissiveIntensity: 0.6,
+})
+const chestBeamMat = new THREE.MeshBasicMaterial({
+  color: CFG.CHESTS.beamColor,
+  transparent: true,
+  opacity: CFG.CHESTS.beamOpacity,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: false,
+  side: THREE.DoubleSide,
+})
+const chestGlowMat = new THREE.MeshBasicMaterial({
+  color: CFG.CHESTS.glowColor,
+  transparent: true,
+  opacity: 0.5,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: false,
+})
+
+/* ---------- Один общий источник света, «переезжает» к ближайшему сундуку ---------- */
+const chestLight = new THREE.PointLight(CFG.CHESTS.glowColor, 0, 40)
+scene.add(chestLight)
+chestLight.visible = false
+
+/* ---------- Геометрии — общие для всех сундуков ---------- */
+const bodyGeo = new THREE.BoxGeometry(2.4, 1.4, 1.6)
+const trimGeo = new THREE.BoxGeometry(2.5, 1.5, 0.12)
+const lidGeo = new THREE.BoxGeometry(2.5, 0.5, 1.7)
+const lockGeo = new THREE.BoxGeometry(0.4, 0.5, 0.15)
+const beamGeo = new THREE.CylinderGeometry(
+  CFG.CHESTS.beamRadius,
+  CFG.CHESTS.beamRadius * 1.8,
+  CFG.CHESTS.beamHeight,
+  12,
+  1,
+  true
+)
+const glowGeo = new THREE.SphereGeometry(2.2, 12, 10)
 
 function buildChestMesh(x, z) {
   const g = new THREE.Group()
 
-  const bodyMatC = new THREE.MeshStandardMaterial({
-    color: 0x6b3a14,
-    roughness: 0.7,
-    metalness: 0.1,
-  })
-  const trimMat = new THREE.MeshStandardMaterial({
-    color: 0xffd75e,
-    roughness: 0.35,
-    metalness: 0.8,
-    emissive: 0xffb300,
-    emissiveIntensity: 0.6,
-  })
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 1.6), bodyMatC)
+  const body = new THREE.Mesh(bodyGeo, chestBodyMat)
   body.position.y = 0.7
   body.castShadow = true
   g.add(body)
 
   for (const dz of [-0.55, 0.55]) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.5, 0.12), trimMat)
+    const b = new THREE.Mesh(trimGeo, chestTrimMat)
     b.position.set(0, 0.7, dz)
     g.add(b)
   }
 
-  const lid = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.5, 1.7), bodyMatC)
+  const lid = new THREE.Mesh(lidGeo, chestBodyMat)
   lid.position.set(0, 1.6, 0)
   lid.castShadow = true
   g.add(lid)
 
-  const lock = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.15), trimMat)
+  const lock = new THREE.Mesh(lockGeo, chestTrimMat)
   lock.position.set(0, 0.85, 0.85)
   g.add(lock)
 
-  const beamMat = new THREE.MeshBasicMaterial({
-    color: CFG.CHESTS.beamColor,
-    transparent: true,
-    opacity: CFG.CHESTS.beamOpacity,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-    side: THREE.DoubleSide,
-  })
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      CFG.CHESTS.beamRadius,
-      CFG.CHESTS.beamRadius * 1.8,
-      CFG.CHESTS.beamHeight,
-      12,
-      1,
-      true
-    ),
-    beamMat
-  )
+  const beam = new THREE.Mesh(beamGeo, chestBeamMat)
   beam.position.y = CFG.CHESTS.beamHeight / 2
   beam.renderOrder = 5
-  beam.frustumCulled = false
+  // frustumCulled оставляем по умолчанию = true
   g.add(beam)
 
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: CFG.CHESTS.glowColor,
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-  })
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), glowMat)
+  const glow = new THREE.Mesh(glowGeo, chestGlowMat)
   glow.position.y = 1.2
   glow.renderOrder = 4
-  glow.frustumCulled = false
   g.add(glow)
 
-  const light = new THREE.PointLight(CFG.CHESTS.glowColor, CFG.CHESTS.glowIntensity, 40)
-  light.position.y = 2.0
-  g.add(light)
-
   g.position.set(x, terrainHeight(x, z), z)
-  return { group: g, beam, glow, light }
+  return { group: g, beam, glow }
 }
 
 /** Z-координата сундука — детерминированная (стабильна между сессиями). */
@@ -277,10 +284,10 @@ export function initChests() {
   for (const x of CFG.CHESTS.xPositions) {
     const z = chestZ(x)
     const opened = G.openedChests.has(x)
-    const { group, beam, glow, light } = buildChestMesh(x, z)
+    const { group, beam, glow } = buildChestMesh(x, z)
     group.visible = !opened
     chestGroup.add(group)
-    chests.push({ x, z, group, beam, glow, light, opened })
+    chests.push({ x, z, group, beam, glow, opened })
   }
 }
 
@@ -293,6 +300,51 @@ export function resyncChests() {
   for (const c of chests) {
     c.opened = G.openedChests.has(c.x)
     c.group.visible = !c.opened
+  }
+}
+
+/* ================================================================
+   Обновление анимации сундуков (вызывается из game.update).
+   Возвращает свет, который нужно переставить. Экономно: не чаще
+   8 итераций в кадр, все вычисления — простые mul/add.
+================================================================ */
+export function updateChests(dt, rx, rz) {
+  const t = performance.now() * 0.001
+
+  // Глобальная пульсация столба — один материал на всех
+  chestBeamMat.opacity = CFG.CHESTS.beamOpacity * (0.75 + Math.sin(t * 2) * 0.25)
+
+  // Ищем ближайший неоткрытый сундук
+  let nearest = null
+  let nearestD2 = Infinity
+
+  for (const c of chests) {
+    if (c.opened) continue
+
+    const dx = rx - c.x
+    const dz = rz - c.z
+    const d2 = dx * dx + dz * dz
+
+    if (d2 < nearestD2) {
+      nearestD2 = d2
+      nearest = c
+    }
+
+    // Пульсация размера свечения — пропорционально близости
+    const dist = Math.sqrt(d2)
+    const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
+    c.glow.scale.setScalar(1 + near * 0.6)
+  }
+
+  // Один источник света — на ближайший сундук в радиусе 500 м
+  const R = 500
+  if (nearest && nearestD2 < R * R) {
+    const gy = terrainHeight(nearest.x, nearest.z)
+    chestLight.position.set(nearest.x, gy + 2.0, nearest.z)
+    chestLight.intensity = CFG.CHESTS.glowIntensity * 2
+    chestLight.visible = true
+  } else {
+    chestLight.visible = false
   }
 }
 
