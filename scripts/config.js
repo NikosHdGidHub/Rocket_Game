@@ -924,7 +924,7 @@ export const GAME = /** @type {const} */ ({
    * Плотность воздуха по высоте (экспоненциальное падение).
    * На 0 м = 1, на airHeight м = 0.37.
    */
-  airHeight: 5000,
+  airHeight: 6000,
   /** Общая сложность игры (0.75 - 2.0) */
   upgrade_cost_diff: 1.4,
 
@@ -1112,7 +1112,7 @@ export const CHESTS = /** @type {const} */ ({
   glowIntensity: 5.0,
 
   /** На каком расстоянии (м) сундук «подсвечивается» ярче. */
-  nearRadius: 300,
+  nearRadius: 500,
   /** Лимит одного типа карточки */
   cardTypeLimit: 2,
   /** Настройки бафов */

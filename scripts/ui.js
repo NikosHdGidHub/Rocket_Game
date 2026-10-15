@@ -10,6 +10,9 @@ import * as Settings from './settings.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')
+const $chestProgress = document.getElementById('chestProgress')
+const $chestFill = document.getElementById('chestFill')
+const $chestDist = document.getElementById('chestDist')
 const $coins = document.getElementById('coins')
 const $best = document.getElementById('best')
 const $shop = document.getElementById('shop')
@@ -93,6 +96,36 @@ export function setAlignText(deg) {
     $alignText.textContent = Math.round(deg) + '°'
     $alignText.style.color = '#ff7a7a'
   }
+}
+
+/**
+ * Прогрессбар «до следующего сундука».
+ *   distance — метров до следующего сундука (null = нет цели, скрыть плашку).
+ *   progress — 0..1, где 0 = только что прошли предыдущий сундук,
+ *              1 = стоим прямо на следующем.
+ *   near     — «совсем рядом» (< 300 м), включает зелёный акцент.
+ */
+export function updateChestProgress(distance, progress, near) {
+  if (distance === null) {
+    $chestProgress.classList.remove('on')
+    return
+  }
+
+  $chestProgress.classList.add('on')
+  $chestFill.style.width = (Math.max(0, Math.min(1, progress)) * 100).toFixed(1) + '%'
+
+  // Формат: 999 м / 1.2 км / 12.3 км
+  let text
+  if (distance < 1000) {
+    text = Math.max(0, Math.round(distance)) + ' м'
+  } else if (distance < 10000) {
+    text = (distance / 1000).toFixed(1) + ' км'
+  } else {
+    text = Math.round(distance / 1000) + ' км'
+  }
+  $chestDist.textContent = text
+
+  $chestProgress.classList.toggle('near', !!near)
 }
 
 export function updateFuelBar(fuel, maxFuel) {

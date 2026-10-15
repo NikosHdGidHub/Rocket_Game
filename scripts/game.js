@@ -469,16 +469,55 @@ function updateCamera(dt) {
    Общий update.
 ================================================================ */
 export function update(dt) {
-  updateChestsFX(dt, rocketState.pos.x, rocketState.pos.z) // ← вместо локальной
+  updateChestsFX(dt, rocketState.pos.x, rocketState.pos.z)
   updateBoss(dt)
   updateRocket(dt)
   updateCamera(dt)
+
+  // HUD и прогрессбар до следующего сундука
+  updateChestTracker()
 
   if (G.phase === 'fly') {
     UI.updateHUD()
     UI.setHUDDist(rocketState.pos.x)
     UI.updateFuelBar(G.fuel, maxFuel())
   }
+}
+
+/**
+ * Считает «сколько метров до ближайшего сундука» и передаёт в UI.
+ * Логика:
+ *   - next = первый неоткрытый сундук впереди (c.x > rocketX)
+ *   - prev = последний открытый / пройденный сундук (или 0)
+ *   - progress = (rocketX − prev) / (next − prev)
+ * Если всё открыто или всё позади — скрываем плашку.
+ */
+/**
+ * Прогрессбар «сколько метров до следующего сундука».
+ * Шкала — от самого старта (x = 0) до следующего неоткрытого сундука.
+ */
+function updateChestTracker() {
+  const rx = rocketState.pos.x
+
+  // Первый неоткрытый сундук впереди (или на позиции ракеты)
+  let nextX = null
+  for (const c of chests) {
+    if (c.opened) continue
+    if (c.x >= rx) {
+      nextX = c.x
+      break
+    }
+  }
+
+  if (nextX === null) {
+    UI.updateChestProgress(null, 0, false)
+    return
+  }
+
+  const dist = nextX - rx
+  const progress = Math.max(0, Math.min(1, rx / Math.max(1, nextX)))
+
+  UI.updateChestProgress(dist, progress, dist < CFG.CHESTS.nearRadius)
 }
 
 /* ================================================================
