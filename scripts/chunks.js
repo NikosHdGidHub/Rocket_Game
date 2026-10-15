@@ -407,25 +407,33 @@ export function refillChunkQueue(camX, camZ) {
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
 
+  // Радиусы зависят от режима: обычный (у земли) или префетч (в 2D, при спуске).
+  let LF, LB, LS
+  if (_preloading) {
+    LF = CFG.CHUNKS.loadForwardFar
+    LB = CFG.CHUNKS.loadBackFar
+    LS = CFG.CHUNKS.loadSideFar
+  } else {
+    LF = LOAD_FWD_CHUNKS
+    LB = LOAD_BACK_CHUNKS
+    LS = LOAD_SIDE_CHUNKS
+  }
+
   // --- Выгрузка ---
   const toUnload = []
   for (const key of chunks.keys()) {
     const [cs, czs] = key.split(',')
     const dx = +cs - cxi,
       dz = +czs - czi
-    if (
-      dx < -(LOAD_BACK_CHUNKS + UNLOAD_MARGIN) ||
-      dx > LOAD_FWD_CHUNKS + UNLOAD_MARGIN ||
-      Math.abs(dz) > LOAD_SIDE_CHUNKS + UNLOAD_MARGIN
-    )
+    if (dx < -(LB + UNLOAD_MARGIN) || dx > LF + UNLOAD_MARGIN || Math.abs(dz) > LS + UNLOAD_MARGIN)
       toUnload.push(key)
   }
   for (const k of toUnload) unloadChunk(k)
 
   // --- Прун кэша ---
-  const padXf = LOAD_FWD_CHUNKS + 1
-  const padXb = LOAD_BACK_CHUNKS + 1
-  const padZ = LOAD_SIDE_CHUNKS + 1
+  const padXf = LF + 1
+  const padXb = LB + 1
+  const padZ = LS + 1
   for (const key of propsCache.keys()) {
     if (PERSISTENT_CHUNKS.has(key)) continue
     const [cs, czs] = key.split(',')
@@ -439,8 +447,8 @@ export function refillChunkQueue(camX, camZ) {
   // --- Очередь загрузки ---
   chunkLoadQueue.length = 0
   chunkQueueIdx = 0
-  for (let dx = -LOAD_BACK_CHUNKS; dx <= LOAD_FWD_CHUNKS; dx++) {
-    for (let dz = -LOAD_SIDE_CHUNKS; dz <= LOAD_SIDE_CHUNKS; dz++) {
+  for (let dx = -LB; dx <= LF; dx++) {
+    for (let dz = -LS; dz <= LS; dz++) {
       const cx = cxi + dx,
         cz = czi + dz
       if (!chunks.has(cx + ',' + cz)) chunkLoadQueue.push([cx, cz])
@@ -449,10 +457,12 @@ export function refillChunkQueue(camX, camZ) {
 }
 
 export function processChunkQueue() {
-  if (lod.fade > 0.5) return
+  // В чистом 2D (без префетча) — не тратим CPU.
+  if (lod.fade > 0.5 && !_preloading) return
   if (chunkQueueIdx >= chunkLoadQueue.length) return
 
-  const BUDGET_MS = 4
+  // В префетче до земли долетаем быстро — дадим чуть больше бюджета.
+  const BUDGET_MS = _preloading ? 6 : 4
   const t0 = performance.now()
   while (chunkQueueIdx < chunkLoadQueue.length && performance.now() - t0 < BUDGET_MS) {
     const [cx, cz] = chunkLoadQueue[chunkQueueIdx++]
@@ -497,6 +507,7 @@ function updatePersistentVisibility(camX, camZ) {
 ================================================================ */
 let _lastCell = { x: NaN, z: NaN }
 let _lastPersist = { cxi: NaN, czi: NaN, showFine: null, showProps: null }
+let _preloading = false
 
 export function update() {
   const camX = camera.position.x
@@ -504,9 +515,19 @@ export function update() {
 
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
-  if (cxi !== _lastCell.x || czi !== _lastCell.z) {
-    // В 2D-режиме чанки всё равно невидимы — не тратим CPU на их рефилл.
-    if (lod.fade < 0.5) refillChunkQueue(camX, camZ)
+
+  // Префетч: в 2D, но уже не слишком высоко — готовим почву для спуска.
+  const wantPreload = lod.fade > 0.5 && lod.altSmooth < CFG.CHUNKS.preloadAltitude
+
+  if (wantPreload !== _preloading) {
+    // Смена режима → пересобрать очередь с другими радиусами.
+    _preloading = wantPreload
+    refillChunkQueue(camX, camZ)
+    _lastCell.x = cxi
+    _lastCell.z = czi
+  } else if (cxi !== _lastCell.x || czi !== _lastCell.z) {
+    // В чистом 2D (без префетча) чанки невидимы — не тратим CPU.
+    if (lod.fade < 0.5 || _preloading) refillChunkQueue(camX, camZ)
     _lastCell.x = cxi
     _lastCell.z = czi
   }

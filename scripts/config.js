@@ -465,6 +465,14 @@ export const CHUNKS = /** @type {const} */ ({
   /** Сколько чанков грузить В СТОРОНЫ (±Z).*/
   loadSide: 4,
 
+  // Обычно синхронизирован с FAR_TILES.altitudeLow.
+  preloadAltitude: 1350,
+
+  //компромисс подгрузки  чанков в режиме far при alt < altitudeLow
+  loadForwardFar: 3,
+  loadBackFar: 1,
+  loadSideFar: 2,
+
   /**
    * Доп. чанков, через которые чанк выгружается.
    * Запас, чтобы избежать «мигания» на границе.
@@ -830,7 +838,7 @@ export const CAMERA = /** @type {const} */ ({
   speedRadiusK: 0.12,
 
   /** Максимальная добавка радиуса от скорости (м). */
-  maxSpeedRadius: 35,
+  maxSpeedRadius: 45,
 
   /** Lead-time для feed-forward (сек). Отрицательное = «смотрим в прошлое». */
   leadTime: -0.03,
