@@ -982,7 +982,7 @@ export const UPGRADES = /** @type {const} */ ([
   },
   {
     key: 'aero',
-    icon: '🪶',
+    icon: '✈',
     name: 'Аэродинамика',
     desc: 'Меньше торможения',
     base: 45,

@@ -1,6 +1,6 @@
 /* ================================================================
    main.js — точка входа игры.
-   Здесь: рендерер, сцена, камера, чанки, пропсы, босс, ракета,
+   Здесь: рендер, сцена, камера, чанки, пропсы, босс, ракета,
    игровая логика, ввод, главный цикл.
 
    Настройки — в config.js.
@@ -1654,9 +1654,13 @@ const $launch = document.getElementById('launch')
 const $boostUI = document.getElementById('boostUI')
 const $fuelFill = document.getElementById('fuelFill')
 const $fuelText = document.getElementById('fuelText')
+
 const $alignText = document.getElementById('alignText')
 const $touchUI = document.getElementById('touchControls')
 const $toast = document.getElementById('toast')
+
+const $pushBtn = document.getElementById('pushBtn')
+const $helpText = document.getElementById('helpText')
 
 function updateHUD() {
   $dist.textContent = Math.max(0, Math.floor(rocketState.pos.x))
@@ -1673,13 +1677,18 @@ function renderShop() {
 
     const btn = document.createElement('button')
     btn.className = 'upg' + (can ? '' : ' disabled')
+    // Уровень — отдельный чип ПЕРЕД названием.
+    // Так название не обрезается из-за хвоста «Lv.N».
     btn.innerHTML = `
-      <div class="u-icon">${u.icon}</div>
-      <div>
-        <div class="u-name">${u.name} <span class="u-lvl">Lv.${lvl}</span></div>
+      <div class="u-main">
+        <div class="u-name">
+          <span class="u-lvl">${lvl}</span>
+          <span class="u-icon">${u.icon}</span>
+          <span class="u-title">${u.name}</span>
+        </div>
         <div class="u-desc">${u.desc}</div>
       </div>
-      <div class="u-cost">💥 ${cost}</div>`
+      <div class="u-cost">${cost} 💲</div>`
     btn.addEventListener('click', () => buy(u))
     $shop.appendChild(btn)
   }
@@ -1747,19 +1756,25 @@ function bindHold(el, setter) {
 }
 bindHold($rotUp, (v) => (touchKeys.W = v))
 bindHold($rotDown, (v) => (touchKeys.S = v))
+bindHold($pushBtn, (v) => (input.boost = v))
 
-renderer.domElement.addEventListener('pointerdown', () => {
-  if (G.phase === 'fly') {
-    input.boost = true
-  } else if (G.phase === 'ready' || G.phase === 'landed') {
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (G.phase === 'ready' || G.phase === 'landed') {
     startKick()
+    return
+  }
+  // На десктопе тап мышкой по канвасу тоже даёт тягу.
+  // На тач — только кнопка PUSH, иначе один палец на кнопке поворота
+  // «сбрасывает» boost через window.pointerup.
+  if (G.phase === 'fly' && e.pointerType === 'mouse') {
+    input.boost = true
   }
 })
-addEventListener('pointerup', () => {
-  input.boost = false
+addEventListener('pointerup', (e) => {
+  if (e.pointerType === 'mouse') input.boost = false
 })
-addEventListener('pointercancel', () => {
-  input.boost = false
+addEventListener('pointercancel', (e) => {
+  if (e.pointerType === 'mouse') input.boost = false
 })
 
 $launch.addEventListener('click', (e) => {
@@ -1858,11 +1873,13 @@ function update(dt) {
 
   if (G.phase === 'fly') {
     $boostUI.classList.add('on')
+    $helpText.classList.add('on')
     $touchUI.classList.remove('hidden')
     $fuelFill.style.width = (G.fuel / maxFuel()) * 100 + '%'
     $fuelText.textContent = G.fuel.toFixed(1)
   } else {
     $boostUI.classList.remove('on')
+    $helpText.classList.remove('on')
     $touchUI.classList.add('hidden')
   }
 

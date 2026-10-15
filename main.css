@@ -1,0 +1,611 @@
+/* ================================================================
+   main.css — все стили игры.
+   Логика — в main.js, настройки — в config.js.
+   ================================================================ */
+
+/* ---------- Базовое ---------- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #87c5f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+canvas {
+  display: block;
+}
+
+/* ================================================================
+   HUD — верхняя панель со счётчиками
+   ================================================================ */
+#hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 18px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.stat {
+  background: rgba(12, 18, 32, 0.62);
+  backdrop-filter: blur(8px);
+  color: #eaf2ff;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+
+.stat b {
+  color: #ffd75e;
+  font-size: 18px;
+}
+
+.reset-btn {
+  pointer-events: auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 18, 32, 0.62);
+  backdrop-filter: blur(8px);
+  color: #eaf2ff;
+  font-size: 20px;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+  transition: 0.15s;
+}
+
+.reset-btn:hover {
+  border-color: #ff7a7a;
+  color: #ff7a7a;
+  transform: translateY(-2px);
+}
+
+.reset-btn:active {
+  transform: translateY(0) scale(0.94);
+}
+
+/* ================================================================
+   Boost bar — полоска топлива (видна в полёте)
+   ================================================================ */
+#boostUI {
+  position: fixed;
+  left: 50%;
+  bottom: 170px;
+  transform: translateX(-50%);
+  width: min(340px, 70vw);
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+#boostUI.on {
+  opacity: 1;
+}
+
+#fuelTrack {
+  height: 14px;
+  background: rgba(12, 18, 32, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+}
+
+#fuelFill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff7a18, #ffd75e);
+  transition: width 0.08s linear;
+}
+
+#boostHint {
+  text-align: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 6px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  letter-spacing: 1px;
+}
+
+/* ================================================================
+   Help text — подсказка по управлению внизу
+   ================================================================ */
+#helpText {
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#helpText.on {
+  opacity: 1;
+}
+
+#helpText .key {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(12, 18, 32, 0.55);
+  font-size: 10px;
+  text-align: center;
+}
+
+/* ================================================================
+   Bottom panel — магазин + Launch
+   ================================================================ */
+#panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Сетка: 4 колонки на десктопе, 2 на мобилке.
+   Все кнопки магазина — одного размера. */
+#shop {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  width: min(1100px, 96vw);
+  pointer-events: auto;
+}
+
+.upg {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  background: rgba(12, 18, 32, 0.72);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 10px 14px;
+  cursor: pointer;
+  color: #eaf2ff;
+  font-family: inherit;
+  text-align: left;
+  transition: 0.15s;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.upg:hover:not(.disabled) {
+  border-color: #ffd75e;
+  transform: translateY(-2px);
+}
+
+.upg.disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.u-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* Центральный блок: чип + имя на одной строке, описание ниже.
+   flex: 1 + min-width: 0 — обязательны, иначе ellipsis не сработает. */
+.u-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.u-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Чип с уровнем: квадратик с цифрой */
+.u-lvl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(255, 215, 94, 0.18);
+  border: 1px solid rgba(255, 215, 94, 0.5);
+  color: #ffd75e;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Название — занимает остаток строки, обрезается ellipsis */
+.u-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.u-desc {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.u-cost {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffd75e;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+/* ================================================================
+   Launch button
+   ================================================================ */
+#launch {
+  pointer-events: auto;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  padding: 16px 54px;
+  border-radius: 16px;
+  border: none;
+  cursor: pointer;
+  color: #20130a;
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  box-shadow:
+    0 8px 0 #b96a00,
+    0 12px 28px rgba(0, 0, 0, 0.35);
+  transition: 0.08s;
+  text-transform: uppercase;
+}
+
+#launch:active {
+  transform: translateY(5px);
+  box-shadow:
+    0 3px 0 #b96a00,
+    0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+#launch.hidden {
+  display: none;
+}
+
+/* ================================================================
+   Toast — всплывающие сообщения по центру
+   ================================================================ */
+#toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.7);
+  font-size: 52px;
+  font-weight: 900;
+  color: #fff;
+  z-index: 20;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: 0.35s cubic-bezier(0.2, 1.6, 0.5, 1);
+  white-space: nowrap;
+}
+
+#toast.on {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ================================================================
+   Мобильное управление — кнопки поворота + PUSH
+   ================================================================ */
+#touchControls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 30px;
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  z-index: 11;
+  pointer-events: none;
+}
+
+#touchControls.hidden {
+  display: none;
+}
+
+#rotBtns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.tbtn {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(12, 18, 32, 0.72);
+  backdrop-filter: blur(10px);
+  color: #eaf2ff;
+  font-size: 22px;
+  font-weight: 900;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: 0.1s;
+}
+
+.tbtn:active {
+  transform: scale(0.92);
+  background: rgba(255, 215, 94, 0.3);
+}
+
+/* ---------- PUSH button — большая жёлтая кнопка тяги ---------- */
+.push-btn {
+  pointer-events: auto;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  color: #20130a;
+  background: radial-gradient(circle at 50% 35%, #ffe58a, #ffd75e 40%, #ff9f1a 100%);
+  box-shadow:
+    0 6px 0 #b96a00,
+    0 10px 24px rgba(0, 0, 0, 0.4),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.15),
+    inset 0 4px 8px rgba(255, 255, 255, 0.35);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  user-select: none;
+  touch-action: none;
+  transition: 0.08s;
+}
+
+.push-btn:active {
+  transform: translateY(5px);
+  box-shadow:
+    0 1px 0 #b96a00,
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 2px 6px rgba(255, 255, 255, 0.25);
+}
+
+.push-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.push-text {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+}
+
+/* ================================================================
+   Loading overlay — экран загрузки
+   ================================================================ */
+#loading {
+  position: fixed;
+  inset: 0;
+  background: #87c5f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  font-family: inherit;
+}
+
+#loading .loading-title {
+  font-size: 32px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  margin-bottom: 20px;
+  letter-spacing: 2px;
+}
+
+#loading .loading-bar-wrap {
+  width: min(400px, 70vw);
+  height: 12px;
+  background: rgba(12, 18, 32, 0.4);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#loadingBar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ffd75e, #ff9f1a);
+  transition: width 0.15s linear;
+}
+
+#loading .loading-text {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 10px;
+  opacity: 0.8;
+}
+
+/* ================================================================
+   Мобильная адаптация
+   ================================================================ */
+@media (max-width: 640px) {
+  /* HUD компактнее */
+  #hud {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .stat {
+    font-size: 13px;
+    padding: 6px 12px;
+  }
+
+  .stat b {
+    font-size: 16px;
+  }
+
+  .reset-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+  }
+
+  /* Магазин — 2 колонки одинаковой ширины */
+  #shop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: min(420px, 95vw);
+  }
+
+  .upg {
+    min-height: 54px;
+    padding: 8px 10px;
+    gap: 9px;
+  }
+
+  .u-icon {
+    font-size: 14px;
+  }
+
+  .u-main {
+    gap: 1px;
+  }
+
+  .u-name {
+    font-size: 11px;
+    font-weight: 200;
+    gap: 5px;
+  }
+
+  .u-lvl {
+    min-width: 18px;
+    height: 22px;
+    padding: 0 5px;
+    font-size: 10px;
+    border-radius: 5px;
+  }
+
+  .u-desc {
+    display: none;
+  }
+
+  .u-cost {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  #launch {
+    font-size: 17px;
+    padding: 14px 40px;
+  }
+
+  #boostUI {
+    bottom: 155px;
+    width: min(280px, 80vw);
+  }
+
+  /* Мобильные кнопки */
+  #touchControls {
+    bottom: 24px;
+    padding: 0 16px;
+  }
+
+  .tbtn {
+    width: 58px;
+    height: 58px;
+    font-size: 20px;
+  }
+
+  .push-btn {
+    width: 96px;
+    height: 96px;
+  }
+
+  .push-icon {
+    font-size: 26px;
+  }
+
+  .push-text {
+    font-size: 13px;
+  }
+
+  #helpText {
+    font-size: 10px;
+    bottom: 6px;
+  }
+
+  #helpText .key {
+    min-width: 14px;
+    padding: 1px 4px;
+    font-size: 9px;
+  }
+}

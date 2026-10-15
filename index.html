@@ -4,303 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>🚀 Ракетный Пинок 3D</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #87c5f0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        user-select: none;
-        -webkit-user-select: none;
-        -webkit-tap-highlight-color: transparent;
-      }
-      canvas {
-        display: block;
-      }
-
-      /* ---------- HUD ---------- */
-      #hud {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        padding: 14px 18px;
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        align-items: center;
-        flex-wrap: wrap;
-        pointer-events: none;
-        z-index: 10;
-      }
-      .stat {
-        background: rgba(12, 18, 32, 0.62);
-        backdrop-filter: blur(8px);
-        color: #eaf2ff;
-        padding: 8px 16px;
-        border-radius: 12px;
-        font-size: 15px;
-        font-weight: 600;
-        letter-spacing: 0.3px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
-      }
-      .stat b {
-        color: #ffd75e;
-        font-size: 18px;
-      }
-      .reset-btn {
-        pointer-events: auto;
-        width: 44px;
-        height: 44px;
-        padding: 0;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(12, 18, 32, 0.62);
-        backdrop-filter: blur(8px);
-        color: #eaf2ff;
-        font-size: 20px;
-        font-family: inherit;
-        cursor: pointer;
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
-        transition: 0.15s;
-      }
-      .reset-btn:hover {
-        border-color: #ff7a7a;
-        color: #ff7a7a;
-        transform: translateY(-2px);
-      }
-      .reset-btn:active {
-        transform: translateY(0) scale(0.94);
-      }
-
-      /* ---------- Boost bar ---------- */
-      #boostUI {
-        position: fixed;
-        left: 50%;
-        bottom: 190px;
-        transform: translateX(-50%);
-        width: min(340px, 70vw);
-        z-index: 10;
-        opacity: 0;
-        transition: opacity 0.25s;
-        pointer-events: none;
-      }
-      #boostUI.on {
-        opacity: 1;
-      }
-      #fuelTrack {
-        height: 14px;
-        background: rgba(12, 18, 32, 0.6);
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        overflow: hidden;
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
-      }
-      #fuelFill {
-        height: 100%;
-        width: 100%;
-        background: linear-gradient(90deg, #ff7a18, #ffd75e);
-        transition: width 0.08s linear;
-      }
-      #boostHint {
-        text-align: center;
-        color: #fff;
-        font-size: 12px;
-        font-weight: 700;
-        margin-top: 6px;
-        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-        letter-spacing: 1px;
-      }
-
-      /* ---------- Bottom panel ---------- */
-      #panel {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        padding: 14px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        z-index: 10;
-        pointer-events: none;
-      }
-      #shop {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        justify-content: center;
-        pointer-events: auto;
-        max-width: 900px;
-      }
-      .upg {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        background: rgba(12, 18, 32, 0.72);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 14px;
-        padding: 8px 12px;
-        cursor: pointer;
-        color: #eaf2ff;
-        font-family: inherit;
-        text-align: left;
-        transition: 0.15s;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
-      }
-      .upg:hover:not(.disabled) {
-        border-color: #ffd75e;
-        transform: translateY(-2px);
-      }
-      .upg.disabled {
-        opacity: 0.42;
-        cursor: not-allowed;
-      }
-      .u-icon {
-        font-size: 22px;
-      }
-      .u-name {
-        font-size: 13px;
-        font-weight: 700;
-        white-space: nowrap;
-      }
-      .u-lvl {
-        color: #ffd75e;
-        font-size: 11px;
-      }
-      .u-desc {
-        font-size: 10px;
-        opacity: 0.6;
-        white-space: nowrap;
-      }
-      .u-cost {
-        font-size: 13px;
-        font-weight: 800;
-        color: #ffd75e;
-        margin-left: 4px;
-      }
-
-      #launch {
-        pointer-events: auto;
-        font-family: inherit;
-        font-size: 20px;
-        font-weight: 900;
-        letter-spacing: 1.5px;
-        padding: 16px 54px;
-        border-radius: 16px;
-        border: none;
-        cursor: pointer;
-        color: #20130a;
-        background: linear-gradient(180deg, #ffd75e, #ff9f1a);
-        box-shadow:
-          0 8px 0 #b96a00,
-          0 12px 28px rgba(0, 0, 0, 0.35);
-        transition: 0.08s;
-        text-transform: uppercase;
-      }
-      #launch:active {
-        transform: translateY(5px);
-        box-shadow:
-          0 3px 0 #b96a00,
-          0 6px 16px rgba(0, 0, 0, 0.35);
-      }
-      #launch.hidden {
-        display: none;
-      }
-
-      #toast {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) scale(0.7);
-        font-size: 52px;
-        font-weight: 900;
-        color: #fff;
-        z-index: 20;
-        text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
-        opacity: 0;
-        pointer-events: none;
-        transition: 0.35s cubic-bezier(0.2, 1.6, 0.5, 1);
-        white-space: nowrap;
-      }
-      #toast.on {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-      }
-
-      @media (max-width: 640px) {
-        .u-desc {
-          display: none;
-        }
-        .u-name {
-          font-size: 11px;
-        }
-        #launch {
-          font-size: 17px;
-          padding: 14px 40px;
-        }
-        #boostUI {
-          bottom: 150px;
-        }
-        .reset-btn {
-          width: 38px;
-          height: 38px;
-          font-size: 17px;
-        }
-      }
-
-      #touchControls {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 20px;
-        padding: 0 20px;
-        display: flex;
-        justify-content: flex-start;
-        z-index: 11;
-        pointer-events: none;
-      }
-      #touchControls.hidden {
-        display: none;
-      }
-      #rotBtns {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        pointer-events: auto;
-      }
-      .tbtn {
-        width: 66px;
-        height: 66px;
-        border-radius: 50%;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        background: rgba(12, 18, 32, 0.72);
-        backdrop-filter: blur(10px);
-        color: #eaf2ff;
-        font-size: 24px;
-        font-weight: 900;
-        font-family: inherit;
-        cursor: pointer;
-        touch-action: none;
-        user-select: none;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-        transition: 0.1s;
-      }
-      .tbtn:active {
-        transform: scale(0.92);
-        background: rgba(255, 215, 94, 0.3);
-      }
-    </style>
+    <link rel="stylesheet" href="./main.css" />
   </head>
   <body>
     <div id="hud">
@@ -312,74 +16,38 @@
 
     <div id="boostUI">
       <div id="fuelTrack"><div id="fuelFill"></div></div>
-      <div id="boostHint">
-        🔥 <span id="fuelText">0.0</span> с · <span id="alignText">—</span> ·
-        <span style="opacity: 0.55">W/S — ПОВОРОТ · ПРОБЕЛ — ТЯГА</span>
+      <div id="boostHint">🔥 <span id="fuelText">0.0</span> с · <span id="alignText">—</span></div>
+    </div>
+
+    <div id="touchControls" class="hidden">
+      <div id="rotBtns">
+        <button id="rotUp" class="tbtn" aria-label="Поворот вверх">▲</button>
+        <button id="rotDown" class="tbtn" aria-label="Поворот вниз">▼</button>
       </div>
+      <button id="pushBtn" class="push-btn" aria-label="Тяга">
+        <span class="push-icon">🔥</span>
+        <span class="push-text">PUSH</span>
+      </button>
+    </div>
+
+    <div id="helpText">
+      <span class="key">W</span><span class="key">S</span> — ПОВОРОТ ·
+      <span class="key">ПРОБЕЛ</span> — ТЯГА
     </div>
 
     <div id="panel">
       <div id="shop"></div>
       <button id="launch">Пнуть! 🦵</button>
     </div>
-    <div id="touchControls" class="hidden">
-      <div id="rotBtns">
-        <button id="rotUp" class="tbtn">▲</button>
-        <button id="rotDown" class="tbtn">▼</button>
+
+    <div id="loading">
+      <div class="loading-title">🚀 ЗАГРУЗКА</div>
+      <div class="loading-bar-wrap">
+        <div id="loadingBar"></div>
       </div>
+      <div class="loading-text" id="loadingText">Загрузка мира…</div>
     </div>
-    <div
-      id="loading"
-      style="
-        position: fixed;
-        inset: 0;
-        background: #87c5f0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-        font-family: inherit;
-      "
-    >
-      <div
-        style="
-          font-size: 32px;
-          font-weight: 900;
-          color: #fff;
-          text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-          margin-bottom: 20px;
-          letter-spacing: 2px;
-        "
-      >
-        🚀 ЗАГРУЗКА
-      </div>
-      <div
-        style="
-          width: min(400px, 70vw);
-          height: 12px;
-          background: rgba(12, 18, 32, 0.4);
-          border-radius: 8px;
-          overflow: hidden;
-        "
-      >
-        <div
-          id="loadingBar"
-          style="
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #ffd75e, #ff9f1a);
-            transition: width 0.15s linear;
-          "
-        ></div>
-      </div>
-      <div
-        id="loadingText"
-        style="color: #fff; font-size: 13px; font-weight: 700; margin-top: 10px; opacity: 0.8"
-      >
-        Загрузка мира…
-      </div>
-    </div>
+
     <div id="toast"></div>
 
     <script type="importmap">
