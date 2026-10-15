@@ -149,20 +149,6 @@ export function refillFarTiles(camX, camZ) {
   for (const k of toUnload) unloadFarTile(k)
 }
 
-export function processFarTiles() {
-  if (pendingFarTiles.size === 0) return
-  const BUDGET_MS = 3
-  const t0 = performance.now()
-  for (const [key, p] of pendingFarTiles) {
-    const elapsed = performance.now() - t0
-    if (elapsed >= BUDGET_MS) break
-    if (p.builder.step(BUDGET_MS - elapsed)) {
-      finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
-      pendingFarTiles.delete(key)
-    }
-  }
-}
-
 /* ================================================================
    OVERLAY CHUNKS — точечные деревья
 ================================================================ */
@@ -422,14 +408,56 @@ export function refillOverlayChunks(camX, camZ) {
   for (const k of toUnload) unloadOverlayChunk(k)
 }
 
-export function processOverlayChunks() {
-  if (pendingOverlays.size === 0) return
-  const BUDGET_MS = 3
+/* ================================================================
+   processLODWork — единый планировщик дальнего плана.
+
+   Приоритет:
+     1) FAR_TILES (ландшафт) — идёт ВСЕГДА первым.
+     2) OVERLAY (деревья)   — берёт только остатки времени,
+                               либо свой полный бюджет, если
+                               ландшафт уже пуст.
+
+   Пока terrain не догнал — overlay фактически «на паузе».
+   Это критично при быстром полёте: визуально дырка в земле
+   намного хуже, чем отсутствие точек деревьев.
+================================================================ */
+const BUDGET_TERRAIN_MS = 5
+const BUDGET_OVERLAY_MS = 3
+
+export function processLODWork() {
   const t0 = performance.now()
+
+  // --- 1) Ландшафт — приоритет ---
+  if (pendingFarTiles.size > 0) {
+    for (const [key, p] of pendingFarTiles) {
+      const elapsed = performance.now() - t0
+      if (elapsed >= BUDGET_TERRAIN_MS) break
+      if (p.builder.step(BUDGET_TERRAIN_MS - elapsed)) {
+        finalizeFarTile(key, p.fx, p.fz, p.builder.geo)
+        pendingFarTiles.delete(key)
+      }
+    }
+  }
+
+  // --- 2) Overlay — из остатков или из своего бюджета ---
+  if (pendingOverlays.size === 0) return
+
+  const terrainElapsed = performance.now() - t0
+  const terrainDone = pendingFarTiles.size === 0
+
+  // Если terrain пуст — overlay получает полный отдельный бюджет.
+  // Если terrain ещё есть — берёт остатки от 5 мс.
+  const overlayBudget = terrainDone
+    ? BUDGET_OVERLAY_MS
+    : Math.max(0, BUDGET_TERRAIN_MS - terrainElapsed)
+
+  if (overlayBudget < 1) return // terrain съел всё — пропускаем кадр
+
+  const t1 = performance.now()
   for (const [key, p] of pendingOverlays) {
-    const elapsed = performance.now() - t0
-    if (elapsed >= BUDGET_MS) break
-    if (p.builder.step(BUDGET_MS - elapsed)) {
+    const elapsed = performance.now() - t1
+    if (elapsed >= overlayBudget) break
+    if (p.builder.step(overlayBudget - elapsed)) {
       finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
       pendingOverlays.delete(key)
     }
@@ -579,8 +607,7 @@ export function update(dt) {
     _lastOverlay.z = ozi
   }
 
-  processFarTiles()
-  processOverlayChunks()
+  processLODWork()
 
   updateFogEllipse(dt)
   updateLOD(dt)

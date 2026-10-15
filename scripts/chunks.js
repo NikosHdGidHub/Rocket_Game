@@ -505,7 +505,8 @@ export function update() {
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
   if (cxi !== _lastCell.x || czi !== _lastCell.z) {
-    refillChunkQueue(camX, camZ)
+    // В 2D-режиме чанки всё равно невидимы — не тратим CPU на их рефилл.
+    if (lod.fade < 0.5) refillChunkQueue(camX, camZ)
     _lastCell.x = cxi
     _lastCell.z = czi
   }

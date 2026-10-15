@@ -511,7 +511,7 @@ export const FAR_TILES = /** @type {const} */ ({
    * 120 при size=1600 = ~13 м/квад. Грубо, но издалека не заметно.
    * [типично] 60–200.
    */
-  segments: 200,
+  segments: 180,
 
   /**
    * Радиус прогрузки в тайлах.
@@ -818,7 +818,8 @@ export const ROCKET = /** @type {const} */ ({
 export const CAMERA = /** @type {const} */ ({
   fov: 55,
   near: 0.1,
-  far: 3000,
+  /** Дальность отрисовки м*/
+  far: 30000,
   initial: [6, 8, 26],
 
   /** Высота (м), на которой камера полностью «переворачивается» вниз. */
@@ -837,7 +838,7 @@ export const CAMERA = /** @type {const} */ ({
   speedRadiusK: 0.12,
 
   /** Максимальная добавка радиуса от скорости (м). */
-  maxSpeedRadius: 18,
+  maxSpeedRadius: 35,
 
   /** Lead-time для feed-forward (сек). Отрицательное = «смотрим в прошлое». */
   leadTime: -0.03,
@@ -928,7 +929,7 @@ export const GAME = /** @type {const} */ ({
   upgrade_cost_diff: 1.4,
 
   /** Сколько монет у игрока на старте. */
-  initialCoins: 0,
+  initialCoins: 1000000,
 
   /** Рекорд дистанции на старте (м). */
   initialBest: 0,
