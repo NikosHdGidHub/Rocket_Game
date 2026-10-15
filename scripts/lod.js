@@ -14,21 +14,25 @@ import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS, computeChunkProps } from './chun
 import { terrainHeight, heightToTerrainColor, hash2i } from './world/world.js'
 
 /* ================================================================
-   FAR TILES
+   FAR TILES — динамические границы загрузки.
+
+   Есть два режима:
+     low  — у земли: асимметрично (fwd 3, back 1, side 2), SEG=180
+     high — высоко:  симметрично (6×6×6), SEG=40, оверлай выключен
+
+   Переключение по altSmooth с гистерезисом (altitudeHigh/altitudeLow).
 ================================================================ */
 const FAR_TILE_SIZE = CFG.FAR_TILES.size
-const FAR_LOAD_R = CFG.FAR_TILES.loadRadius
-const FAR_UNLOAD_R = CFG.FAR_TILES.unloadRadius
-
-let farTileSeg = CFG.FAR_TILES.segments
-
 const TILE = CFG.GROUND_TEX.tile
+
+let farTileSeg = CFG.FAR_TILES.segments // мутабельно
+let farHighMode = false // true → высокий режим
 
 let farGroundMat = null
 
 export function init() {
   farGroundMat = new THREE.MeshStandardMaterial({
-    map: groundTex, // к этому моменту scene.init() уже отработал
+    map: groundTex,
     vertexColors: true,
     roughness: 1,
     metalness: 0,
@@ -40,6 +44,26 @@ export function init() {
 
 const farTiles = new Map()
 const pendingFarTiles = new Map()
+
+/** Текущие радиусы загрузки (учитывает farHighMode). */
+function getFarLoadBounds() {
+  if (farHighMode) {
+    const r = CFG.FAR_TILES.loadRadiusHigh
+    return { fwd: r, back: r, side: r }
+  }
+  return {
+    fwd: CFG.FAR_TILES.loadFwd,
+    back: CFG.FAR_TILES.loadBack,
+    side: CFG.FAR_TILES.loadSide,
+  }
+}
+
+/** Текущие радиусы выгрузки (load + margin, чтобы не мигало). */
+function getFarUnloadBounds() {
+  const m = CFG.FAR_TILES.unloadMargin
+  const L = getFarLoadBounds()
+  return { fwd: L.fwd + m, back: L.back + m, side: L.side + m }
+}
 
 function createFarTileBuilder(fx, fz) {
   const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, farTileSeg, farTileSeg)
@@ -116,21 +140,6 @@ function finalizeFarTile(key, fx, fz, geo, seg) {
   farTiles.set(key, { mesh, geo, seg })
 }
 
-function maybeSwitchSeg(altSmooth) {
-  const F = CFG.FAR_TILES
-  let next = farTileSeg
-
-  if (farTileSeg === F.segments && altSmooth > F.altitudeHigh) {
-    next = F.segmentsHigh
-  } else if (farTileSeg === F.segmentsHigh && altSmooth < F.altitudeLow) {
-    next = F.segments
-  }
-
-  if (next === farTileSeg) return false
-  farTileSeg = next
-  return true
-}
-
 function unloadFarTile(key) {
   const c = farTiles.get(key)
   if (!c) return
@@ -139,20 +148,41 @@ function unloadFarTile(key) {
   farTiles.delete(key)
 }
 
+/**
+ * Решение о переключении far-режима (high/low) с гистерезисом.
+ * Возвращает true, если режим изменился — нужно перезапустить refill.
+ */
+function updateFarMode(altSmooth) {
+  const F = CFG.FAR_TILES
+  let next = farHighMode
+
+  if (!farHighMode && altSmooth > F.altitudeHigh) next = true
+  else if (farHighMode && altSmooth < F.altitudeLow) next = false
+
+  if (next === farHighMode) return false
+
+  farHighMode = next
+  farTileSeg = farHighMode ? F.segmentsHigh : F.segments
+  return true
+}
+
 export function refillFarTiles(camX, camZ) {
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
+  const L = getFarLoadBounds()
+  const U = getFarUnloadBounds()
 
-  for (let dx = -FAR_LOAD_R; dx <= FAR_LOAD_R; dx++) {
-    for (let dz = -FAR_LOAD_R; dz <= FAR_LOAD_R; dz++) {
-      const fx = fxi + dx,
-        fz = fzi + dz
+  // --- Пополняем очередь (в границах текущего режима) ---
+  for (let dx = -L.back; dx <= L.fwd; dx++) {
+    for (let dz = -L.side; dz <= L.side; dz++) {
+      const fx = fxi + dx
+      const fz = fzi + dz
       const key = fx + ',' + fz
 
       const loaded = farTiles.get(key)
       const pending = pendingFarTiles.get(key)
 
-      // Уже есть тайл, но SEG устарел → пересборка
+      // SEG устарел → пересборка
       if (loaded && loaded.seg !== farTileSeg) {
         pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
         continue
@@ -163,19 +193,21 @@ export function refillFarTiles(camX, camZ) {
     }
   }
 
-  // Отменяем «уехавшие» pending — как было
+  // --- Отменяем «уехавшие» pending (с учётом margin) ---
   for (const [key, p] of pendingFarTiles) {
-    if (Math.abs(p.fx - fxi) > FAR_UNLOAD_R || Math.abs(p.fz - fzi) > FAR_UNLOAD_R) {
+    if (p.fx - fxi > U.fwd || fxi - p.fx > U.back || Math.abs(p.fz - fzi) > U.side) {
       p.builder.geo.dispose()
       pendingFarTiles.delete(key)
     }
   }
 
-  // Выгрузка — как было
+  // --- Выгрузка (с учётом margin) ---
   const toUnload = []
   for (const key of farTiles.keys()) {
     const [fxs, fzs] = key.split(',')
-    if (Math.abs(+fxs - fxi) > FAR_UNLOAD_R || Math.abs(+fzs - fzi) > FAR_UNLOAD_R) {
+    const fx = +fxs
+    const fz = +fzs
+    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
       toUnload.push(key)
     }
   }
@@ -460,7 +492,7 @@ const BUDGET_OVERLAY_MS = 3
 export function processLODWork() {
   const t0 = performance.now()
 
-  // --- 1) Ландшафт — приоритет ---
+  // --- 1) Ландшафт — всегда в приоритете ---
   if (pendingFarTiles.size > 0) {
     for (const [key, p] of pendingFarTiles) {
       const elapsed = performance.now() - t0
@@ -472,19 +504,17 @@ export function processLODWork() {
     }
   }
 
-  // --- 2) Overlay — из остатков или из своего бюджета ---
+  // --- 2) Overlay: на высокой высоте вообще не строим ---
+  if (farHighMode) return
   if (pendingOverlays.size === 0) return
 
   const terrainElapsed = performance.now() - t0
   const terrainDone = pendingFarTiles.size === 0
-
-  // Если terrain пуст — overlay получает полный отдельный бюджет.
-  // Если terrain ещё есть — берёт остатки от 5 мс.
   const overlayBudget = terrainDone
     ? BUDGET_OVERLAY_MS
     : Math.max(0, BUDGET_TERRAIN_MS - terrainElapsed)
 
-  if (overlayBudget < 1) return // terrain съел всё — пропускаем кадр
+  if (overlayBudget < 1) return
 
   const t1 = performance.now()
   for (const [key, p] of pendingOverlays) {
@@ -568,9 +598,12 @@ function updateLOD(dt) {
   if (lod.fade < 0.005) lod.fade = 0
   if (lod.fade > 0.995) lod.fade = 1
 
+  // Overlay виден только в 2D-режиме (lod.fade > 0) И в низком far-режиме.
+  // На высокой высоте точки деревьев уже нечитаемы — экономим fill-rate.
+  const overlayOpacity = farHighMode ? 0 : lod.fade
   for (const c of overlayChunks.values()) {
-    c.mat.opacity = lod.fade
-    c.mesh.visible = lod.fade > 0.005
+    c.mat.opacity = overlayOpacity
+    c.mesh.visible = overlayOpacity > 0.005
   }
 
   farGroundMat.opacity = lod.fade
@@ -639,14 +672,14 @@ export function update(dt) {
   const camZ = camera.position.z
 
   updateFogEllipse(dt)
-  updateLOD(dt) // обновляет lod.altSmooth
+  updateLOD(dt) // обновляет lod.altSmooth, lod.fade, видимости
 
-  const segChanged = maybeSwitchSeg(lod.altSmooth) // SEG-решение
+  const modeChanged = updateFarMode(lod.altSmooth)
 
-  // far-тайлы: смена cell ИЛИ смена SEG → пересборка
+  // far-тайлы: смена cell ИЛИ смена режима (low ↔ high)
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-  if (segChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
+  if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
     refillFarTiles(camX, camZ)
     _lastFar.x = fxi
     _lastFar.z = fzi
@@ -661,7 +694,7 @@ export function update(dt) {
     _lastOverlay.z = ozi
   }
 
-  processLODWork() // ← один вызов
+  processLODWork()
 }
 
 /* ================================================================

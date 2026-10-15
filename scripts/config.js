@@ -503,11 +503,16 @@ export const FAR_TILES = /** @type {const} */ ({
   /** Возвращаемся в «точный» — ниже этой (гистерезис 200 м). */
   altitudeLow: 2000,
 
-  /**  Радиус прогрузки в тайлах.*/
-  loadRadius: 3,
+  // ─── Низкая высота: асимметрично, «по курсу вперёд» ───
+  loadFwd: 3, // вперёд (+X, куда летит ракета)
+  loadBack: 1, // назад (−X)
+  loadSide: 2, // в стороны (±Z)
 
-  /** Радиус выгрузки (с запасом).*/
-  unloadRadius: 4,
+  // ─── Высокая высота: симметрично, шире обзор ───
+  loadRadiusHigh: 6,
+
+  /** На сколько радиус выгрузки больше радиуса загрузки. */
+  unloadMargin: 1,
 
   /** Сколько тайлов грузить за кадр. */
   perFrame: 3,
@@ -916,7 +921,7 @@ export const GAME = /** @type {const} */ ({
   upgrade_cost_diff: 1.4,
 
   /** Сколько монет у игрока на старте. */
-  initialCoins: 1000000,
+  initialCoins: 5,
 
   /** Рекорд дистанции на старте (м). */
   initialBest: 0,
@@ -969,7 +974,7 @@ export const UPGRADES = /** @type {const} */ ([
     desc: 'Дальше и выше',
     base: 40,
     growth: 1.6,
-    maxLevel: 15,
+    maxLevel: 12,
   },
   {
     key: 'aero',
@@ -987,7 +992,7 @@ export const UPGRADES = /** @type {const} */ ([
     desc: 'Дольше ускорение',
     base: 35,
     growth: 1.45,
-    maxLevel: 20,
+    maxLevel: 13,
   },
   {
     key: 'thrust',
@@ -996,7 +1001,7 @@ export const UPGRADES = /** @type {const} */ ([
     desc: 'Сильнее ускорение',
     base: 50,
     growth: 1.67,
-    maxLevel: 15,
+    maxLevel: 12,
   },
 ])
 
