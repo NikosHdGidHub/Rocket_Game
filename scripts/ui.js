@@ -50,11 +50,14 @@ export function renderShop() {
   $shop.innerHTML = ''
   for (const u of _upgrades) {
     const lvl = G.upgrades[u.key]
-    const cost = _costOf(u)
-    const can = G.coins >= cost
+    const max = u.maxLevel ?? Infinity
+    const isMax = lvl >= max
+    const cost = isMax ? 0 : _costOf(u)
+    const can = !isMax && G.coins >= cost
 
     const btn = document.createElement('button')
-    btn.className = 'upg' + (can ? '' : ' disabled')
+    btn.className = 'upg' + (can ? '' : ' disabled') + (isMax ? ' maxed' : '')
+    btn.disabled = isMax
     btn.innerHTML = `
       <div class="u-main">
         <div class="u-name">
@@ -62,9 +65,9 @@ export function renderShop() {
           <span class="u-icon">${u.icon}</span>
           <span class="u-title">${u.name}</span>
         </div>
-        <div class="u-desc">${u.desc}</div>
+        <div class="u-desc">${isMax ? 'Максимум' : u.desc}</div>
       </div>
-      <div class="u-cost">${cost} 💲</div>`
+      <div class="u-cost">${isMax ? 'MAX' : cost + ' 💲'}</div>`
     btn.addEventListener('click', () => _onBuy && _onBuy(u))
     $shop.appendChild(btn)
   }

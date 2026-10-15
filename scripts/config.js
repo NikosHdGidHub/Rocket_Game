@@ -975,12 +975,13 @@ export const SAVE = /** @type {const} */ ({
 ================================================================ */
 export const UPGRADES = /** @type {const} */ ([
   {
-    key: 'power', // ключ для G.upgrades.power
-    icon: '🦵', // эмодзи на кнопке
-    name: 'Сила пинка', // название
-    desc: 'Дальше и выше', // короткое описание
-    base: 40, // базовая цена
-    growth: 1.6, // множитель цены за уровень
+    key: 'power',
+    icon: '🦵',
+    name: 'Сила пинка',
+    desc: 'Дальше и выше',
+    base: 40,
+    growth: 1.6,
+    maxLevel: 15,
   },
   {
     key: 'aero',
@@ -989,6 +990,7 @@ export const UPGRADES = /** @type {const} */ ([
     desc: 'Меньше торможения',
     base: 45,
     growth: 1.55,
+    maxLevel: 10,
   },
   {
     key: 'fuel',
@@ -997,6 +999,7 @@ export const UPGRADES = /** @type {const} */ ([
     desc: 'Дольше ускорение',
     base: 35,
     growth: 1.45,
+    maxLevel: 20,
   },
   {
     key: 'thrust',
@@ -1005,6 +1008,7 @@ export const UPGRADES = /** @type {const} */ ([
     desc: 'Сильнее ускорение',
     base: 50,
     growth: 1.67,
+    maxLevel: 15,
   },
 ])
 

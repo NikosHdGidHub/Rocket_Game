@@ -94,7 +94,9 @@ export function loadProgress() {
       for (const key of Object.keys(CFG.GAME.initialUpgrades)) {
         const v = data.upgrades[key]
         if (typeof v === 'number' && isFinite(v) && v >= 1) {
-          G.upgrades[key] = Math.floor(v)
+          const uCfg = CFG.UPGRADES.find((u) => u.key === key)
+          const max = uCfg?.maxLevel ?? Infinity
+          G.upgrades[key] = Math.min(Math.floor(v), max) // ← clamp
         }
       }
     }
@@ -142,6 +144,9 @@ export function resetProgress() {
    Апгрейды
 ================================================================ */
 export function buy(u) {
+  const lvl = G.upgrades[u.key]
+  const max = u.maxLevel ?? Infinity
+  if (lvl >= max) return // ← потолок
   const cost = costOf(u)
   if (G.coins < cost) return
   G.coins -= cost

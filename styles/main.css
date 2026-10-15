@@ -225,6 +225,22 @@ canvas {
   opacity: 0.42;
   cursor: not-allowed;
 }
+.upg.maxed {
+  opacity: 1;
+  border-color: rgba(125, 255, 160, 0.5);
+  background: rgba(20, 40, 26, 0.72);
+  cursor: default;
+}
+.upg.maxed .u-cost {
+  color: #7dffa0;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.upg.maxed .u-lvl {
+  background: rgba(125, 255, 160, 0.15);
+  border-color: rgba(125, 255, 160, 0.5);
+  color: #7dffa0;
+}
 
 .u-icon {
   font-size: 18px;
