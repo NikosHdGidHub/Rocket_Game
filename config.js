@@ -930,6 +930,14 @@ export const GAME = /** @type {const} */ ({
   /** Потолок угловой скорости (рад/с). */
   angMax: 18.0,
 
+  /**
+   * Плотность воздуха по высоте (экспоненциальное падение).
+   * На 0 м = 1, на airHeight м = 0.37.
+   */
+  airHeight: 5000,
+  /** Общая сложность игры (0.75 - 2.0) */
+  upgrade_cost_diff: 1.4,
+
   /** Сколько монет у игрока на старте. */
   initialCoins: 0,
 
@@ -976,7 +984,6 @@ export const SAVE = /** @type {const} */ ({
    Каждый апгрейд: ключ, иконка, имя, описание, базовая цена, рост.
    Формула цены: base * growth^(level-1)  (см. RULES.upgradeCost).
 ================================================================ */
-
 export const UPGRADES = /** @type {const} */ ([
   {
     key: 'power', // ключ для G.upgrades.power
@@ -1008,7 +1015,7 @@ export const UPGRADES = /** @type {const} */ ([
     name: 'Тяга двигателя',
     desc: 'Сильнее ускорение',
     base: 50,
-    growth: 1.75,
+    growth: 1.67,
   },
 ])
 
@@ -1030,13 +1037,13 @@ export const RULES = {
    * Максимальное топливо (в секундах буста).
    * Lv1: 2.0с, Lv10: 6.05с.
    */
-  maxFuel: (u) => 2.0 + (u.fuel - 1) * 1.35,
+  maxFuel: (u) => 1.8 + (u.fuel - 1) * 1.758,
 
   /**
    * Ускорение от тяги (м/с² вдоль носа).
    * Lv1: 12, Lv10: 48.
    */
-  thrustAcc: (u) => 12 + (u.thrust - 1) * 3.2,
+  thrustAcc: (u) => 12 + (u.thrust - 1) * 3.0,
 
   /**
    * Коэффициент сопротивления воздуха в зависимости от угла атаки.
@@ -1076,12 +1083,9 @@ export const RULES = {
     return base * scale
   },
 
-  /**
-   * Плотность воздуха по высоте (экспоненциальное падение).
-   * На 0 м = 1, на 20000 м = 0.37.
-   */
-  airDensity: (y) => Math.exp(-Math.max(0, y) / 3000),
-  upgradeCost: (u, lvl) => Math.floor(u.base * Math.pow(u.growth, lvl - 1)),
+  airDensity: (y) => Math.exp(-Math.max(0, y) / GAME.airHeight),
+  upgradeCost: (u, lvl) =>
+    Math.floor(u.base * Math.pow(u.growth * GAME.upgrade_cost_diff, lvl - 1)),
 }
 
 /* ================================================================
