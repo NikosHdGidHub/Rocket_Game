@@ -1120,7 +1120,7 @@ export const CHESTS = /** @type {const} */ ({
   /** На каком расстоянии (м) сундук «подсвечивается» ярче. */
   nearRadius: 300,
   /** Настройки бафов */
-  buffChests: [2.0, 1.5, 3.0, 0.7, 0.85],
+  buffChests: [2.0, 1.5, 3.5, 0.7, 0.85],
 })
 
 /**
@@ -1151,7 +1151,7 @@ export const CARDS = /** @type {const} */ ([
   },
   {
     key: 'aero2x',
-    icon: '🪶',
+    icon: '✈',
     name: 'Обтекаемость',
     desc: 'Сопротивление ×' + CHESTS.buffChests[3],
     color: 0x9fe8ff,

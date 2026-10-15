@@ -8,28 +8,28 @@ import { G, input } from './state.js'
 import { renderer } from './scene.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
-const $dist       = document.getElementById('dist')
-const $coins      = document.getElementById('coins')
-const $best       = document.getElementById('best')
-const $shop       = document.getElementById('shop')
-const $launch     = document.getElementById('launch')
-const $boostUI    = document.getElementById('boostUI')
-const $fuelFill   = document.getElementById('fuelFill')
-const $fuelText   = document.getElementById('fuelText')
-const $alignText  = document.getElementById('alignText')
-const $touchUI    = document.getElementById('touchControls')
-const $toast      = document.getElementById('toast')
-const $pushBtn    = document.getElementById('pushBtn')
-const $helpText   = document.getElementById('helpText')
-const $rotUp      = document.getElementById('rotUp')
-const $rotDown    = document.getElementById('rotDown')
+const $dist = document.getElementById('dist')
+const $coins = document.getElementById('coins')
+const $best = document.getElementById('best')
+const $shop = document.getElementById('shop')
+const $launch = document.getElementById('launch')
+const $boostUI = document.getElementById('boostUI')
+const $fuelFill = document.getElementById('fuelFill')
+const $fuelText = document.getElementById('fuelText')
+const $alignText = document.getElementById('alignText')
+const $touchUI = document.getElementById('touchControls')
+const $toast = document.getElementById('toast')
+const $pushBtn = document.getElementById('pushBtn')
+const $helpText = document.getElementById('helpText')
+const $rotUp = document.getElementById('rotUp')
+const $rotDown = document.getElementById('rotDown')
 
 /* ---------- Внешние колбэки (заполняются в init) ---------- */
 let _onLaunch = null
 let _onBuy = null
 let _onReset = null
-let _upgrades = []             // ссылка на CFG.UPGRADES
-let _costOf = () => 0          // колбэк расчёта цены
+let _upgrades = [] // ссылка на CFG.UPGRADES
+let _costOf = () => 0 // колбэк расчёта цены
 
 /* ================================================================
    Display-функции (вызываются из game.js)
@@ -126,7 +126,7 @@ export function update() {
   }
 
   // Панель магазина видна только в ready/landed
-  const panelVisible = (G.phase === 'ready' || G.phase === 'landed')
+  const panelVisible = G.phase === 'ready' || G.phase === 'landed'
   $launch.classList.toggle('hidden', !panelVisible)
   $shop.style.display = panelVisible ? '' : 'none'
 }
@@ -135,7 +135,10 @@ export function update() {
    Ввод
 ================================================================ */
 function bindHold(el, setter) {
-  el.addEventListener('pointerdown', (e) => { e.preventDefault(); setter(true) })
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault()
+    setter(true)
+  })
   el.addEventListener('pointerup', () => setter(false))
   el.addEventListener('pointerleave', () => setter(false))
   el.addEventListener('pointercancel', () => setter(false))
@@ -153,10 +156,21 @@ export function init(callbacks) {
     if (e.code === 'Space') {
       e.preventDefault()
       input.boost = true
-      if (G.phase === 'ready' || G.phase === 'landed') _onLaunch && _onLaunch()
+      // Запуск — только по «свежему» нажатию, не по автоповтору зажатой клавиши.
+      // Иначе: игрок держит газ → ракета садится в landed → repeat-keydown
+      // мгновенно перезапускает полёт, не давая зайти в магазин.
+      if (!e.repeat && (G.phase === 'ready' || G.phase === 'landed')) {
+        _onLaunch && _onLaunch()
+      }
     }
-    if (e.code === 'KeyW') { input.keys.W = true; e.preventDefault() }
-    if (e.code === 'KeyS') { input.keys.S = true; e.preventDefault() }
+    if (e.code === 'KeyW') {
+      input.keys.W = true
+      e.preventDefault()
+    }
+    if (e.code === 'KeyS') {
+      input.keys.S = true
+      e.preventDefault()
+    }
   })
   addEventListener('keyup', (e) => {
     if (e.code === 'Space') input.boost = false
@@ -165,7 +179,7 @@ export function init(callbacks) {
   })
 
   /* ---------- Тач-кнопки ---------- */
-  bindHold($rotUp,   (v) => (input.touch.W = v))
+  bindHold($rotUp, (v) => (input.touch.W = v))
   bindHold($rotDown, (v) => (input.touch.S = v))
   bindHold($pushBtn, (v) => (input.boost = v))
 

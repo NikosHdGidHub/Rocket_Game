@@ -117,23 +117,25 @@ export function loadProgress() {
 }
 
 export function resetProgress() {
-  const ok = confirm('Сбросить весь прогресс? Монеты, рекорд и апгрейды будут потеряны.')
+  const ok = confirm(
+    'Сбросить весь прогресс? Монеты, рекорд и апгрейды будут потеряны.\n' + 'Игра перезапустится.'
+  )
   if (!ok) return
+
+  // 1) Чистим сохранение в localStorage.
   try {
     localStorage.removeItem(CFG.SAVE.key)
   } catch (e) {
-    console.warn(e)
+    console.warn('resetProgress: не удалось очистить localStorage:', e)
   }
 
-  G.coins = CFG.GAME.initialCoins
-  G.best = CFG.GAME.initialBest
-  G.upgrades = { ...CFG.GAME.initialUpgrades }
-  G.cards = {}
-  G.openedChests = new Set()
-
-  UI.updateHUD()
-  UI.renderShop()
+  // 2) Короткий фидбэк — пользователь видит, что кнопка сработала.
   UI.showToast('Прогресс сброшен 🗑️', '#ff7a7a')
+
+  // 3) Перезагружаем страницу. Весь стейт (G, чанки, сундуки, камера, LOD)
+  //    пересоздастся с нуля тем же путём, что и при первом запуске —
+  //    никаких «залипших» флагов после сброса.
+  setTimeout(() => location.reload(), 500)
 }
 
 /* ================================================================
@@ -472,4 +474,5 @@ export function init() {
   rocket.position.copy(rocketState.pos)
   G.fuel = maxFuel()
   UI.updateHUD()
+  UI.renderShop()
 }
