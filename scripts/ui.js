@@ -1,0 +1,199 @@
+/* ================================================================
+   ui.js — DOM: HUD, магазин, toast, карточки, ввод.
+   Экспортирует display-функции для game.js.
+   Экшены (launch/buy/reset) вызываются через callbacks из init().
+================================================================ */
+import * as CFG from './config.js'
+import { G, input } from './state.js'
+import { renderer } from './scene.js'
+
+/* ---------- Кэши DOM-элементов ---------- */
+const $dist       = document.getElementById('dist')
+const $coins      = document.getElementById('coins')
+const $best       = document.getElementById('best')
+const $shop       = document.getElementById('shop')
+const $launch     = document.getElementById('launch')
+const $boostUI    = document.getElementById('boostUI')
+const $fuelFill   = document.getElementById('fuelFill')
+const $fuelText   = document.getElementById('fuelText')
+const $alignText  = document.getElementById('alignText')
+const $touchUI    = document.getElementById('touchControls')
+const $toast      = document.getElementById('toast')
+const $pushBtn    = document.getElementById('pushBtn')
+const $helpText   = document.getElementById('helpText')
+const $rotUp      = document.getElementById('rotUp')
+const $rotDown    = document.getElementById('rotDown')
+
+/* ---------- Внешние колбэки (заполняются в init) ---------- */
+let _onLaunch = null
+let _onBuy = null
+let _onReset = null
+let _upgrades = []             // ссылка на CFG.UPGRADES
+let _costOf = () => 0          // колбэк расчёта цены
+
+/* ================================================================
+   Display-функции (вызываются из game.js)
+================================================================ */
+export function updateHUD() {
+  $dist.textContent = Math.max(0, Math.floor(window.__rocketPosX || 0))
+  $coins.textContent = G.coins
+  $best.textContent = Math.floor(G.best)
+}
+// Внутренний хак: game.js обновит window.__rocketPosX перед вызовом.
+// Проще: game.js сам передаёт x. Дадим уточнённую версию ниже.
+export function setHUDDist(x) {
+  $dist.textContent = Math.max(0, Math.floor(x))
+}
+
+export function renderShop() {
+  $shop.innerHTML = ''
+  for (const u of _upgrades) {
+    const lvl = G.upgrades[u.key]
+    const cost = _costOf(u)
+    const can = G.coins >= cost
+
+    const btn = document.createElement('button')
+    btn.className = 'upg' + (can ? '' : ' disabled')
+    btn.innerHTML = `
+      <div class="u-main">
+        <div class="u-name">
+          <span class="u-lvl">${lvl}</span>
+          <span class="u-icon">${u.icon}</span>
+          <span class="u-title">${u.name}</span>
+        </div>
+        <div class="u-desc">${u.desc}</div>
+      </div>
+      <div class="u-cost">${cost} 💲</div>`
+    btn.addEventListener('click', () => _onBuy && _onBuy(u))
+    $shop.appendChild(btn)
+  }
+}
+
+let toastTimer
+export function showToast(text, color = CFG.UI.toastColors.default) {
+  $toast.textContent = text
+  $toast.style.color = color
+  $toast.classList.add('on')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => $toast.classList.remove('on'), CFG.UI.toastDuration)
+}
+
+export function setAlignText(deg) {
+  if (deg < 8) {
+    $alignText.textContent = '🎯 0°'
+    $alignText.style.color = '#7dffa0'
+  } else if (deg < 25) {
+    $alignText.textContent = Math.round(deg) + '°'
+    $alignText.style.color = '#ffd75e'
+  } else {
+    $alignText.textContent = Math.round(deg) + '°'
+    $alignText.style.color = '#ff7a7a'
+  }
+}
+
+export function updateFuelBar(fuel, maxFuel) {
+  $fuelFill.style.width = (fuel / maxFuel) * 100 + '%'
+  $fuelText.textContent = fuel.toFixed(1)
+}
+
+let cardCloseHandler = null
+export function showCardPopup(card) {
+  const $popup = document.getElementById('cardPopup')
+  document.getElementById('cardIcon').textContent = card.icon
+  document.getElementById('cardName').textContent = card.name
+  document.getElementById('cardDesc').textContent = card.desc
+  $popup.classList.add('on')
+
+  if (cardCloseHandler) $popup.removeEventListener('click', cardCloseHandler)
+  cardCloseHandler = () => $popup.classList.remove('on')
+  $popup.addEventListener('click', cardCloseHandler)
+}
+
+/* ================================================================
+   Per-frame update: видимость панелей по фазе игры.
+================================================================ */
+export function update() {
+  const inFlight = G.phase === 'fly'
+
+  if (inFlight) {
+    $boostUI.classList.add('on')
+    $helpText.classList.add('on')
+    $touchUI.classList.remove('hidden')
+  } else {
+    $boostUI.classList.remove('on')
+    $helpText.classList.remove('on')
+    $touchUI.classList.add('hidden')
+  }
+
+  // Панель магазина видна только в ready/landed
+  const panelVisible = (G.phase === 'ready' || G.phase === 'landed')
+  $launch.classList.toggle('hidden', !panelVisible)
+  $shop.style.display = panelVisible ? '' : 'none'
+}
+
+/* ================================================================
+   Ввод
+================================================================ */
+function bindHold(el, setter) {
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); setter(true) })
+  el.addEventListener('pointerup', () => setter(false))
+  el.addEventListener('pointerleave', () => setter(false))
+  el.addEventListener('pointercancel', () => setter(false))
+}
+
+export function init(callbacks) {
+  _onLaunch = callbacks.onLaunch
+  _onBuy = callbacks.onBuy
+  _onReset = callbacks.onReset
+  _upgrades = callbacks.upgrades
+  _costOf = callbacks.costOf
+
+  /* ---------- Клавиатура ---------- */
+  addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault()
+      input.boost = true
+      if (G.phase === 'ready' || G.phase === 'landed') _onLaunch && _onLaunch()
+    }
+    if (e.code === 'KeyW') { input.keys.W = true; e.preventDefault() }
+    if (e.code === 'KeyS') { input.keys.S = true; e.preventDefault() }
+  })
+  addEventListener('keyup', (e) => {
+    if (e.code === 'Space') input.boost = false
+    if (e.code === 'KeyW') input.keys.W = false
+    if (e.code === 'KeyS') input.keys.S = false
+  })
+
+  /* ---------- Тач-кнопки ---------- */
+  bindHold($rotUp,   (v) => (input.touch.W = v))
+  bindHold($rotDown, (v) => (input.touch.S = v))
+  bindHold($pushBtn, (v) => (input.boost = v))
+
+  /* ---------- Canvas ---------- */
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (G.phase === 'ready' || G.phase === 'landed') {
+      _onLaunch && _onLaunch()
+      return
+    }
+    if (G.phase === 'fly' && e.pointerType === 'mouse') {
+      input.boost = true
+    }
+  })
+  addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'mouse') input.boost = false
+  })
+  addEventListener('pointercancel', (e) => {
+    if (e.pointerType === 'mouse') input.boost = false
+  })
+
+  /* ---------- Кнопки ---------- */
+  $launch.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (G.phase === 'ready' || G.phase === 'landed') _onLaunch && _onLaunch()
+  })
+
+  document.getElementById('resetBtn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    _onReset && _onReset()
+  })
+}

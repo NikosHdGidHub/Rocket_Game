@@ -4,7 +4,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import * as CFG from './config.js'
+import * as CFG from '../../config.js'
 
 export function setGeoColor(geo, hex) {
   const c = new THREE.Color(hex)

@@ -3,7 +3,7 @@
    Никакого рендера, никаких чанков — только «математика мира».
 ================================================================ */
 import * as THREE from 'three'
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 
 export const WORLD_SEED = CFG.WORLD_SEED
 
