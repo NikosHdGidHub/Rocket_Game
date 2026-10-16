@@ -1,7 +1,7 @@
 /* ================================================================
    achievementsModal.js — модалка достижений с табами.
 ================================================================ */
-import { ACHIEVEMENTS, A, isSprintFailed, sprintRemainingSec } from './achievements.js'
+import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from './achievements.js'
 
 let _initialized = false
 let _currentTab = 'all' // 'all' | 'progress' | 'done'
@@ -47,7 +47,7 @@ export function close() {
 function buildItems() {
   return ACHIEVEMENTS.map((a) => {
     const unlocked = A.unlocked.has(a.key)
-    const failed = a.key === 'sprinter' && !unlocked && isSprintFailed()
+    const failed = a.timeLimit != null && !unlocked && isTimeLimitedFailed(a.key)
 
     if (a.steps) {
       const doneCount = a.steps.filter((_, i) => A.stepUnlocked.has(a.key + ':' + i)).length
@@ -142,9 +142,9 @@ function renderRow(item) {
   }
 
   let extra = ''
-  if (a.key === 'sprinter' && !unlocked) {
+  if (a.timeLimit != null && !unlocked) {
     if (failed) extra = 'Время истекло'
-    else if (A.sprintStart) extra = formatTime(sprintRemainingSec())
+    else if (A.startTimes[a.key]) extra = formatTime(timeLimitedRemainingSec(a.key))
   }
 
   row.innerHTML = `

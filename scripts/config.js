@@ -652,7 +652,7 @@ export const OVERLAY = /** @type {const} */ ({
 
 export const PROPS = /** @type {const} */ ({
   /** Плотность попыток на чанк. Количество объектов на чанк */
-  density: 500,
+  density: 3500,
 
   /** Плотность попыток на чанк. Количество объектов на чанк в низком качестве*/
   densityLow: 1000,
@@ -1095,7 +1095,7 @@ export const CHESTS = /** @type {const} */ ({
    */
   xPositions: [3000, 5000, 8000, 12000, 17000, 23000, 30000, 38000],
 
-  /**  Дополнительный сдвиг сундука ПОПЕРЁК траектории полёта (м).*/
+  /**  Дополнительный случайный сдвиг сундука ПОПЕРЁК траектории полёта (м).*/
   zOffset: 30,
 
   /** Радиус сбора (м, по XZ). */
@@ -1158,6 +1158,149 @@ export const CARDS = /** @type {const} */ ([
     name: 'Планерист',
     desc: 'Гравитация ×' + CHESTS.buffChests[4],
     color: 0xc38bff,
+  },
+])
+
+/* ================================================================
+   ДОСТИЖЕНИЯ — все определения в одном месте.
+
+   Поля:
+     key           — уникальный строковый ключ (используется в сейве!)
+     icon          — эмодзи
+     tier          — 'easy' | 'medium' | 'hard' (цвет рамки)
+     name, desc    — тексты
+     target        — одиночная цель (число-накопитель)
+     steps         — многоэтапные: [{ target, label }]
+     unit          — 'm' — форматировать как метры; иначе — просто число
+     const_target  — порог для «мгновенной» проверки в коде
+     timeLimit     — мс, лимит времени (time-limited ачивки)
+================================================================ */
+export const ACHIEVEMENTS = /** @type {const} */ ([
+  /* ---------- Лёгкие (зелёные) ---------- */
+  { key: 'first_launch', icon: '🎈', tier: 'easy', name: 'Первый пуск', desc: 'Запустить ракету' },
+
+  {
+    key: 'first_steps',
+    icon: '🌱',
+    tier: 'easy',
+    name: 'Первые шаги',
+    desc: 'Пролететь суммарно',
+    unit: 'm',
+    steps: [
+      { target: 1000, label: '1 км' },
+      { target: 3000, label: '3 км' },
+      { target: 10000, label: '10 км' },
+      { target: 35000, label: '35 км' },
+      { target: 100000, label: '100 км' },
+      { target: 300000, label: '300 км' },
+      { target: 1000000, label: '1000 км' },
+    ],
+  },
+
+  {
+    key: 'traveler',
+    icon: '🚶‍♂️',
+    tier: 'easy',
+    name: 'Путник',
+    desc: 'Успешных приземлений',
+    steps: [
+      { target: 10, label: '10 раз' },
+      { target: 30, label: '30 раз' },
+      { target: 100, label: '100 раз' },
+      { target: 300, label: '300 раз' },
+    ],
+  },
+
+  {
+    key: 'climber',
+    icon: '🧊',
+    tier: 'easy',
+    name: 'Скалолаз',
+    desc: 'Сесть на высоте выше 500 м',
+    const_target: 500,
+  },
+
+  {
+    key: 'citizen',
+    icon: '🗿',
+    tier: 'easy',
+    name: 'Обыватель',
+    desc: '5 запусков подряд без апгрейдов',
+    target: 5,
+  },
+
+  /* ---------- Средние (фиолетовые) ---------- */
+  {
+    key: 'orbit',
+    icon: '🚀',
+    tier: 'medium',
+    name: 'Орбита',
+    desc: '25 км за один запуск',
+    const_target: 25000,
+  },
+
+  {
+    key: 'sniper',
+    icon: '🎯',
+    tier: 'medium',
+    name: 'Снайпер',
+    desc: 'Сесть в 40 м от сундука',
+    const_target: 40,
+  },
+
+  {
+    key: 'collector',
+    icon: '💥',
+    tier: 'medium',
+    name: 'Коллекционер',
+    desc: 'Открыть все сундуки',
+    target: CHESTS.xPositions.length,
+  },
+
+  {
+    key: 'soft_landing',
+    icon: '🛬',
+    tier: 'medium',
+    name: 'Мягкая посадка',
+    desc: 'Сесть со скоростью < 5 м/с',
+    const_target: 5,
+  },
+
+  /* ---------- Сложные (оранжевые) ---------- */
+  {
+    key: 'maximalist',
+    icon: '🛒',
+    tier: 'hard',
+    name: 'Максималист',
+    desc: 'Прокачать все улучшения на максимум',
+  },
+
+  {
+    key: 'intercontinental',
+    icon: '🌌',
+    tier: 'hard',
+    name: 'Межконтинентальный',
+    desc: '500 км за один запуск',
+    const_target: 500000,
+  },
+
+  {
+    key: 'hundred',
+    icon: '💯',
+    tier: 'hard',
+    name: '100%',
+    desc: 'Выполнить все остальные достижения',
+  },
+
+  /* ---------- Спринтер ---------- */
+  {
+    key: 'sprinter',
+    icon: '⏱️',
+    tier: 'hard',
+    name: 'Спринтер',
+    desc: 'Собрать все сундуки за 15 минут',
+    target: CHESTS.xPositions.length,
+    timeLimit: 15 * 60 * 1000,
   },
 ])
 
