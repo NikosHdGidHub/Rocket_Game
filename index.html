@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>🚀 Ракетный Пинок 3D</title>
     <link rel="stylesheet" href="./styles/main.css" />
+    <link rel="stylesheet" href="./styles/achievements.css" />
   </head>
   <body>
     <button id="settingsBtn" class="settings-btn" title="Настройки">⚙️</button>
@@ -12,7 +13,7 @@
       <div class="stat">📏 <b id="dist">0</b> м</div>
       <div class="stat">💥 <b id="coins">0</b></div>
       <div class="stat">🏆 <b id="best">0</b> м</div>
-      <button id="resetBtn" class="reset-btn" title="Сбросить прогресс">🗑️</button>
+      <button id="achBtn" class="reset-btn ach-btn" title="Достижения">🏆</button>
     </div>
     <div id="chestProgress" class="chest-progress">
       <div class="chest-icon">📦</div>
@@ -77,7 +78,23 @@
           Уменьшает количество растительности ×2.<br />
           Игра перезагрузится автоматически.
         </div>
+        <button id="resetBtn" class="settings-danger">🗑️ Удалить весь прогресс</button>
         <button id="settingsClose" class="settings-close">Закрыть</button>
+      </div>
+    </div>
+
+    <div id="achToast"></div>
+
+    <div id="achievementsPanel" class="settings-panel">
+      <div class="settings-card achievements-card">
+        <div class="settings-title">🏆 ДОСТИЖЕНИЯ</div>
+        <div class="ach-tabs">
+          <button class="ach-tab active" data-tab="all">Все</button>
+          <button class="ach-tab" data-tab="progress">В процессе</button>
+          <button class="ach-tab" data-tab="done">Выполнено</button>
+        </div>
+        <div class="ach-list" id="achList"></div>
+        <button id="achievementsClose" class="settings-close">Закрыть</button>
       </div>
     </div>
 

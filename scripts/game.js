@@ -4,6 +4,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
+import * as Achievements from './achievements.js'
 import { camera } from './scene.js'
 import { G, rocketState, cam, input, lod } from './state.js'
 import { terrainHeight } from './world/world.js'
@@ -70,6 +71,7 @@ export function saveProgress() {
       upgrades: { ...G.upgrades },
       cards: { ...G.cards },
       openedChests: [...G.openedChests],
+      achievements: Achievements.serialize(),
     }
     localStorage.setItem(CFG.SAVE.key, JSON.stringify(data))
   } catch (e) {
@@ -113,6 +115,7 @@ export function loadProgress() {
         if (typeof x === 'number' && isFinite(x)) G.openedChests.add(x)
       }
     }
+    Achievements.deserialize(data.achievements)
   } catch (e) {
     console.warn('loadProgress failed:', e)
   }
@@ -155,6 +158,7 @@ export function buy(u) {
   UI.renderShop()
   UI.showToast(`${u.icon} Lv.${G.upgrades[u.key]}`, CFG.UI.toastColors.upgrade)
   saveProgress()
+  Achievements.onBuy()
 }
 
 /* ================================================================
@@ -192,27 +196,36 @@ function launch() {
   G.timer = 0
   boosting = false
   UI.showToast('ПОЛЕТЕЛИ! 🚀', CFG.UI.toastColors.upgrade)
+  Achievements.onLaunch()
+  saveProgress()
 }
 
 function land() {
   G.phase = 'landed'
 
-  // Сундуки
+  // Снимок состояния ДО обнуления — для достижений
+  const speedAtTouchdown = rocketState.vel.length()
   const landedX = rocketState.pos.x
   const landedZ = rocketState.pos.z
+  const groundY = terrainHeight(landedX, landedZ)
+
+  // Сундуки: ближайший + открытие в радиусе
+  let nearestChestDist = Infinity
   for (const c of chests) {
-    if (c.opened) continue
     const dx = landedX - c.x
     const dz = landedZ - c.z
-    if (dx * dx + dz * dz <= CFG.CHESTS.pickupRadius * CFG.CHESTS.pickupRadius) {
+    const d2 = dx * dx + dz * dz
+    const d = Math.sqrt(d2)
+    if (d < nearestChestDist) nearestChestDist = d
+    if (!c.opened && d2 <= CFG.CHESTS.pickupRadius * CFG.CHESTS.pickupRadius) {
       openChest(c)
     }
   }
+  if (!isFinite(nearestChestDist)) nearestChestDist = null
 
   G.timer = 0
   rocketState.angVel = 0
-  const gY = terrainHeight(rocketState.pos.x, rocketState.pos.z)
-  rocketState.pos.y = gY + REST_Y
+  rocketState.pos.y = groundY + REST_Y
   rocketState.vel.set(0, 0, 0)
 
   const dist = Math.max(0, rocketState.pos.x)
@@ -228,6 +241,14 @@ function land() {
   UI.showToast(`${Math.floor(dist)} м  +${earned} 💥`, CFG.UI.toastColors.land)
 
   cam.shake = CFG.CAMERA.shakeOnLand
+
+  // Достижения — после обновления состояния
+  Achievements.onLand({
+    dist,
+    altitude: groundY,
+    speed: speedAtTouchdown,
+    nearestChestDist,
+  })
 }
 
 function pickCard() {
@@ -251,6 +272,7 @@ function openChest(chest) {
   }
 
   saveProgress()
+  Achievements.onChestOpen(G.openedChests.size)
 }
 
 /* ================================================================

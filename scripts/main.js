@@ -9,6 +9,8 @@ import * as Lod from './lod.js'
 import * as Entities from './entities.js'
 import * as Game from './game.js'
 import * as UI from './ui.js'
+import * as Ach from './achievements.js'
+import * as AchModal from './achievementsModal.js'
 import { G } from './state.js'
 
 /* ================================================================
@@ -16,13 +18,25 @@ import { G } from './state.js'
 ================================================================ */
 Scene.init() // renderer / camera / sky / lights / ground
 Entities.init() // boss + rocket + chests
+
+// Модалка: привязываем табы и кнопки (idempotent, можно вызвать до UI.init)
+AchModal.init()
+
 UI.init({
   onLaunch: Game.startKick,
   onBuy: Game.buy,
   onReset: Game.resetProgress,
+  onAchievements: AchModal.open, // ← открытие модалки по 🏆
   upgrades: Game.UPGRADES,
   costOf: Game.costOf,
 })
+
+// Слушаем анлоки достижений: показываем попап + сохраняем прогресс
+Ach.onChange((ach, milestone) => {
+  UI.showAchievementPopup(ach, milestone)
+  Game.saveProgress()
+})
+
 Game.init() // loadProgress + resetRocket + HUD
 
 Entities.resyncChests() // ← теперь флаги сундуков актуальны
@@ -117,7 +131,6 @@ window.dbg = () => {
       `overlayChunks=${l.overlayChunks} ` +
       `pendingFar=${l.pendingFar} pendingOv=${l.pendingOverlays}`
   )
-  // lod / rocketState локально не экспортируются напрямую — читаем через state
   import('./state.js').then((s) => {
     console.log(
       `lodFade=${s.lod.fade.toFixed(2)} in2DMode=${s.lod.in2D} ` +

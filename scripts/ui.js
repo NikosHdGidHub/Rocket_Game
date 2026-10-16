@@ -34,6 +34,7 @@ let _onBuy = null
 let _onReset = null
 let _upgrades = [] // ссылка на CFG.UPGRADES
 let _costOf = () => 0 // колбэк расчёта цены
+let _onAchievements = null
 
 /* ================================================================
    Display-функции (вызываются из game.js)
@@ -187,6 +188,7 @@ export function init(callbacks) {
   _onReset = callbacks.onReset
   _upgrades = callbacks.upgrades
   _costOf = callbacks.costOf
+  _onAchievements = callbacks.onAchievements
 
   /* ---------- Клавиатура ---------- */
   addEventListener('keydown', (e) => {
@@ -248,6 +250,14 @@ export function init(callbacks) {
     _onReset && _onReset()
   })
 
+  const $achBtn = document.getElementById('achBtn')
+  if ($achBtn) {
+    $achBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      _onAchievements && _onAchievements()
+    })
+  }
+
   /* ---------- Settings panel ---------- */
   const $settingsBtn = document.getElementById('settingsBtn')
   const $settingsPanel = document.getElementById('settingsPanel')
@@ -283,4 +293,51 @@ export function init(callbacks) {
       $settingsPanel.classList.remove('on')
     })
   }
+}
+
+/* ================================================================
+   Достижения: очередь всплывающих попапов
+================================================================ */
+const achQueue = []
+let achBusy = false
+
+export function showAchievementPopup(ach, milestone = null) {
+  achQueue.push({ ach, milestone })
+  if (!achBusy) drainAchQueue()
+}
+
+function drainAchQueue() {
+  if (achQueue.length === 0) {
+    achBusy = false
+    return
+  }
+
+  const $container = document.getElementById('achToast')
+  if (!$container) {
+    achBusy = false
+    return
+  }
+
+  achBusy = true
+  const { ach, milestone } = achQueue.shift()
+
+  const $el = document.createElement('div')
+  $el.className = 'ach-toast tier-' + ach.tier
+  const subHtml = milestone ? `<div class="ach-toast-sub">${milestone.label}</div>` : ''
+  $el.innerHTML = `
+    <div class="ach-toast-icon">${ach.icon}</div>
+    <div class="ach-toast-text">
+      <div class="ach-toast-label">Достижение</div>
+      <div class="ach-toast-name">${ach.name}</div>
+      ${subHtml}
+    </div>`
+  $container.appendChild($el)
+
+  setTimeout(() => {
+    $el.classList.add('out')
+    setTimeout(() => {
+      $el.remove()
+      drainAchQueue()
+    }, 380)
+  }, 2500)
 }

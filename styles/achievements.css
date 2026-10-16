@@ -1,0 +1,401 @@
+/* ================================================================
+   Кнопка 🏆 в HUD — золотой hover
+   ================================================================ */
+.reset-btn.ach-btn:hover {
+  border-color: #ffd75e;
+  color: #ffd75e;
+  transform: translateY(-2px);
+}
+
+/* ================================================================
+   Красная кнопка «удалить прогресс» в настройках
+   ================================================================ */
+.settings-danger {
+  margin-top: 16px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(180deg, #e63946, #b3202e);
+  box-shadow:
+    0 4px 0 #7a1520,
+    0 6px 14px rgba(0, 0, 0, 0.4);
+  transition: 0.08s;
+}
+.settings-danger:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #7a1520,
+    0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ================================================================
+   Модалка достижений
+   ================================================================ */
+.achievements-card {
+  width: min(480px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  padding: 20px 18px 16px;
+}
+
+.ach-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+.ach-tab {
+  flex: 1;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #eaf2ff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.ach-tab.active {
+  background: rgba(255, 215, 94, 0.15);
+  color: #ffd75e;
+}
+
+.ach-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+  min-height: 220px;
+  max-height: 58vh;
+}
+.ach-list::-webkit-scrollbar {
+  width: 6px;
+}
+.ach-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.ach-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  align-items: center;
+  transition: 0.15s;
+}
+
+.ach-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  filter: grayscale(1);
+  opacity: 0.45;
+  transition: 0.2s;
+}
+.ach-row.unlocked .ach-icon,
+.ach-row.tier-easy .ach-icon,
+.ach-row.tier-medium .ach-icon,
+.ach-row.tier-hard .ach-icon,
+.ach-icon {
+  filter: none;
+  opacity: 1;
+}
+
+.ach-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ach-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #eaf2ff;
+}
+.ach-desc {
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.ach-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 5px;
+}
+.ach-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.ach-progress {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.75;
+  margin-top: 3px;
+  letter-spacing: 0.3px;
+}
+
+/* ---------- Цвета по сложности ---------- */
+.ach-row.tier-easy {
+  border-color: rgba(125, 255, 160, 0.28);
+}
+.ach-row.tier-easy .ach-fill {
+  background: #7dffa0;
+}
+.ach-row.tier-easy .ach-progress {
+  color: #7dffa0;
+}
+
+.ach-row.tier-medium {
+  border-color: rgba(195, 139, 255, 0.28);
+}
+.ach-row.tier-medium .ach-fill {
+  background: #c38bff;
+}
+.ach-row.tier-medium .ach-progress {
+  color: #c38bff;
+}
+
+.ach-row.tier-hard {
+  border-color: rgba(255, 159, 26, 0.32);
+}
+.ach-row.tier-hard .ach-fill {
+  background: #ff9f1a;
+}
+.ach-row.tier-hard .ach-progress {
+  color: #ff9f1a;
+}
+.ach-row.failed {
+  border-color: rgba(255, 90, 90, 0.5) !important;
+  background: rgba(255, 90, 90, 0.06);
+}
+.ach-row.failed .ach-fill,
+.ach-row.failed .ach-step-fill {
+  background: #ff5a5a !important;
+}
+.ach-row.failed .ach-progress {
+  color: #ff5a5a !important;
+}
+.ach-row.failed .ach-name {
+  color: #ff8a8a;
+}
+.ach-row.failed .ach-icon {
+  opacity: 0.6;
+}
+
+.ach-row.unlocked {
+  background: rgba(125, 255, 160, 0.06);
+}
+.ach-row.unlocked .ach-name {
+  color: #7dffa0;
+}
+
+.ach-row.failed {
+  opacity: 0.5;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.ach-row.failed .ach-fill {
+  background: #555 !important;
+}
+.ach-row.failed .ach-progress {
+  color: #aaa !important;
+}
+
+/* ================================================================
+   Попапы «+достижение» (очередь, правый верхний угол)
+   ================================================================ */
+#achToast {
+  position: fixed;
+  top: 80px;
+  right: 18px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.ach-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px 12px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(26, 36, 64, 0.95), rgba(15, 21, 39, 0.95));
+  border: 2px solid #ffd75e;
+  box-shadow:
+    0 0 30px rgba(255, 215, 94, 0.45),
+    0 8px 30px rgba(0, 0, 0, 0.5);
+  min-width: 220px;
+  animation: achIn 0.4s cubic-bezier(0.2, 1.6, 0.5, 1);
+}
+.ach-toast.out {
+  animation: achOut 0.35s ease-in forwards;
+}
+
+.ach-toast-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+.ach-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ach-toast-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #ffd75e;
+  opacity: 0.75;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.ach-toast-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #eaf2ff;
+}
+
+@keyframes achIn {
+  from {
+    transform: translateX(30px) scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes achOut {
+  to {
+    transform: translateX(30px) scale(0.85);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .ach-toast {
+    min-width: 180px;
+    padding: 10px 14px;
+  }
+  .ach-toast-icon {
+    font-size: 24px;
+  }
+  .ach-toast-name {
+    font-size: 13px;
+  }
+  #achToast {
+    top: 66px;
+    right: 10px;
+  }
+  .achievements-card {
+    padding: 18px 14px 14px;
+  }
+  .ach-name {
+    font-size: 13px;
+  }
+}
+
+/* ================================================================
+   Многоэтапные прогрессивные ачивки (steps)
+   ================================================================ */
+.ach-count {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffd75e;
+  margin-left: 8px;
+  opacity: 0.85;
+  letter-spacing: 0.5px;
+}
+
+.ach-steps {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ach-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ach-step-label {
+  min-width: 56px;
+  color: #eaf2ff;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.ach-step-track {
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ach-step-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.ach-step-mark {
+  width: 16px;
+  text-align: center;
+  color: #7dffa0;
+  font-weight: 800;
+}
+
+/* Цвет заливки по tier */
+.ach-row.tier-easy .ach-step-fill {
+  background: #7dffa0;
+}
+.ach-row.tier-medium .ach-step-fill {
+  background: #c38bff;
+}
+.ach-row.tier-hard .ach-step-fill {
+  background: #ff9f1a;
+}
+
+.ach-step.done .ach-step-label {
+  color: #7dffa0;
+  opacity: 1;
+}
+.ach-step.done .ach-step-fill {
+  filter: brightness(1.1);
+}
+
+/* ---------- Sub-строка в попапе достижения ---------- */
+.ach-toast-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffd75e;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
