@@ -23,12 +23,21 @@ const DN = CFG.DAYNIGHT
 
 /* ---------- Состояние ---------- */
 let _cycleStartMs = Date.now()
+let _suppressSave = false // true — pagehide не пишет ключ обратно (reset в процессе)
 
 /* ---------- SAVE / LOAD ---------- */
+
+/** Стартовый момент цикла: Date.now() сдвинутый так, чтобы
+    currentT() немедленно вернул нужное t (секунды внутри цикла). */
+function initialStartMs() {
+  const t0 = DN.initialTime ?? 0
+  return Date.now() - t0 * 1000
+}
+
 function loadSaved() {
   try {
     const raw = localStorage.getItem(DN.saveKey)
-    if (!raw) return Date.now()
+    if (!raw) return initialStartMs()
     const data = JSON.parse(raw)
     if (data && typeof data.cycleStartMs === 'number' && isFinite(data.cycleStartMs)) {
       return data.cycleStartMs
@@ -36,10 +45,11 @@ function loadSaved() {
   } catch (e) {
     console.warn('daynight.load failed:', e)
   }
-  return Date.now()
+  return initialStartMs()
 }
 
 function saveState() {
+  if (_suppressSave) return
   try {
     localStorage.setItem(DN.saveKey, JSON.stringify({ cycleStartMs: _cycleStartMs }))
   } catch (e) {
@@ -57,10 +67,12 @@ export function init() {
 }
 
 export function reset() {
+  _suppressSave = true
+
   try {
     localStorage.removeItem(DN.saveKey)
   } catch (e) {}
-  _cycleStartMs = Date.now()
+  _cycleStartMs = initialStartMs()
 }
 
 /* ---------- update ---------- */
@@ -176,10 +188,20 @@ function applyAt(t) {
 
   SKY_ZENITH.copy(_zen)
   SKY_HORIZON.copy(_hor)
-  SUN_COLOR.copy(_sunCol)
 
+  // Визуальный солнечный диск (шейдер неба + шейдеры тумана) гаснет,
+  // когда солнце уходит под горизонт. Иначе на фоне ночного неба
+  // и в тумане остаётся яркое пятно.
+  const fadeDeg = DN.sunArc.sunFadeDegrees ?? 10
+  const sunVis = sunEl >= 0 ? 1 : Math.max(0, 1 + sunEl / Math.max(0.1, fadeDeg))
+  SUN_COLOR.copy(_sunCol).multiplyScalar(sunVis)
+
+  // Направленный свет (DirectionalLight) остаётся своего цвета —
+  // его яркость гаснет отдельно через sunIntensity из пресета.
+  // Это даёт мягкий «лунный» ambient ночью.
   sun.color.copy(_sunCol)
   sun.intensity = sunI
+
   if (hemiLight) {
     hemiLight.color.copy(_hemiSky)
     hemiLight.groundColor.copy(_hemiGround)

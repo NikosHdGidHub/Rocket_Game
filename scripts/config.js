@@ -445,8 +445,12 @@ export const DAYNIGHT = /** @type {const} */ ({
   /** Ключ localStorage (отдельно от прогресса, не сбрасывается 🗑️). */
   saveKey: 'rocket_game_daynight_v1',
 
+  /** С какого момента цикла стартует игра, если сохранения ещё нет
+      (или его сбросили). Секунды внутри цикла. 70 — раннее утро. */
+  initialTime: 70,
+
   /** Логировать текущее время цикла и высоту солнца раз в секунду. */
-  debugLog: true,
+  debugLog: false,
 
   /* ---------- Дуга солнца ----------
      Угол θ идёт двумя полукругами:
@@ -468,15 +472,22 @@ export const DAYNIGHT = /** @type {const} */ ({
        dayDuration: total             → ночи нет совсем
   */
   sunArc: {
-    dayDuration: 540, // сек солнце над горизонтом
+    dayDuration: 520, // сек солнце над горизонтом
     maxElevation: 60, // высота в полдень, °
     minElevation: -25, // высота в полночь, ° (отрицательная)
     azimuthBase: 0, // азимут полдня, °
     azimuthSwing: -30, // ± swing от base на восходе/закате, °
+    /** За сколько градусов НИЖЕ горизонта гаснет солнечный диск
+        (визуальное пятно в небе + ореол в тумане). 0 = гаснет мгновенно,
+        10 = плавно за 10° под горизонтом. Направленный свет sun
+        гаснет отдельно через sunIntensity в пресетах. */
+    sunFadeDegrees: 9,
   },
 
   /* ---------- Затемнение из высоты солнца ---------- */
+  /** «насколько темно, пока солнце ещё над горизонтом» */
   darknessAboveHorizon: 0.15,
+  /** «как быстро темнеет, когда солнце уже село» */
   darknessRampDegrees: 20,
 
   /* ---------- Пресеты ---------- */
@@ -491,28 +502,28 @@ export const DAYNIGHT = /** @type {const} */ ({
       hemiIntensity: 1.05,
     },
     sunset: {
-      zenith: 0x4a2a60, // #4a2a60
+      zenith: 0x562377, // #562377
       horizon: 0xf0a15c, // #f0a15c
       sunColor: 0xffbc78, // #ffbc78
-      sunIntensity: 0.88,
+      sunIntensity: 0.88, // — яркость направленного света
       hemiSky: 0xa07090, // #a07090
       hemiGround: 0x53256e, // #53256e
-      hemiIntensity: 0.6,
+      hemiIntensity: 0.6, // — яркость полусферического света
     },
     night: {
-      zenith: 0x050818,
-      horizon: 0x101830,
-      sunColor: 0xa0b8ff,
-      sunIntensity: 0.08,
-      hemiSky: 0x202840,
-      hemiGround: 0x101410,
+      zenith: 0x0c1756, // #0c1756
+      horizon: 0x5c6fb0, // #5c6fb0
+      sunColor: 0xa0b8ff, // #a0b8ff
+      sunIntensity: 0.18,
+      hemiSky: 0x202840, // #202840
+      hemiGround: 0x101410, // #101410
       hemiIntensity: 0.18,
     },
     dawn: {
       zenith: 0x4a70b0,
       horizon: 0xffe0c0,
       sunColor: 0xffd0a0,
-      sunIntensity: 0.9,
+      sunIntensity: 0.88,
       hemiSky: 0xc8d0e8,
       hemiGround: 0x405030,
       hemiIntensity: 0.6,
@@ -544,17 +555,17 @@ export const DAYNIGHT = /** @type {const} */ ({
   */
   keyframes: [
     { at: 0, preset: 'dawn' }, //0-120
-    { at: 270, preset: 'day', blendFrom: 10, blendTo: 110 }, //120-420
-    { at: 530, preset: 'sunset', blendFrom: 510, blendTo: 534 }, //blendFrom: 280, blendTo: 300
-    { at: 570, preset: 'night', blendFrom: 535, blendTo: 565 },
+    { at: 260, preset: 'day', blendFrom: 10, blendTo: 110 }, //120-420
+    { at: 514, preset: 'sunset', blendFrom: 490, blendTo: 514 }, //blendFrom: 280, blendTo: 300
+    { at: 570, preset: 'night', blendFrom: 515, blendTo: 545 },
     { at: 600, preset: 'dawn' },
   ],
 
   /* ---------- Ночные множители яркости ----------
      1.0 = пресеты «как есть». < 1 — ночь ещё темнее, > 1 — светлее. */
-  brightnessNightSky: 1.0,
-  brightnessNightTerrain: 1.0,
-  brightnessNightProps: 1.0,
+  brightnessNightSky: 1.4,
+  brightnessNightTerrain: 1.1,
+  brightnessNightProps: 1.1,
 })
 
 /* ================================================================

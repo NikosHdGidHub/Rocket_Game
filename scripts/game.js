@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import * as CFG from './config.js'
 import * as Achievements from './achievements.js'
+import * as DayNight from './daynight.js'
 import { camera } from './scene.js'
 import { G, rocketState, cam, input, lod } from './state.js'
 import { terrainHeight } from './world/world.js'
@@ -130,10 +131,12 @@ export function resetProgress() {
   // 1) Чистим сохранение в localStorage.
   try {
     localStorage.removeItem(CFG.SAVE.key)
-    localStorage.removeItem(CFG.DAYNIGHT.saveKey)
   } catch (e) {
     console.warn('resetProgress: не удалось очистить localStorage:', e)
   }
+  // DayNight.reset() сам ставит _suppressSave — иначе pagehide
+  // перед reload тут же запишет ключ обратно.
+  DayNight.reset()
 
   // 2) Короткий фидбэк — пользователь видит, что кнопка сработала.
   UI.showToast('Прогресс сброшен 🗑️', '#ff7a7a')
