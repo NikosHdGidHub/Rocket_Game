@@ -47,7 +47,7 @@ const _dummyObj = new THREE.Object3D()
    Материал пропсов — один на всех, с vertex colors.
    applySkyFog подключаем в init().
 ================================================================ */
-const propMat = new THREE.MeshStandardMaterial({
+export const propMat = new THREE.MeshStandardMaterial({
   vertexColors: true,
   roughness: CFG.PROPS.material.roughness,
   metalness: CFG.PROPS.material.metalness,

@@ -433,6 +433,105 @@ export const TERRAIN_COLOR_NOISE = /** @type {const} */ ({
 })
 
 /* ================================================================
+   СМЕНА ДНЯ И НОЧИ — цикл из 4 фаз.
+
+   Длина цикла = at последнего keyframe (600 = 10 мин).
+   Все цвета/высоты/азимуты — в пресетах, nightness вычисляется
+   автоматически из sunElevation (см. daynight.js).
+================================================================ */
+export const DAYNIGHT = /** @type {const} */ ({
+  enabled: true,
+
+  /** Ключ localStorage (отдельно от прогресса, не сбрасывается 🗑️). */
+  saveKey: 'rocket_game_daynight_v1',
+
+  /* ---------- Затемнение от высоты солнца ----------
+     nightness = насколько темно (0 — день, 1 — ночь).
+     Считается из sunElevation:
+       • пока солнце ≥ 0° — темнеет максимум на darknessAboveHorizon
+         (тёплый градиент заката, но ещё не темно)
+       • когда ушло под горизонт — за darknessRampDegrees градусов
+         плавно догоняет до 1.0
+  */
+  darknessAboveHorizon: 0.15,
+  darknessRampDegrees: 20,
+
+  /* ---------- Пресеты состояний неба/света ----------
+     sunElevation  — градусы над горизонтом (отрицательное — под ним)
+     sunAzimuth    — азимут в градусах (0° = +X вдоль полёта, +90° = +Z)
+       dawn/sunset должны быть с РАЗНЫМИ знаками, тогда солнце
+       реально ходит по небу: встаёт слева, садится справа.
+  */
+  presets: {
+    day: {
+      zenith: 0x1e50a8,
+      horizon: 0xf0f6fc,
+      sunColor: 0xfff0c0,
+      sunIntensity: 1.9,
+      hemiSky: 0xb8d8f0,
+      hemiGround: 0x4a7a35,
+      hemiIntensity: 1.05,
+      /** Высота солнца над горизонтом, градусы. Отрицательное — под землёй. */
+      sunElevation: 60,
+      sunAzimuth: 0,
+    },
+    sunset: {
+      zenith: 0x4a2a60,
+      horizon: 0xff7a3a,
+      sunColor: 0xffb060,
+      sunIntensity: 1.0,
+      hemiSky: 0xa07090,
+      hemiGround: 0x503020,
+      hemiIntensity: 0.7,
+      sunElevation: 8, // солнце ещё над горизонтом — светлое
+      sunAzimuth: 40, // справа
+    },
+    night: {
+      zenith: 0x050818,
+      horizon: 0x101830,
+      sunColor: 0xa0b8ff,
+      sunIntensity: 0.08,
+      hemiSky: 0x202840,
+      hemiGround: 0x101410,
+      hemiIntensity: 0.18,
+      sunElevation: -20, // глубоко под горизонтом
+      sunAzimuth: 0,
+    },
+    dawn: {
+      zenith: 0x4a70b0, // светлее прежнего 0x2a4070
+      horizon: 0xffe0c0, // светлый персиковый
+      sunColor: 0xffd0a0,
+      sunIntensity: 0.9,
+      hemiSky: 0xc8d0e8, // светлее
+      hemiGround: 0x405030,
+      hemiIntensity: 0.6,
+      sunElevation: 8, // симметрично закату
+      sunAzimuth: -40, // слева
+    },
+  },
+
+  /* ---------- Расписание ----------
+     at — секунды внутри цикла.
+     Длина цикла = at последнего keyframe.
+  */
+  keyframes: [
+    { at: 0, preset: 'day' },
+    { at: 300, preset: 'day' },
+    { at: 360, preset: 'sunset' },
+    { at: 420, preset: 'night' },
+    { at: 480, preset: 'night' },
+    { at: 540, preset: 'dawn' },
+    { at: 600, preset: 'day' },
+  ],
+
+  /* ---------- Ночные множители яркости ----------
+     1.0 = пресеты «как есть». < 1 — ночь ещё темнее, > 1 — светлее. */
+  brightnessNightSky: 1.0,
+  brightnessNightTerrain: 1.0,
+  brightnessNightProps: 1.0,
+})
+
+/* ================================================================
    ЧАНКИ 3D — плитки земли с деревьями вокруг камеры
 
    Асимметричная загрузка: вперёд дальше, назад и в стороны — ближе.

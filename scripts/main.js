@@ -11,12 +11,14 @@ import * as Game from './game.js'
 import * as UI from './ui.js'
 import * as Ach from './achievements.js'
 import * as AchModal from './achievementsModal.js'
+import * as DayNight from './daynight.js'
 import { G } from './state.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
 ================================================================ */
 Scene.init() // renderer / camera / sky / lights / ground
+DayNight.init() // грузим сохранённое время суток и сразу применяем
 Entities.init() // boss + rocket + chests
 
 // Модалка: привязываем табы и кнопки (idempotent, можно вызвать до UI.init)
@@ -109,8 +111,9 @@ function loop(now) {
   Game.update(dt) // фазы босса, физика ракеты, камера, сундуки
   Chunks.update() // очередь 3D-чанков + persistent visibility
   Lod.update(dt) // LOD, fog-ellipse, far + overlay очереди
+  DayNight.update(dt) // ← обновляем небо/свет по текущему времени цикла
   UI.update() // HUD/панели по фазе
-  Scene.updateScenery() // солнце и купол следуют за камерой
+  Scene.updateScenery() // ← пересчитывает позицию солнца из SUN_DIR
 
   Scene.render()
   requestAnimationFrame(loop)
@@ -143,3 +146,6 @@ window.dbg = () => {
 window.dbgPersistent = () => {
   console.table(Chunks.debugPersistent())
 }
+
+window.dbgDayNight = () => DayNight.debug()
+window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)

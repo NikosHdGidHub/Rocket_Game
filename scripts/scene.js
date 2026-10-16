@@ -16,6 +16,7 @@ export let sun
 export let skyDome
 export let groundTex
 export let groundMat
+export let hemiLight
 
 /* ---------- Создаём сразу на этапе загрузки модуля ----------
    Эти объекты используют в top-level коде другие модули
@@ -181,10 +182,10 @@ export function init() {
     depthWrite: false,
     fog: false,
     uniforms: {
-      topColor: { value: SKY_ZENITH.clone() },
-      bottomColor: { value: SKY_HORIZON.clone() },
-      sunColor: { value: SUN_COLOR.clone() },
-      sunDir: { value: SUN_DIR.clone() },
+      topColor: { value: SKY_ZENITH },
+      bottomColor: { value: SKY_HORIZON },
+      sunColor: { value: SUN_COLOR },
+      sunDir: { value: SUN_DIR },
       exponent: { value: CFG.SKY.exponent },
       hazeColor: { value: new THREE.Vector3(...CFG.SKY.hazeColor) },
       hazePow: { value: CFG.SKY.hazePow },
@@ -243,9 +244,12 @@ export function init() {
   scene.add(skyDome)
 
   /* ---------- Lights ---------- */
-  scene.add(
-    new THREE.HemisphereLight(CFG.LIGHTS.hemiSky, CFG.LIGHTS.hemiGround, CFG.LIGHTS.hemiIntensity)
+  hemiLight = new THREE.HemisphereLight(
+    CFG.LIGHTS.hemiSky,
+    CFG.LIGHTS.hemiGround,
+    CFG.LIGHTS.hemiIntensity
   )
+  scene.add(hemiLight)
 
   sun = new THREE.DirectionalLight(CFG.LIGHTS.sunColor, CFG.LIGHTS.sunIntensity)
   sun.position.set(...CFG.LIGHTS.sunOffset)
@@ -278,8 +282,11 @@ export function init() {
 ================================================================ */
 export function updateScenery() {
   const camX = camera.position.x
-  const [ox, oy, oz] = CFG.LIGHTS.sunOffset
-  sun.position.set(camX + ox, oy, oz)
+  const R = 60
+  // Y-компоненту света зажимаем ≥ 0.2 — DirectionalLight не должен
+  // светить «снизу вверх», даже когда солнце ушло под горизонт.
+  const yDir = Math.max(SUN_DIR.y, 0.2)
+  sun.position.set(camX + SUN_DIR.x * R, yDir * R, SUN_DIR.z * R)
   sun.target.position.set(camX, 0, 0)
   sun.target.updateMatrixWorld()
   skyDome.position.copy(camera.position)

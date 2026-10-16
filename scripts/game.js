@@ -130,6 +130,7 @@ export function resetProgress() {
   // 1) Чистим сохранение в localStorage.
   try {
     localStorage.removeItem(CFG.SAVE.key)
+    localStorage.removeItem(CFG.DAYNIGHT.saveKey)
   } catch (e) {
     console.warn('resetProgress: не удалось очистить localStorage:', e)
   }
