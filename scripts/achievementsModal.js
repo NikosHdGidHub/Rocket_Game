@@ -5,6 +5,8 @@ import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from '.
 
 let _initialized = false
 let _currentTab = 'all' // 'all' | 'progress' | 'done'
+let _isOpen = false
+let _refreshTimer = null
 
 export function init() {
   if (_initialized) return
@@ -34,11 +36,32 @@ export function init() {
 
 export function open() {
   document.getElementById('achievementsPanel').classList.add('on')
+  _isOpen = true
   render()
+  startRefreshTimer()
 }
 
 export function close() {
   document.getElementById('achievementsPanel').classList.remove('on')
+  _isOpen = false
+  stopRefreshTimer()
+}
+
+/* Раз в секунду — перерисовка, пока модалка открыта.
+   Нужно, чтобы тикали живые таймеры (например, Спринтер). */
+function startRefreshTimer() {
+  if (_refreshTimer) return
+  _refreshTimer = setInterval(() => {
+    if (!_isOpen) return
+    render()
+  }, 1000)
+}
+
+function stopRefreshTimer() {
+  if (_refreshTimer) {
+    clearInterval(_refreshTimer)
+    _refreshTimer = null
+  }
 }
 
 /* ================================================================
@@ -81,6 +104,8 @@ function render() {
   const $list = document.getElementById('achList')
   if (!$list) return
 
+  const scrollTop = $list.scrollTop // ← запоминаем
+
   const items = buildItems()
 
   let shown
@@ -102,6 +127,8 @@ function render() {
 
   $list.innerHTML = ''
   for (const a of shown) $list.appendChild(renderRow(a))
+
+  $list.scrollTop = scrollTop // ← возвращаем
 }
 
 function renderRow(item) {
@@ -195,7 +222,6 @@ function renderCurrentStep(a) {
         <div class="ach-step-track">
           <div class="ach-step-fill" style="width:${pct.toFixed(1)}%"></div>
         </div>
-        <div class="ach-step-mark">${done ? '✓' : ''}</div>
       </div>
     </div>`
 }

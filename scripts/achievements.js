@@ -168,7 +168,7 @@ export function onChestOpen(openedCount) {
   setProgress('collector', capped)
   if (capped >= collectorTarget) unlock('collector')
 
-  if (!A.unlocked.has('sprinter') && !isTimeLimitedFailed('sprinter') && A.startTimes.sprinter) {
+  if (!A.unlocked.has('sprinter') && !isTimeLimitedFailed('sprinter')) {
     setProgress('sprinter', capped)
     if (capped >= ach('sprinter').target) unlock('sprinter')
   }
