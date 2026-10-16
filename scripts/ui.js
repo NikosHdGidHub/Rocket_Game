@@ -86,6 +86,31 @@ export function showToast(text, color = CFG.UI.toastColors.default) {
   toastTimer = setTimeout(() => $toast.classList.remove('on'), CFG.UI.toastDuration)
 }
 
+/**
+ * Сообщение о посадке.
+ *   dist     — пройденное расстояние в метрах
+ *   isRecord — если true, над цифрой появится кубок
+ */
+export function showLandToast(dist, isRecord) {
+  $toast.innerHTML = ''
+
+  if (isRecord) {
+    const $icon = document.createElement('div')
+    $icon.className = 'toast-icon'
+    $icon.textContent = '🏆'
+    $toast.appendChild($icon)
+  }
+
+  const $text = document.createElement('div')
+  $text.textContent = `${Math.floor(dist)} м`
+  $toast.appendChild($text)
+
+  $toast.style.color = isRecord ? CFG.UI.toastColors.upgrade : CFG.UI.toastColors.land
+  $toast.classList.add('on')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => $toast.classList.remove('on'), CFG.UI.toastDuration)
+}
+
 export function setAlignText(deg) {
   if (deg < 8) {
     $alignText.textContent = '🎯 0°'

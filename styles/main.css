@@ -360,6 +360,32 @@ canvas {
   pointer-events: none;
   transition: 0.35s cubic-bezier(0.2, 1.6, 0.5, 1);
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.toast-icon {
+  font-size: 62px;
+  line-height: 1;
+  margin-bottom: 4px;
+  filter: drop-shadow(0 6px 22px rgba(255, 215, 94, 0.6));
+  animation: toastIconPop 0.5s cubic-bezier(0.2, 1.6, 0.5, 1);
+}
+
+@keyframes toastIconPop {
+  0% {
+    transform: scale(0.4) rotate(-12deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15) rotate(4deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
 }
 
 #toast.on {

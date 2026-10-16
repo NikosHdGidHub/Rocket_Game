@@ -236,13 +236,14 @@ function land() {
   const earned = Math.max(1, Math.floor(dist))
   G.lastDist = dist
   G.coins += earned
-  if (dist > G.best) G.best = dist
+  const isRecord = dist > G.best // ← снимок ДО мутации
+  if (isRecord) G.best = dist
 
   UI.updateHUD()
   UI.renderShop()
   saveProgress()
 
-  UI.showToast(`${Math.floor(dist)} м  +${earned} 💥`, CFG.UI.toastColors.land)
+  UI.showLandToast(dist, isRecord)
 
   cam.shake = CFG.CAMERA.shakeOnLand
 
