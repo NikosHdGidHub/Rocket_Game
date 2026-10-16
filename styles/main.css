@@ -948,3 +948,38 @@ canvas {
     left: 10px;
   }
 }
+
+/* ================================================================
+   Settings — кнопка «Поддержать автора» (зелёная, в стиле игры)
+   ================================================================ */
+.settings-support {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  color: #0b2410;
+  background: linear-gradient(180deg, #7dffa0, #3fc86a);
+  box-shadow:
+    0 4px 0 #1f7a3d,
+    0 6px 14px rgba(0, 0, 0, 0.35);
+  transition: 0.08s;
+}
+.settings-support:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+.settings-support:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #1f7a3d,
+    0 3px 8px rgba(0, 0, 0, 0.35);
+}
