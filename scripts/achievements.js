@@ -38,9 +38,9 @@ export const ACHIEVEMENTS = [
     name: 'Путник',
     desc: 'Приземлений на 100+ м',
     steps: [
-      { target: 10, label: '10' },
-      { target: 30, label: '30' },
-      { target: 100, label: '100' },
+      { target: 10, label: '10 раз' },
+      { target: 30, label: '30 раз' },
+      { target: 100, label: '100 раз' },
     ],
   },
 

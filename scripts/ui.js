@@ -323,13 +323,24 @@ function drainAchQueue() {
 
   const $el = document.createElement('div')
   $el.className = 'ach-toast tier-' + ach.tier
-  const subHtml = milestone ? `<div class="ach-toast-sub">${milestone.label}</div>` : ''
+
+  const descHtml = ach.desc
+    ? `<div class="ach-toast-desc">
+         <span class="ach-toast-desc-text">${ach.desc}</span>
+         ${
+           milestone
+             ? `<span class="ach-toast-desc-sep">—</span><span class="ach-toast-milestone">${milestone.label}</span>`
+             : ''
+         }
+       </div>`
+    : ''
+
   $el.innerHTML = `
     <div class="ach-toast-icon">${ach.icon}</div>
     <div class="ach-toast-text">
       <div class="ach-toast-label">Достижение</div>
       <div class="ach-toast-name">${ach.name}</div>
-      ${subHtml}
+      ${descHtml}
     </div>`
   $container.appendChild($el)
 

@@ -112,6 +112,7 @@ function renderRow(item) {
   if (failed) cls.push('failed')
   row.className = cls.join(' ')
 
+  /* ---------- Прогрессивные по этапам ---------- */
   if (a.steps) {
     row.innerHTML = `
       <div class="ach-icon">${a.icon}</div>
@@ -121,16 +122,20 @@ function renderRow(item) {
           <span class="ach-count">${item.doneCount}/${item.total}</span>
         </div>
         <div class="ach-desc">${a.desc}</div>
-        <div class="ach-steps">${renderSteps(a, item)}</div>
+        ${unlocked ? renderAllStepsDone(a) : renderCurrentStep(a)}
       </div>`
     return row
   }
 
+  /* ---------- Обычные (одиночная цель или без цели) ---------- */
   const hasProgress = item.target > 0
   const pct = hasProgress ? Math.min(100, (item.cur / item.target) * 100) : unlocked ? 100 : 0
 
   let progressLine = ''
-  if (hasProgress) {
+  if (unlocked && hasProgress) {
+    // 5 / 5 · ✓ Выполнено
+    progressLine = `${Math.floor(item.cur)} / ${Math.floor(item.target)} - ✓ Выполнено`
+  } else if (hasProgress) {
     progressLine = formatProgress(a, item.cur, item.target)
   } else if (unlocked) {
     progressLine = '✓ Выполнено'
@@ -148,41 +153,84 @@ function renderRow(item) {
       <div class="ach-name">${a.name}</div>
       <div class="ach-desc">${a.desc}</div>
       ${
-        hasProgress
+        hasProgress && !unlocked
           ? `<div class="ach-track"><div class="ach-fill" style="width:${pct.toFixed(1)}%"></div></div>`
           : ''
       }
       ${
         progressLine || extra
-          ? `<div class="ach-progress">${progressLine}${progressLine && extra ? ' · ' : ''}${extra}</div>`
+          ? `<div class="ach-progress${unlocked ? ' done' : ''}">${progressLine}${progressLine && extra ? ' · ' : ''}${extra}</div>`
           : ''
       }
     </div>`
   return row
 }
 
-function renderSteps(a, item) {
+/* Показываем ТОЛЬКО текущий (первый невыполненный) этап.
+   Прогрессбар считается ОТ предыдущего этапа:
+     1 км → 0%,  3 км → 100% (для этапа «3 км», если «1 км» уже взят). */
+function renderCurrentStep(a) {
   const progress = A.progress[a.key] || 0
-  let html = ''
-  for (let i = 0; i < a.steps.length; i++) {
-    const s = a.steps[i]
-    const done = A.stepUnlocked.has(a.key + ':' + i)
-    const pct = done ? 100 : Math.min(100, (progress / s.target) * 100)
-    html += `
+  let idx = a.steps.findIndex((_, i) => !A.stepUnlocked.has(a.key + ':' + i))
+  if (idx === -1) idx = a.steps.length - 1
+
+  const s = a.steps[idx]
+  const done = A.stepUnlocked.has(a.key + ':' + idx)
+
+  const prevTarget = idx > 0 ? a.steps[idx - 1].target : 0
+  const range = Math.max(1, s.target - prevTarget)
+  const localProgress = done ? 1 : Math.max(0, Math.min(1, (progress - prevTarget) / range))
+  const pct = localProgress * 100
+
+  const displayCur = Math.min(progress, s.target)
+  const valueText = formatStepProgress(a, displayCur, s.target)
+
+  return `
+    <div class="ach-steps">
       <div class="ach-step${done ? ' done' : ''}">
-        <div class="ach-step-label">${s.label}</div>
+        <div class="ach-step-head">
+          <span class="ach-step-label">${s.label}</span>
+          <span class="ach-step-value">${done ? '✓ ' : ''}${valueText}</span>
+        </div>
         <div class="ach-step-track">
           <div class="ach-step-fill" style="width:${pct.toFixed(1)}%"></div>
         </div>
         <div class="ach-step-mark">${done ? '✓' : ''}</div>
+      </div>
+    </div>`
+}
+
+/* Показываем ВСЕ этапы как «<label>  ✓ Выполнено». */
+function renderAllStepsDone(a) {
+  let html = ''
+  for (let i = 0; i < a.steps.length; i++) {
+    html += `
+      <div class="ach-step-done">
+        <span class="ach-step-done-label">${a.steps[i].label}</span>
+        <span class="ach-step-done-mark">✓ Выполнено</span>
       </div>`
   }
-  return html
+  return `<div class="ach-steps-done">${html}</div>`
 }
 
 /* ================================================================
    ХЕЛПЕРЫ
 ================================================================ */
+/* Формат строки прогресса для многоэтапных ачивок. */
+function formatStepProgress(a, cur, target) {
+  if (a.unit === 'm') {
+    return `${fmtMetersLocal(cur)} / ${fmtMetersLocal(target)}`
+  }
+  return `${Math.floor(cur)} / ${Math.floor(target)} раз`
+}
+
+/* Компактный формат метров: 950 м, 1 км, 1.3 км, 200 км */
+function fmtMetersLocal(m) {
+  if (m < 1000) return Math.round(m) + ' м'
+  const v = m / 1000
+  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + ' км'
+}
+
 function formatProgress(a, cur, next) {
   if (a.unit === 'm') return `${fmtMeters(cur)} / ${fmtMeters(next)}`
   return `${Math.floor(cur)} / ${Math.floor(next)}`
