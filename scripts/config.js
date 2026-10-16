@@ -823,7 +823,7 @@ export const CAMERA = /** @type {const} */ ({
   initial: [6, 8, 26],
 
   /** Высота (м), на которой камера полностью «переворачивается» вниз. */
-  maxViewHeight: 1200,
+  maxViewHeight: 1600,
 
   /** Базовый угол наклона камеры к горизонту (градусы, вид сбоку). */
   baseAngle: 20,
@@ -838,10 +838,10 @@ export const CAMERA = /** @type {const} */ ({
   speedRadiusK: 0.12,
 
   /** Максимальная добавка радиуса от скорости (м). */
-  maxSpeedRadius: 45,
+  maxSpeedRadius: 80,
 
   /** Lead-time для feed-forward (сек). Отрицательное = «смотрим в прошлое». */
-  leadTime: -0.03,
+  leadTime: -0.02,
   followBase: 6,
   followSpeedK: 0.15,
   followMaxSpeed: 18,
