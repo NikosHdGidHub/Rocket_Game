@@ -64,9 +64,26 @@ export function reset() {
 }
 
 /* ---------- update ---------- */
+let _lastLogSec = -1
+
 export function update(_dt) {
   if (!DN.enabled) return
-  applyAt(currentT())
+  const t = currentT()
+  applyAt(t)
+
+  if (DN.debugLog) {
+    const sec = Math.floor(t)
+    if (sec !== _lastLogSec) {
+      _lastLogSec = sec
+      const total = cycleLength()
+      const θ = sunAngleAt(t)
+      const sinθ = Math.sin(θ)
+      const A = DN.sunArc
+      const elev = sinθ >= 0 ? sinθ * A.maxElevation : sinθ * Math.abs(A.minElevation)
+      const pct = ((t / total) * 100).toFixed(0)
+      console.log(`[DayNight] t=${sec}s / ${total}s (${pct}%) el=${elev.toFixed(0)}°`)
+    }
+  }
 }
 
 /** Длина цикла = at последнего keyframe. Так нельзя случайно
@@ -74,6 +91,20 @@ export function update(_dt) {
 function cycleLength() {
   const KFs = DN.keyframes
   return KFs[KFs.length - 1].at
+}
+
+/** Полярный угол θ для момента t.
+    День: θ растёт 0 → π за dayDuration секунд.
+    Ночь: θ растёт π → 2π за (total − dayDuration) секунд.
+    θ=0 — восход, θ=π/2 — полдень, θ=π — закат, θ=3π/2 — полночь. */
+function sunAngleAt(t) {
+  const total = cycleLength()
+  const dayDur = DN.sunArc.dayDuration
+  const nightDur = Math.max(1, total - dayDur)
+  if (t < dayDur) {
+    return Math.PI * (t / dayDur)
+  }
+  return Math.PI + Math.PI * ((t - dayDur) / nightDur)
 }
 
 function currentT() {
@@ -90,7 +121,16 @@ const _hemiSky = new THREE.Color()
 const _hemiGround = new THREE.Color()
 
 function applyAt(t) {
-  // Находим обрамляющие keyframes
+  const θ = sunAngleAt(t)
+  const sinθ = Math.sin(θ)
+  const cosθ = Math.cos(θ)
+
+  // Положение солнца — из дуги, не из пресетов
+  const A = DN.sunArc
+  const sunEl = sinθ >= 0 ? sinθ * A.maxElevation : sinθ * Math.abs(A.minElevation)
+  const sunAz = A.azimuthBase + A.azimuthSwing * cosθ
+
+  // Цвета — интерполируем по keyframes (как раньше)
   const KFs = DN.keyframes
   let k0 = KFs[0]
   let k1 = KFs[KFs.length - 1]
@@ -101,13 +141,20 @@ function applyAt(t) {
       break
     }
   }
-  const span = k1.at - k0.at
-  const a = span > 0 ? (t - k0.at) / span : 0
+
+  // Смешивание k0 → k1. Если заданы blendFrom/blendTo — используем их,
+  // иначе ведём линейную интерполяцию от k0.at до k1.at (прежнее поведение).
+  const blendFrom = k1.blendFrom ?? k0.at
+  const blendTo = k1.blendTo ?? k1.at
+  const blendSpan = blendTo - blendFrom
+  let a = 0
+  if (t >= blendTo) a = 1
+  else if (t >= blendFrom) a = blendSpan > 0 ? (t - blendFrom) / blendSpan : 1
+  // иначе (t < blendFrom) — a остаётся 0 (держим предыдущий пресет)
 
   const P0 = DN.presets[k0.preset]
   const P1 = DN.presets[k1.preset]
 
-  // Интерполяция (по hex, потом в THREE.Color — сохраняет sRGB→linear)
   _zen.setHex(lerpHex(P0.zenith, P1.zenith, a))
   _hor.setHex(lerpHex(P0.horizon, P1.horizon, a))
   _sunCol.setHex(lerpHex(P0.sunColor, P1.sunColor, a))
@@ -116,14 +163,10 @@ function applyAt(t) {
 
   const sunI = lerp(P0.sunIntensity, P1.sunIntensity, a)
   const hemiI = lerp(P0.hemiIntensity, P1.hemiIntensity, a)
-  const sunEl = lerp(P0.sunElevation, P1.sunElevation, a)
-  const sunAz = lerp(P0.sunAzimuth ?? 0, P1.sunAzimuth ?? 0, a)
 
-  // nightness больше не из пресета — считаем из высоты солнца.
-  // Пока солнце над горизонтом — минимум темноты, ниже — догоняем до 1.
+  // nightness — из высоты солнца
   const nightness = nightnessFromElevation(sunEl)
 
-  // Ночные множители
   const skyB = nightCurve(nightness, DN.brightnessNightSky)
   const terrainB = nightCurve(nightness, DN.brightnessNightTerrain)
   const propsB = nightCurve(nightness, DN.brightnessNightProps)
@@ -131,12 +174,10 @@ function applyAt(t) {
   _zen.multiplyScalar(skyB)
   _hor.multiplyScalar(skyB)
 
-  // Общие объекты неба (тянут и купол, и fog-материалы)
   SKY_ZENITH.copy(_zen)
   SKY_HORIZON.copy(_hor)
   SUN_COLOR.copy(_sunCol)
 
-  // Свет
   sun.color.copy(_sunCol)
   sun.intensity = sunI
   if (hemiLight) {
@@ -145,14 +186,12 @@ function applyAt(t) {
     hemiLight.intensity = hemiI
   }
 
-  // Туман (обычный цвет = горизонт)
   scene.fog.color.copy(_hor)
 
-  // Материалы земли/пропсов — тонируем множителем (норм — 1.0)
   if (groundMat) groundMat.color.setRGB(terrainB, terrainB, terrainB)
   if (propMat) propMat.color.setRGB(propsB, propsB, propsB)
 
-  // Направление солнца (шейдер неба + fog-материалы)
+  // Направление солнца
   const el = (sunEl * Math.PI) / 180
   const az = (sunAz * Math.PI) / 180
   const cosEl = Math.cos(el)
@@ -198,11 +237,16 @@ function nightCurve(n, target) {
 /* ---------- Debug ---------- */
 export function debug() {
   const t = currentT()
+  const total = cycleLength()
+  const θ = sunAngleAt(t)
+  const sinθ = Math.sin(θ)
+  const A = DN.sunArc
+  const el = sinθ >= 0 ? sinθ * A.maxElevation : sinθ * Math.abs(A.minElevation)
   console.log(
-    `[DayNight] t=${t.toFixed(1)}s / ${DN.cycleSeconds}s, ` +
+    `[DayNight] t=${t.toFixed(1)}s / ${total}s  el=${el.toFixed(0)}°  ` +
       `start=${new Date(_cycleStartMs).toLocaleTimeString()}`
   )
-  return { t, cycleStartMs: _cycleStartMs }
+  return { t, total, elevation: el, cycleStartMs: _cycleStartMs }
 }
 /** Перепрыгнуть к нужной точке цикла (для отладки).
     window.dbgSetDayTime(360) → пик заката. */

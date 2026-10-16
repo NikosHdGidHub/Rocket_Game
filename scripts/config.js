@@ -433,11 +433,11 @@ export const TERRAIN_COLOR_NOISE = /** @type {const} */ ({
 })
 
 /* ================================================================
-   СМЕНА ДНЯ И НОЧИ — цикл из 4 фаз.
+   СМЕНА ДНЯ И НОЧИ
 
-   Длина цикла = at последнего keyframe (600 = 10 мин).
-   Все цвета/высоты/азимуты — в пресетах, nightness вычисляется
-   автоматически из sunElevation (см. daynight.js).
+   Полный цикл = keyframes[last].at секунд.
+   Солнце непрерывно ходит по дуге: θ = 2π · t / cycleLength.
+   Пресеты задают цвета и интенсивности, sunArc — положение солнца.
 ================================================================ */
 export const DAYNIGHT = /** @type {const} */ ({
   enabled: true,
@@ -445,23 +445,41 @@ export const DAYNIGHT = /** @type {const} */ ({
   /** Ключ localStorage (отдельно от прогресса, не сбрасывается 🗑️). */
   saveKey: 'rocket_game_daynight_v1',
 
-  /* ---------- Затемнение от высоты солнца ----------
-     nightness = насколько темно (0 — день, 1 — ночь).
-     Считается из sunElevation:
-       • пока солнце ≥ 0° — темнеет максимум на darknessAboveHorizon
-         (тёплый градиент заката, но ещё не темно)
-       • когда ушло под горизонт — за darknessRampDegrees градусов
-         плавно догоняет до 1.0
+  /** Логировать текущее время цикла и высоту солнца раз в секунду. */
+  debugLog: true,
+
+  /* ---------- Дуга солнца ----------
+     Угол θ идёт двумя полукругами:
+       [0, π]   — день   (солнце над горизонтом)
+       [π, 2π]  — ночь   (под горизонтом)
+
+     Длительность дня = dayDuration, сек. Ночь = cycleLength − dayDuration.
+     Внутри каждой половины θ растёт линейно.
+
+     Что получается:
+       t=0                → θ=0     → восход (0°)
+       t=dayDuration/2    → θ=π/2   → полдень (maxElevation)
+       t=dayDuration      → θ=π     → закат (0°)
+       t=total            → θ=2π    → снова восход (0°)
+
+     Ключи для настройки:
+       dayDuration: 540 при total=600 → день 9 мин, ночь 1 мин
+       dayDuration: 300 при total=600 → ровно пополам
+       dayDuration: total             → ночи нет совсем
   */
+  sunArc: {
+    dayDuration: 540, // сек солнце над горизонтом
+    maxElevation: 60, // высота в полдень, °
+    minElevation: -25, // высота в полночь, ° (отрицательная)
+    azimuthBase: 0, // азимут полдня, °
+    azimuthSwing: -30, // ± swing от base на восходе/закате, °
+  },
+
+  /* ---------- Затемнение из высоты солнца ---------- */
   darknessAboveHorizon: 0.15,
   darknessRampDegrees: 20,
 
-  /* ---------- Пресеты состояний неба/света ----------
-     sunElevation  — градусы над горизонтом (отрицательное — под ним)
-     sunAzimuth    — азимут в градусах (0° = +X вдоль полёта, +90° = +Z)
-       dawn/sunset должны быть с РАЗНЫМИ знаками, тогда солнце
-       реально ходит по небу: встаёт слева, садится справа.
-  */
+  /* ---------- Пресеты ---------- */
   presets: {
     day: {
       zenith: 0x1e50a8,
@@ -471,20 +489,15 @@ export const DAYNIGHT = /** @type {const} */ ({
       hemiSky: 0xb8d8f0,
       hemiGround: 0x4a7a35,
       hemiIntensity: 1.05,
-      /** Высота солнца над горизонтом, градусы. Отрицательное — под землёй. */
-      sunElevation: 60,
-      sunAzimuth: 0,
     },
     sunset: {
-      zenith: 0x4a2a60,
-      horizon: 0xff7a3a,
-      sunColor: 0xffb060,
-      sunIntensity: 1.0,
-      hemiSky: 0xa07090,
-      hemiGround: 0x503020,
-      hemiIntensity: 0.7,
-      sunElevation: 8, // солнце ещё над горизонтом — светлое
-      sunAzimuth: 40, // справа
+      zenith: 0x4a2a60, // #4a2a60
+      horizon: 0xf0a15c, // #f0a15c
+      sunColor: 0xffbc78, // #ffbc78
+      sunIntensity: 0.88,
+      hemiSky: 0xa07090, // #a07090
+      hemiGround: 0x53256e, // #53256e
+      hemiIntensity: 0.6,
     },
     night: {
       zenith: 0x050818,
@@ -494,34 +507,47 @@ export const DAYNIGHT = /** @type {const} */ ({
       hemiSky: 0x202840,
       hemiGround: 0x101410,
       hemiIntensity: 0.18,
-      sunElevation: -20, // глубоко под горизонтом
-      sunAzimuth: 0,
     },
     dawn: {
-      zenith: 0x4a70b0, // светлее прежнего 0x2a4070
-      horizon: 0xffe0c0, // светлый персиковый
+      zenith: 0x4a70b0,
+      horizon: 0xffe0c0,
       sunColor: 0xffd0a0,
       sunIntensity: 0.9,
-      hemiSky: 0xc8d0e8, // светлее
+      hemiSky: 0xc8d0e8,
       hemiGround: 0x405030,
       hemiIntensity: 0.6,
-      sunElevation: 8, // симметрично закату
-      sunAzimuth: -40, // слева
     },
   },
 
-  /* ---------- Расписание ----------
-     at — секунды внутри цикла.
-     Длина цикла = at последнего keyframe.
+  /* ---------- Расписание и градиенты ----------
+     at        — секунды внутри цикла (длина = at последнего).
+     preset    — имя пресета.
+     blendFrom — (опц.) секунда, с которой начинается плавный переход
+                 к этому пресету. По умолчанию = at предыдущего keyframe.
+     blendTo   — (опц.) секунда, на которой переход заканчивается.
+                 По умолчанию = at.
+
+     Логика внутри фазы [prev.at, this.at]:
+       t < blendFrom  → 100% предыдущий пресет (держим)
+       blendFrom…blendTo → линейная интерполяция
+       t > blendTo    → 100% этот пресет (держим до конца фазы)
+
+     Хочешь короткий переход → близкие blendFrom/blendTo.
+     Хочешь переход без паузы → не указывай оба поля.
+
+     Привязка к высоте солнца в 600-секундном цикле:
+       t=250 → sun ≈ +30°   (начинаем закатные цвета)
+       t=300 → sun ≈   0°   (солнце на горизонте)
+       t=380 → sun ≈ −14°   (переходим к ночным)
+       t=450 → sun ≈ −20°   (полночь)
+       t=560 → sun ≈ −8°    (начинаем рассветные)
   */
   keyframes: [
-    { at: 0, preset: 'day' },
-    { at: 300, preset: 'day' },
-    { at: 360, preset: 'sunset' },
-    { at: 420, preset: 'night' },
-    { at: 480, preset: 'night' },
-    { at: 540, preset: 'dawn' },
-    { at: 600, preset: 'day' },
+    { at: 0, preset: 'dawn' }, //0-120
+    { at: 270, preset: 'day', blendFrom: 10, blendTo: 110 }, //120-420
+    { at: 530, preset: 'sunset', blendFrom: 510, blendTo: 534 }, //blendFrom: 280, blendTo: 300
+    { at: 570, preset: 'night', blendFrom: 535, blendTo: 565 },
+    { at: 600, preset: 'dawn' },
   ],
 
   /* ---------- Ночные множители яркости ----------
