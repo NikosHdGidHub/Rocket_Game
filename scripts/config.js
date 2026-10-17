@@ -1434,9 +1434,9 @@ export const ACHIEVEMENTS = /** @type {const} */ ([
     icon: '⏱️',
     tier: 'hard',
     name: 'Спринтер',
-    desc: 'Собрать все сундуки за 15 минут',
+    desc: 'Собрать все сундуки за 25 минут',
     target: CHESTS.xPositions.length,
-    timeLimit: 15 * 60 * 1000,
+    timeLimit: 25 * 60 * 1000,
   },
 ])
 
