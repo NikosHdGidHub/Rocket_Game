@@ -1252,7 +1252,7 @@ export const CHESTS = /** @type {const} */ ({
   /** Лимит одного типа карточки */
   cardTypeLimit: 2,
   /** Настройки бафов */
-  buffChests: [2.0, 1.5, 3.5, 0.7, 0.85],
+  buffChests: [1.8, 1.4, 3.5, 0.7, 0.8],
 })
 
 /**
