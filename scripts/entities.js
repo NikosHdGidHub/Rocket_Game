@@ -157,6 +157,7 @@ export const flameMat = new THREE.MeshBasicMaterial({
   opacity: 0.95,
 })
 export const flame = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.4, 12), flameMat)
+flame.name = 'rocketFlame'
 flame.rotation.z = Math.PI / 2
 flame.position.x = -2.1
 rocket.add(flame)
@@ -165,6 +166,7 @@ export const flameInner = new THREE.Mesh(
   new THREE.ConeGeometry(0.2, 0.9, 10),
   new THREE.MeshBasicMaterial({ color: CFG.ROCKET.flame.inner })
 )
+flameInner.name = 'rocketFlameInner'
 flameInner.rotation.z = Math.PI / 2
 flameInner.position.x = -1.85
 rocket.add(flameInner)
@@ -346,6 +348,133 @@ export function updateChests(dt, rx, rz) {
   } else {
     chestLight.visible = false
   }
+}
+
+/* ================================================================
+   GHOST ROCKET — призрак лучшего полёта.
+   Клон настоящей ракеты, но с MeshBasicMaterial:
+     • не участвует в освещении (ни sun, ни hemi, ни fog),
+     • не отбрасывает/принимает тени,
+     • не имеет PointLight (никаких Light в сцене дополнительно).
+================================================================ */
+let _ghostFlameOuter = null
+let _ghostFlameInner = null
+
+function buildGhostRocket() {
+  const G = CFG.ROCKET.ghost
+  const ghost = rocket.clone(true)
+
+  // Удаляем клонированный exhaustLight — нам не нужен ещё один Light в сцене.
+  for (let i = ghost.children.length - 1; i >= 0; i--) {
+    if (ghost.children[i].isLight) ghost.remove(ghost.children[i])
+  }
+
+  // Материалы-«призраки» (создаются один раз).
+  const bodyMat = new THREE.MeshBasicMaterial({
+    color: G.color,
+    transparent: true,
+    opacity: G.opacity,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+  })
+
+  const flameMat = new THREE.MeshBasicMaterial({
+    color: G.flameColor,
+    transparent: true,
+    opacity: G.flameOpacity,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+
+  const flameInnerMat = new THREE.MeshBasicMaterial({
+    color: G.flameInnerColor,
+    transparent: true,
+    opacity: G.flameInnerOpacity,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+
+  // Клонированные ссылки на пламя (по именам, заданным на оригинале).
+  _ghostFlameOuter = ghost.getObjectByName('rocketFlame')
+  _ghostFlameInner = ghost.getObjectByName('rocketFlameInner')
+
+  // Заменяем материалы и отключаем тени у всех мешей.
+  ghost.traverse((c) => {
+    if (!c.isMesh) return
+    c.castShadow = false
+    c.receiveShadow = false
+    if (c === _ghostFlameOuter) c.material = flameMat
+    else if (c === _ghostFlameInner) c.material = flameInnerMat
+    else c.material = bodyMat
+  })
+
+  ghost.renderOrder = 3 // после обычной геометрии, до сундуков (4, 5)
+  ghost.visible = false
+  ghost.rotation.y = -CFG.GAME.flightYaw // константа полёта
+  return ghost
+}
+
+export const ghostRocket = buildGhostRocket()
+scene.add(ghostRocket)
+
+const _STRIDE = 6 // [t, x, y, z, rotZ, boost]
+
+/**
+ * Воспроизведение призрака.
+ * @param {Float32Array|null} samples  данные лучшего полёта (null = скрыть)
+ * @param {number} t                   секунды от начала текущего полёта
+ */
+export function updateGhostRocket(samples, t) {
+  if (!samples || samples.length < _STRIDE * 2) {
+    ghostRocket.visible = false
+    return
+  }
+
+  const n = samples.length / _STRIDE
+
+  // Дошли до конца траектории — прячем
+  if (t < samples[0]) {
+    ghostRocket.visible = false
+    return
+  }
+
+  // Бинарный поиск: последний sample с s[i*STRIDE] <= t
+  let lo = 0,
+    hi = n - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (samples[mid * _STRIDE] <= t) lo = mid
+    else hi = mid - 1
+  }
+  if (lo >= n - 1) {
+    ghostRocket.visible = false
+    return
+  }
+
+  const i0 = lo * _STRIDE
+  const i1 = (lo + 1) * _STRIDE
+  const tA = samples[i0]
+  const tB = samples[i1]
+  const a = tB > tA ? (t - tA) / (tB - tA) : 0
+  const lerp = (p, q, k) => p + (q - p) * k
+
+  ghostRocket.visible = true
+  ghostRocket.position.set(
+    lerp(samples[i0 + 1], samples[i1 + 1], a),
+    lerp(samples[i0 + 2], samples[i1 + 2], a),
+    lerp(samples[i0 + 3], samples[i1 + 3], a)
+  )
+  ghostRocket.rotation.z = lerp(samples[i0 + 4], samples[i1 + 4], a)
+  // rotation.y — константа, задана при build.
+
+  const boosting = samples[i0 + 5] > 0.5
+  if (_ghostFlameOuter) _ghostFlameOuter.visible = boosting
+  if (_ghostFlameInner) _ghostFlameInner.visible = boosting
 }
 
 /* ================================================================

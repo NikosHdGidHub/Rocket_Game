@@ -7,8 +7,8 @@ import * as CFG from './config.js'
 import * as Achievements from './achievements.js'
 import * as DayNight from './daynight.js'
 import { camera } from './scene.js'
-import { G, rocketState, cam, input, lod, time } from './state.js'
 import { terrainHeight } from './world/world.js'
+import { G, rocketState, cam, input, lod, time, ghostRecorder, bestFlight } from './state.js'
 import {
   rocket,
   flame,
@@ -22,6 +22,7 @@ import {
   legBack,
   chests,
   updateChests as updateChestsFX,
+  updateGhostRocket,
 } from './entities.js'
 import * as UI from './ui.js'
 
@@ -207,6 +208,7 @@ function launch() {
   G.phase = 'fly'
   G.timer = 0
   boosting = false
+  startGhostRecording() // ← запись
   UI.showToast('ПОЛЕТЕЛИ! 🚀', CFG.UI.toastColors.upgrade)
   Achievements.onLaunch()
   saveProgress()
@@ -248,6 +250,11 @@ function land() {
   const isRecord = dist > G.best // ← снимок ДО мутации
   if (isRecord) G.best = dist
 
+  if (isRecord && ghostRecorder.samples.length >= 12) {
+    saveGhostFlight()
+  }
+  ghostRecorder.recording = false
+
   UI.updateHUD()
   UI.renderShop()
   saveProgress()
@@ -287,6 +294,98 @@ function openChest(chest) {
 
   saveProgress()
   Achievements.onChestOpen(G.openedChests.size)
+}
+
+/* ================================================================
+   GHOST RECORDER — запись текущего полёта.
+================================================================ */
+function startGhostRecording() {
+  ghostRecorder.samples.length = 0
+  ghostRecorder.recording = true
+  ghostRecorder.startTime = time.gameTime
+  ghostRecorder.nextSampleTime = 0
+}
+
+function recordGhostSample() {
+  const rec = ghostRecorder
+  if (!rec.recording) return
+
+  const elapsed = time.gameTime - rec.startTime
+  if (elapsed >= CFG.ROCKET.recordingTimeLimit) {
+    rec.recording = false
+    return
+  }
+  if (elapsed < rec.nextSampleTime) return
+
+  rec.nextSampleTime += 1 / CFG.ROCKET.recordingFPS
+
+  // Формат: [t, x, y, z, rotZ, boost]
+  // rotation.y НЕ сохраняем — это константа -CFG.GAME.flightYaw.
+  rec.samples.push(
+    elapsed,
+    rocketState.pos.x,
+    rocketState.pos.y,
+    rocketState.pos.z,
+    rocket.rotation.z,
+    boosting ? 1 : 0
+  )
+}
+
+/* ================================================================
+   GHOST PERSISTENCE — base64-кодирование Float32Array.
+   ~432 КБ raw → ~560 КБ в localStorage для 10-минутного полёта.
+================================================================ */
+function u8ToBase64(u8) {
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+function base64ToU8(b64) {
+  const binary = atob(b64)
+  const u8 = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) u8[i] = binary.charCodeAt(i)
+  return u8
+}
+
+function saveGhostFlight() {
+  if (ghostRecorder.samples.length < 12) return // меньше 2 сэмплов — не сохраняем
+  try {
+    const float32 = new Float32Array(ghostRecorder.samples)
+    bestFlight.samples = float32
+    bestFlight.best = G.best
+
+    const bytes = new Uint8Array(float32.buffer)
+    const b64 = u8ToBase64(bytes)
+    localStorage.setItem(
+      CFG.ROCKET.ghost.storageKey,
+      JSON.stringify({ v: 1, best: G.best, samples: b64 })
+    )
+  } catch (e) {
+    console.warn('saveGhostFlight failed:', e)
+  }
+}
+
+export function loadGhostFlight() {
+  try {
+    const raw = localStorage.getItem(CFG.ROCKET.ghost.storageKey)
+    if (!raw) return
+    const data = JSON.parse(raw)
+    if (!data || typeof data.samples !== 'string') return
+
+    const bytes = base64ToU8(data.samples)
+    if (bytes.length % 4 !== 0) return
+    const float32 = new Float32Array(bytes.buffer)
+    if (float32.length < 12) return
+
+    bestFlight.samples = float32
+    bestFlight.best = typeof data.best === 'number' ? data.best : 0
+  } catch (e) {
+    console.warn('loadGhostFlight failed:', e)
+  }
 }
 
 /* ================================================================
@@ -382,6 +481,7 @@ function updateRocket(dt) {
       p.pos.y = restY
       land()
     }
+    recordGhostSample() // ← пишем сэмпл
   } else if (G.phase === 'landed') {
     p.pos.y += (restY - p.pos.y) * Math.min(1, dt * 8)
     rocket.rotation.z += (0 - rocket.rotation.z) * Math.min(1, dt * 6)
@@ -510,6 +610,14 @@ export function update(dt) {
   updateRocket(dt)
   updateCamera(dt)
 
+  // Призрак — только в фазе полёта
+  if (G.phase === 'fly' && bestFlight.samples) {
+    const t = time.gameTime - ghostRecorder.startTime
+    updateGhostRocket(bestFlight.samples, t)
+  } else {
+    updateGhostRocket(null, 0) // скрыть
+  }
+
   // HUD и прогрессбар до следующего сундука
   updateChestTracker()
 
@@ -585,6 +693,7 @@ function updateChestTracker() {
 ================================================================ */
 export function init() {
   loadProgress()
+  loadGhostFlight() // ← Призрак
   resetRocket()
   rocket.position.copy(rocketState.pos)
   G.fuel = maxFuel()

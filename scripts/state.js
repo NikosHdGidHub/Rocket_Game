@@ -55,3 +55,22 @@ export const time = {
   gameTime: 0,
   totalPlaytime: 0, // ← накоплено за все прошлые сессии
 }
+
+/** Запись текущего полёта (для потенциального призрака). */
+export const ghostRecorder = {
+  /** Плоский массив: [t, x, y, z, rotZ, boost, t, x, y, z, rotZ, boost, ...]. */
+  samples: [],
+  recording: false,
+  /** Игровое время старта текущего полёта. */
+  startTime: 0,
+  /** Игровое время, когда сэмплировать в следующий раз. */
+  nextSampleTime: 0,
+}
+
+/** Лучший полёт (траектория для призрака). */
+export const bestFlight = {
+  /** Float32Array | null. Формат тот же: 6 float на сэмпл. */
+  samples: null,
+  /** Дистанция этого полёта (для отладки / UI). */
+  best: 0,
+}
