@@ -1237,6 +1237,9 @@ export const CHESTS = /** @type {const} */ ({
   /** Радиус сбора (м, по XZ). */
   pickupRadius: 100,
 
+  /** м — сколько ещё показываем пройденный сундук */
+  overRadius: 500,
+
   /** Высота столба света (м). */
   beamHeight: 400,
   beamRadius: 2.0,

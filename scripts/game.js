@@ -216,6 +216,7 @@ function land() {
   // Сундуки: ближайший + открытие в радиусе
   let nearestChestDist = Infinity
   for (const c of chests) {
+    if (c.opened) continue // ← не учитываем уже взятые
     const dx = landedX - c.x
     const dz = landedZ - c.z
     const d2 = dx * dx + dz * dz
@@ -512,21 +513,48 @@ export function update(dt) {
 }
 
 /**
- * Считает «сколько метров до ближайшего сундука» и передаёт в UI.
- * Логика:
- *   - next = первый неоткрытый сундук впереди (c.x > rocketX)
- *   - prev = последний открытый / пройденный сундук (или 0)
- *   - progress = (rocketX − prev) / (next − prev)
- * Если всё открыто или всё позади — скрываем плашку.
- */
-/**
  * Прогрессбар «сколько метров до следующего сундука».
  * Шкала — от самого старта (x = 0) до следующего неоткрытого сундука.
  */
 function updateChestTracker() {
   const rx = rocketState.pos.x
+  const rz = rocketState.pos.z
 
-  // Первый неоткрытый сундук впереди (или на позиции ракеты)
+  // ближайший НЕоткрытый сундук по XZ
+  let nearest = null
+  let nearestD2 = Infinity
+  for (const c of chests) {
+    if (c.opened) continue
+    const dx = c.x - rx
+    const dz = c.z - rz
+    const d2 = dx * dx + dz * dz
+    if (d2 < nearestD2) {
+      nearestD2 = d2
+      nearest = c
+    }
+  }
+
+  if (!nearest) {
+    UI.updateChestProgress(null, 0, false, false)
+    return
+  }
+
+  // Сундук впереди — обычный режим
+  if (nearest.x >= rx) {
+    const dist = nearest.x - rx
+    const progress = Math.max(0, Math.min(1, rx / Math.max(1, nearest.x)))
+    UI.updateChestProgress(dist, progress, dist < CFG.CHESTS.nearRadius, false)
+    return
+  }
+
+  // Сундук позади — проверяем overRadius
+  const dist = nearest.x - rx // отрицательное
+  if (Math.abs(dist) <= CFG.CHESTS.overRadius) {
+    UI.updateChestProgress(dist, 1, false, true) // missed = true
+    return
+  }
+
+  // Ушли слишком далеко — ищем следующий впереди
   let nextX = null
   for (const c of chests) {
     if (c.opened) continue
@@ -535,16 +563,13 @@ function updateChestTracker() {
       break
     }
   }
-
   if (nextX === null) {
-    UI.updateChestProgress(null, 0, false)
-    return
+    UI.updateChestProgress(null, 0, false, false)
+  } else {
+    const d = nextX - rx
+    const progress = Math.max(0, Math.min(1, rx / Math.max(1, nextX)))
+    UI.updateChestProgress(d, progress, d < CFG.CHESTS.nearRadius, false)
   }
-
-  const dist = nextX - rx
-  const progress = Math.max(0, Math.min(1, rx / Math.max(1, nextX)))
-
-  UI.updateChestProgress(dist, progress, dist < CFG.CHESTS.nearRadius)
 }
 
 /* ================================================================

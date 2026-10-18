@@ -131,27 +131,28 @@ export function setAlignText(deg) {
  *              1 = стоим прямо на следующем.
  *   near     — «совсем рядом» (< 300 м), включает зелёный акцент.
  */
-export function updateChestProgress(distance, progress, near) {
+export function updateChestProgress(distance, progress, near, missed = false) {
   if (distance === null) {
-    $chestProgress.classList.remove('on')
+    $chestProgress.classList.remove('on', 'near', 'missed')
     return
   }
 
   $chestProgress.classList.add('on')
   $chestFill.style.width = (Math.max(0, Math.min(1, progress)) * 100).toFixed(1) + '%'
 
-  // Формат: 999 м / 1.2 км / 12.3 км
+  const absDist = Math.abs(distance)
   let text
-  if (distance < 1000) {
-    text = Math.max(0, Math.round(distance)) + ' м'
-  } else if (distance < 10000) {
-    text = (distance / 1000).toFixed(1) + ' км'
+  if (absDist < 1000) {
+    text = (distance < 0 ? '-' : '') + Math.round(absDist) + ' м'
+  } else if (absDist < 10000) {
+    text = (distance < 0 ? '-' : '') + (absDist / 1000).toFixed(1) + ' км'
   } else {
-    text = Math.round(distance / 1000) + ' км'
+    text = (distance < 0 ? '-' : '') + Math.round(absDist / 1000) + ' км'
   }
   $chestDist.textContent = text
 
-  $chestProgress.classList.toggle('near', !!near)
+  $chestProgress.classList.toggle('near', !!near && !missed)
+  $chestProgress.classList.toggle('missed', !!missed)
 }
 
 export function updateFuelBar(fuel, maxFuel) {

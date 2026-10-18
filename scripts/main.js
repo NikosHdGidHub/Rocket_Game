@@ -12,7 +12,7 @@ import * as UI from './ui.js'
 import * as Ach from './achievements.js'
 import * as AchModal from './achievementsModal.js'
 import * as DayNight from './daynight.js'
-import { G } from './state.js'
+import { G, time } from './state.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
@@ -107,6 +107,7 @@ let last = performance.now()
 function loop(now) {
   const dt = Math.min(0.033, (now - last) / 1000)
   last = now
+  time.gameTime += dt // ← игровое время
 
   Game.update(dt) // фазы босса, физика ракеты, камера, сундуки
   Chunks.update() // очередь 3D-чанков + persistent visibility

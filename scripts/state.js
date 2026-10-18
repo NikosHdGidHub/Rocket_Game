@@ -49,3 +49,8 @@ export const input = {
   keys: { W: false, S: false },
   touch: { W: false, S: false },
 }
+
+/** Игровое время (секунды). Растёт только когда вкладка активна. */
+export const time = {
+  gameTime: 0,
+}

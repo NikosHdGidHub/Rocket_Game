@@ -830,6 +830,29 @@ canvas {
   }
 }
 
+/* Пролетели мимо сундука */
+.chest-progress.missed .chest-icon {
+  animation: chestPulseRed 0.9s ease-in-out infinite;
+}
+.chest-progress.missed .chest-fill {
+  background: linear-gradient(90deg, #ff5a5a, #ff2a2a);
+}
+.chest-progress.missed .chest-dist {
+  color: #ff5a5a;
+}
+
+@keyframes chestPulseRed {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.55;
+  }
+}
+
 /* На мобилке — компактнее */
 @media (max-width: 640px) {
   .chest-progress {
