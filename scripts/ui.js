@@ -7,6 +7,7 @@ import * as CFG from './config.js'
 import { G, input } from './state.js'
 import { renderer } from './scene.js'
 import * as Settings from './settings.js'
+import * as Sounds from './sounds.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')
@@ -304,6 +305,48 @@ export function init(callbacks) {
     })
   }
 
+  /* ---------- Звук: громкость ---------- */
+  const $soundVolume = document.getElementById('soundVolume')
+  if ($soundVolume) {
+    // Показать сохранённое значение
+    const saved = Settings.settings.soundVolume
+    const initial = typeof saved === 'number' ? saved : CFG.SOUNDS.masterVolume
+    $soundVolume.value = Math.round(initial * 100)
+
+    let volumeDirty = false
+    $soundVolume.addEventListener('input', () => {
+      const v = +$soundVolume.value / 100
+      Settings.settings.soundVolume = v
+      Sounds.setMasterVolume(v)
+
+      // Сохранение — с дебаунсом, чтобы не писать localStorage на каждый пиксель
+      if (!volumeDirty) {
+        volumeDirty = true
+        setTimeout(() => {
+          Settings.save()
+          volumeDirty = false
+        }, 250)
+      }
+    })
+
+    // Превью-звук при отпускании ползунка — чтобы игрок «услышал» громкость
+    $soundVolume.addEventListener('change', () => {
+      Sounds.play('achStage')
+    })
+  }
+
+  /* ---------- Звук: вкл/выкл ---------- */
+  const $soundEnabledToggle = document.getElementById('soundEnabledToggle')
+  if ($soundEnabledToggle) {
+    $soundEnabledToggle.checked = Settings.settings.soundEnabled
+
+    $soundEnabledToggle.addEventListener('change', () => {
+      Settings.settings.soundEnabled = $soundEnabledToggle.checked
+      Settings.save()
+      if ($soundEnabledToggle.checked) Sounds.play('achStage') // короткий «тест»
+    })
+  }
+
   if ($settingsBtn && $settingsPanel) {
     $settingsBtn.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -369,6 +412,10 @@ function drainAchQueue() {
       ${descHtml}
     </div>`
   $container.appendChild($el)
+
+  // Звук — в момент показа попапа, а не раньше.
+  // Если попапов в очереди несколько — каждый получит свой звук.
+  Sounds.play(milestone ? 'achStage' : 'ach')
 
   setTimeout(() => {
     $el.classList.add('out')

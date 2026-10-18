@@ -963,6 +963,64 @@ canvas {
   line-height: 1.45;
 }
 
+/* Разделитель между блоками настроек */
+.settings-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 16px 0;
+}
+
+/* Отступ между соседними строками настроек (например,
+   «Громкость» → «Звуки включены») */
+.settings-row + .settings-row {
+  margin-top: 8px;
+}
+
+/* Ползунок громкости */
+.settings-volume-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.settings-volume-row > span {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.settings-volume-row input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-volume-row input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  border: 2px solid #b96a00;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.settings-volume-row input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  border: 2px solid #b96a00;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
 .settings-close {
   margin-top: 16px;
   width: 100%;

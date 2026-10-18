@@ -140,6 +140,8 @@ export function resetProgress() {
   // 1) Чистим сохранение в localStorage.
   try {
     localStorage.removeItem(CFG.SAVE.key)
+    // Призрак — отдельный ключ, чистим явно.
+    localStorage.removeItem(CFG.ROCKET.ghost.storageKey)
   } catch (e) {
     console.warn('resetProgress: не удалось очистить localStorage:', e)
   }

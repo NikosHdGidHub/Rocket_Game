@@ -87,6 +87,16 @@
           Уменьшает количество растительности ×2.<br />
           Игра перезагрузится автоматически.
         </div>
+        <div class="settings-divider"></div>
+        <label class="settings-row settings-volume-row">
+          <span>🔊 Громкость</span>
+          <input type="range" id="soundVolume" min="0" max="100" step="1" value="80" />
+        </label>
+
+        <label class="settings-row">
+          <input type="checkbox" id="soundEnabledToggle" />
+          <span>Звуки включены</span>
+        </label>
         <button id="resetBtn" class="settings-danger">🗑️ Удалить весь прогресс</button>
         <button id="settingsClose" class="settings-close">Закрыть</button>
       </div>

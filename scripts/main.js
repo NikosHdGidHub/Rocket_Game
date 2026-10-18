@@ -13,6 +13,7 @@ import * as Ach from './achievements.js'
 import * as AchModal from './achievementsModal.js'
 import * as DayNight from './daynight.js'
 import { G, time } from './state.js'
+import * as Sounds from './sounds.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
@@ -20,6 +21,7 @@ import { G, time } from './state.js'
 Scene.init() // renderer / camera / sky / lights / ground
 DayNight.init() // грузим сохранённое время суток и сразу применяем
 Entities.init() // boss + rocket + chests
+Sounds.init() //звуки
 
 // Модалка: привязываем табы и кнопки (idempotent, можно вызвать до UI.init)
 AchModal.init()
@@ -33,9 +35,10 @@ UI.init({
   costOf: Game.costOf,
 })
 
-// Слушаем анлоки достижений: показываем попап + сохраняем прогресс
 Ach.onChange((ach, milestone) => {
   UI.showAchievementPopup(ach, milestone)
+  // Звук теперь играет внутри UI.drainAchQueue —
+  // синхронно с показом попапа. Здесь не дублируем.
   Game.saveProgress()
 })
 
