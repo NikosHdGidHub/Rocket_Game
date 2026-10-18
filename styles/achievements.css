@@ -38,6 +38,17 @@
 /* ================================================================
    Модалка достижений
    ================================================================ */
+.ach-session-timer {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ffd75e;
+  opacity: 0.75;
+  text-align: center;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 .achievements-card {
   width: min(480px, 92vw);
   max-height: 88vh;

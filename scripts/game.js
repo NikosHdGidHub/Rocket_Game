@@ -7,7 +7,7 @@ import * as CFG from './config.js'
 import * as Achievements from './achievements.js'
 import * as DayNight from './daynight.js'
 import { camera } from './scene.js'
-import { G, rocketState, cam, input, lod } from './state.js'
+import { G, rocketState, cam, input, lod, time } from './state.js'
 import { terrainHeight } from './world/world.js'
 import {
   rocket,
@@ -73,6 +73,7 @@ export function saveProgress() {
       cards: { ...G.cards },
       openedChests: [...G.openedChests],
       achievements: Achievements.serialize(),
+      totalPlaytime: time.totalPlaytime + time.gameTime,
     }
     localStorage.setItem(CFG.SAVE.key, JSON.stringify(data))
   } catch (e) {
@@ -92,6 +93,13 @@ export function loadProgress() {
     }
     if (typeof data.best === 'number' && isFinite(data.best) && data.best >= 0) {
       G.best = data.best
+    }
+    if (
+      typeof data.totalPlaytime === 'number' &&
+      isFinite(data.totalPlaytime) &&
+      data.totalPlaytime >= 0
+    ) {
+      time.totalPlaytime = data.totalPlaytime
     }
     if (data.upgrades && typeof data.upgrades === 'object') {
       for (const key of Object.keys(CFG.GAME.initialUpgrades)) {

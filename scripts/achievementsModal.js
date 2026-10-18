@@ -2,6 +2,7 @@
    achievementsModal.js — модалка достижений с табами.
 ================================================================ */
 import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from './achievements.js'
+import { time } from './state.js'
 
 let _initialized = false
 let _currentTab = 'all' // 'all' | 'progress' | 'done'
@@ -104,8 +105,14 @@ function render() {
   const $list = document.getElementById('achList')
   if (!$list) return
 
-  const scrollTop = $list.scrollTop // ← запоминаем
+  // Обновляем таймер сессии
+  const $timer = document.getElementById('achSessionTimer')
+  if ($timer) {
+    const total = time.totalPlaytime + time.gameTime
+    $timer.textContent = `Времени от начала забега: ${formatTimeLong(total)}`
+  }
 
+  const scrollTop = $list.scrollTop
   const items = buildItems()
 
   let shown
@@ -270,5 +277,14 @@ function fmtMeters(m) {
 function formatTime(sec) {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+/** Формат M:SS, а для длинных сессий — H:MM:SS. */
+function formatTimeLong(sec) {
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = Math.floor(sec % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
 }

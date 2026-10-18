@@ -53,4 +53,5 @@ export const input = {
 /** Игровое время (секунды). Растёт только когда вкладка активна. */
 export const time = {
   gameTime: 0,
+  totalPlaytime: 0, // ← накоплено за все прошлые сессии
 }

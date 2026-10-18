@@ -18,40 +18,52 @@ import {
   SUN_COLOR,
 } from './scene.js'
 import { propMat } from './chunks.js'
+import { time } from './state.js'
 
 const DN = CFG.DAYNIGHT
 
 /* ---------- Состояние ---------- */
-let _cycleStartMs = Date.now()
+let _cycleStartGameTime = 0
+//let _cycleStartMs = Date.now() //старый вариант
 let _suppressSave = false // true — pagehide не пишет ключ обратно (reset в процессе)
 
 /* ---------- SAVE / LOAD ---------- */
 
-/** Стартовый момент цикла: Date.now() сдвинутый так, чтобы
-    currentT() немедленно вернул нужное t (секунды внутри цикла). */
-function initialStartMs() {
-  const t0 = DN.initialTime ?? 0
-  return Date.now() - t0 * 1000
+/** Стартовое смещение цикла при первом запуске / после сброса. */
+function initialStartGameTime() {
+  return -(DN.initialTime ?? 0)
+  // При gameTime = 0 даст currentT() = DN.initialTime
 }
 
 function loadSaved() {
   try {
     const raw = localStorage.getItem(DN.saveKey)
-    if (!raw) return initialStartMs()
+    if (!raw) return initialStartGameTime()
     const data = JSON.parse(raw)
-    if (data && typeof data.cycleStartMs === 'number' && isFinite(data.cycleStartMs)) {
-      return data.cycleStartMs
+    if (!data || typeof data !== 'object') return initialStartGameTime()
+
+    // Новый формат: { t: <секунды внутри цикла> }
+    if (typeof data.t === 'number' && isFinite(data.t)) {
+      return time.gameTime - data.t
+    }
+
+    // Старый формат: { cycleStartMs: <Date.now() ms> } — миграция
+    if (typeof data.cycleStartMs === 'number' && isFinite(data.cycleStartMs)) {
+      const total = cycleLength()
+      const elapsedSec = (Date.now() - data.cycleStartMs) / 1000
+      const wrapped = ((elapsedSec % total) + total) % total
+      return time.gameTime - wrapped
     }
   } catch (e) {
     console.warn('daynight.load failed:', e)
   }
-  return initialStartMs()
+  return initialStartGameTime()
 }
 
 function saveState() {
   if (_suppressSave) return
   try {
-    localStorage.setItem(DN.saveKey, JSON.stringify({ cycleStartMs: _cycleStartMs }))
+    localStorage.setItem(DN.saveKey, JSON.stringify({ t: currentT() }))
   } catch (e) {
     console.warn('daynight.save failed:', e)
   }
@@ -60,19 +72,17 @@ function saveState() {
 /* ---------- init / reset ---------- */
 export function init() {
   if (!DN.enabled) return
-  _cycleStartMs = loadSaved()
-  // Сразу применяем — чтобы загрузочный экран был уже «в нужное время суток».
+  _cycleStartGameTime = loadSaved()
   applyAt(currentT())
   window.addEventListener('pagehide', saveState)
 }
 
 export function reset() {
   _suppressSave = true
-
   try {
     localStorage.removeItem(DN.saveKey)
   } catch (e) {}
-  _cycleStartMs = initialStartMs()
+  _cycleStartGameTime = initialStartGameTime()
 }
 
 /* ---------- update ---------- */
@@ -120,7 +130,7 @@ function sunAngleAt(t) {
 }
 
 function currentT() {
-  const elapsed = (Date.now() - _cycleStartMs) / 1000
+  const elapsed = time.gameTime - _cycleStartGameTime
   const total = cycleLength()
   return ((elapsed % total) + total) % total
 }
@@ -273,7 +283,7 @@ export function debug() {
 /** Перепрыгнуть к нужной точке цикла (для отладки).
     window.dbgSetDayTime(360) → пик заката. */
 export function debugSetTime(t) {
-  _cycleStartMs = Date.now() - t * 1000
+  _cycleStartGameTime = time.gameTime - t
   applyAt(currentT())
   saveState()
 }

@@ -3,7 +3,7 @@
    сохранение. Определения — в config.js (CFG.ACHIEVEMENTS).
 ================================================================ */
 import * as CFG from './config.js'
-import { G } from './state.js'
+import { G, time } from './state.js'
 
 export const ACHIEVEMENTS = CFG.ACHIEVEMENTS
 
@@ -50,8 +50,8 @@ function emit(ach, milestone = null, stepIdx = -1) {
 export function startTimeLimit(key) {
   const a = ach(key)
   if (!a || !a.timeLimit) return
-  if (A.startTimes[key]) return
-  A.startTimes[key] = Date.now()
+  if (Object.hasOwn(A.startTimes, key)) return
+  A.startTimes[key] = time.gameTime // секунды
 }
 
 /** @returns {boolean} true, если лимит истёк и ачивка ещё не получена. */
@@ -59,19 +59,18 @@ export function isTimeLimitedFailed(key) {
   const a = ach(key)
   if (!a || !a.timeLimit) return false
   if (A.unlocked.has(key)) return false
-  const start = A.startTimes[key]
-  if (!start) return false
-  return Date.now() - start >= a.timeLimit
+  if (!Object.hasOwn(A.startTimes, key)) return false
+  const elapsedSec = time.gameTime - A.startTimes[key]
+  return elapsedSec >= a.timeLimit / 1000 // сравниваем в секундах
 }
 
 /** @returns {number} секунд до истечения лимита (0, если не time-limited). */
 export function timeLimitedRemainingSec(key) {
   const a = ach(key)
   if (!a || !a.timeLimit) return 0
-  const start = A.startTimes[key]
-  if (!start) return a.timeLimit / 1000
-  const left = a.timeLimit - (Date.now() - start)
-  return Math.max(0, left / 1000)
+  if (!Object.hasOwn(A.startTimes, key)) return a.timeLimit / 1000
+  const elapsedSec = time.gameTime - A.startTimes[key]
+  return Math.max(0, a.timeLimit / 1000 - elapsedSec)
 }
 
 /* ================================================================
@@ -178,17 +177,20 @@ export function onChestOpen(openedCount) {
    SAVE / LOAD
 ================================================================ */
 export function serialize() {
+  const startElapsed = {}
+  for (const [k, start] of Object.entries(A.startTimes)) {
+    startElapsed[k] = time.gameTime - start // сколько уже прошло
+  }
   return {
     unlocked: [...A.unlocked],
     stepUnlocked: [...A.stepUnlocked],
     progress: { ...A.progress },
-    startTimes: { ...A.startTimes },
+    startElapsed, // ← новый формат
   }
 }
 
 export function deserialize(data) {
   if (!data || typeof data !== 'object') return
-
   const hasStepArray = Array.isArray(data.stepUnlocked)
 
   if (Array.isArray(data.unlocked)) {
@@ -219,14 +221,40 @@ export function deserialize(data) {
     }
   }
 
-  // Миграция: старый single-value sprintStart → startTimes.sprinter
+  // ---------- Миграция таймеров ----------
+  // Порядок ВАЖЕН: старые форматы обрабатываем первыми,
+  // новые перезаписывают (приоритет новее).
+
+  // 1) Самый старый формат: sprintStart (одиночное число, ms)
   if (typeof data.sprintStart === 'number' && isFinite(data.sprintStart) && data.sprintStart > 0) {
-    A.startTimes.sprinter = data.sprintStart
+    const a = ach('sprinter')
+    if (a && a.timeLimit) {
+      const elapsedSec = Math.min(
+        a.timeLimit / 1000,
+        Math.max(0, (Date.now() - data.sprintStart) / 1000)
+      )
+      A.startTimes.sprinter = time.gameTime - elapsedSec
+    }
   }
 
+  // 2) Старый формат: startTimes (Date.now() ms per key)
   if (data.startTimes && typeof data.startTimes === 'object') {
     for (const [k, v] of Object.entries(data.startTimes)) {
-      if (typeof v === 'number' && isFinite(v) && v > 0) A.startTimes[k] = v
+      if (typeof v !== 'number' || !isFinite(v) || v <= 0) continue
+      const a = ach(k)
+      if (!a || !a.timeLimit) continue
+      const elapsedSec = Math.min(a.timeLimit / 1000, Math.max(0, (Date.now() - v) / 1000))
+      A.startTimes[k] = time.gameTime - elapsedSec
+    }
+  }
+
+  // 3) Новый формат: startElapsed (секунды с начала, per key)
+  if (data.startElapsed && typeof data.startElapsed === 'object') {
+    for (const [k, v] of Object.entries(data.startElapsed)) {
+      if (typeof v !== 'number' || !isFinite(v) || v < 0) continue
+      const a = ach(k)
+      if (!a || !a.timeLimit) continue
+      A.startTimes[k] = time.gameTime - v
     }
   }
 }
