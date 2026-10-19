@@ -252,7 +252,7 @@ function land() {
   const isRecord = dist > G.best // ← снимок ДО мутации
   if (isRecord) G.best = dist
 
-  if (isRecord && ghostRecorder.samples.length >= 12) {
+  if (isRecord && ghostRecorder.samples.length >= CFG.ROCKET.minSamplesLimit) {
     saveGhostFlight()
   }
   ghostRecorder.recording = false
@@ -354,7 +354,7 @@ function base64ToU8(b64) {
 }
 
 function saveGhostFlight() {
-  if (ghostRecorder.samples.length < 12) return // меньше 2 сэмплов — не сохраняем
+  if (ghostRecorder.samples.length < CFG.ROCKET.minSamplesLimit) return // меньше 2 сэмплов — не сохраняем
   try {
     const float32 = new Float32Array(ghostRecorder.samples)
     bestFlight.samples = float32
