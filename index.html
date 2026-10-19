@@ -79,6 +79,16 @@
         >
           💚 Поддержать автора
         </a>
+        <div class="settings-gpu-hint" id="gpuHint" hidden>
+          <div class="settings-gpu-hint-warn" id="gpuHintStatus"></div>
+          <button type="button" class="settings-gpu-hint-toggle" id="gpuHintToggle">
+            Как исправить <span id="gpuHintArrow">▸</span>
+          </button>
+          <div class="settings-gpu-hint-body" id="gpuHintBody" hidden>
+            <b>Windows:</b> Параметры → Система → Дисплей → Графика → Google Chrome →
+            <b>Высокая производительность</b>. Полностью закройте Chrome и откройте заново.
+          </div>
+        </div>
         <label class="settings-row">
           <input type="checkbox" id="lowSpecToggle" />
           <span>Режим слабого устройства</span>

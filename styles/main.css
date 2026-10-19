@@ -1090,3 +1090,51 @@ canvas {
     0 1px 0 #1f7a3d,
     0 3px 8px rgba(0, 0, 0, 0.35);
 }
+
+/* ================================================================
+   GPU-hint — предупреждение о встроенной видеокарте
+   ================================================================ */
+.settings-gpu-hint {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 159, 26, 0.08);
+  border: 1px solid rgba(255, 159, 26, 0.35);
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #eaf2ff;
+  text-align: left;
+}
+
+.settings-gpu-hint-warn {
+  color: #ff9f1a;
+  font-weight: 700;
+}
+
+.settings-gpu-hint-toggle {
+  margin-top: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #ffd75e;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.settings-gpu-hint-toggle:hover {
+  filter: brightness(1.15);
+}
+
+.settings-gpu-hint-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 159, 26, 0.2);
+  opacity: 0.85;
+}
+.settings-gpu-hint-body b {
+  color: #ffd75e;
+  font-weight: 700;
+}

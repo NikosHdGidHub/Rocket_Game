@@ -1527,3 +1527,23 @@ export const SOUNDS = /** @type {const} */ ({
     },
   },
 })
+
+/* ================================================================
+   GPU_HINT — инструкция «если лагает на мощном ПК».
+   Отображается в настройках ⚙️ под кнопкой поддержки.
+
+   Автодетект WebGL-renderer через WEBGL_debug_renderer_info:
+     • Если строка содержит UHD/HD Graphics/Iris — это ВСТРОЕННАЯ графика,
+       типичная причина лагов на ноутбуках с дискретной видеокартой.
+     • Если NVIDIA/AMD/Radeon/Apple M — ДИСКРЕТНАЯ, всё хорошо.
+   Если браузер не отдаёт renderer — блок просто не показывает статус.
+================================================================ */
+export const GPU_HINT = /** @type {const} */ ({
+  enabled: true,
+
+  /** Регэксп «встроенной» графики в UNMASKED_RENDERER_WEBGL. */
+  integratedPattern: /ANGLE \(Intel.*(UHD|Iris|HD Graphics)/i,
+
+  /** Регэксп «дискретной» — для зелёной галочки. */
+  discretePattern: /ANGLE \((NVIDIA|AMD|Radeon|Apple M)/i,
+})

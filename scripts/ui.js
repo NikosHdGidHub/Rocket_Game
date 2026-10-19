@@ -347,6 +347,42 @@ export function init(callbacks) {
     })
   }
 
+  /* ---------- GPU-hint: показываем ТОЛЬКО если встроенная графика ---------- */
+  const $gpuHint = document.getElementById('gpuHint')
+  const $gpuHintStatus = document.getElementById('gpuHintStatus')
+  const $gpuHintToggle = document.getElementById('gpuHintToggle')
+  const $gpuHintBody = document.getElementById('gpuHintBody')
+  const $gpuHintArrow = document.getElementById('gpuHintArrow')
+
+  if ($gpuHint && CFG.GPU_HINT.enabled) {
+    try {
+      const gl = renderer.getContext()
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+      const rendererStr = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : ''
+
+      if (rendererStr && CFG.GPU_HINT.integratedPattern.test(rendererStr)) {
+        // "ANGLE (Intel, Intel(R) UHD Graphics (0x46A3) Direct3D11...)" →
+        // "Intel(R) UHD Graphics"
+        const m = rendererStr.match(/ANGLE \([^,]+,\s*(.+?)\s*(?:\(|Direct|,|$)/)
+        const display = m ? m[1] : 'встроенная графика'
+
+        $gpuHintStatus.textContent = `⚠️ Сейчас: ${display} (встроенная — вероятная причина лагов)`
+        $gpuHint.hidden = false
+      }
+      // На дискретной / при отсутствии данных — блок остаётся скрытым (hidden)
+    } catch (e) {
+      console.warn('gpu hint: не удалось определить renderer:', e)
+    }
+  }
+
+  if ($gpuHintToggle && $gpuHintBody && $gpuHintArrow) {
+    $gpuHintToggle.addEventListener('click', () => {
+      const show = $gpuHintBody.hidden
+      $gpuHintBody.hidden = !show
+      $gpuHintArrow.textContent = show ? '▾' : '▸'
+    })
+  }
+
   if ($settingsBtn && $settingsPanel) {
     $settingsBtn.addEventListener('click', (e) => {
       e.stopPropagation()
