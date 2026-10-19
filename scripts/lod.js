@@ -612,6 +612,14 @@ export function updateFogEllipse(dt) {
   }
 }
 
+// Плавное гашение земли у дальней плоскости (используем CFG.SPACE).
+function smoothstep(a, b, x) {
+  if (x <= a) return 0
+  if (x >= b) return 1
+  const t = (x - a) / (b - a)
+  return t * t * (3 - 2 * t)
+}
+
 /* ================================================================
    updateLOD — определение 2D/3D режима, fade, видимости,
    динамический туман по высоте.
@@ -660,16 +668,22 @@ function updateLOD(dt) {
   if (lod.fade < 0.005) lod.fade = 0
   if (lod.fade > 0.995) lod.fade = 1
 
-  // Overlay виден только в 2D-режиме (lod.fade > 0) И в низком far-режиме.
-  // На высокой высоте точки деревьев уже нечитаемы — экономим fill-rate.
-  const overlayOpacity = farHighMode ? 0 : lod.fade
+  // ─── Ground fade у дальней плоскости ───
+  // На высоте ~12–15 км край диска земли попадает в camera.far. Без этого
+  // множителя виден резкий круг. Гасим землю ДО того, как она упрётся в far.
+  const groundFade =
+    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
+  const farOpacity = lod.fade * groundFade
+
+  // Overlay виден только в 2D-режиме И в низком far-режиме.
+  const overlayOpacity = farHighMode ? 0 : farOpacity
   for (const c of overlayChunks.values()) {
     c.mat.opacity = overlayOpacity
     c.mesh.visible = overlayOpacity > 0.005
   }
 
-  farGroundMat.opacity = lod.fade
-  const farVisible = lod.fade > 0.005
+  farGroundMat.opacity = farOpacity
+  const farVisible = farOpacity > 0.005
   for (const c of farTiles.values()) c.mesh.visible = farVisible
 
   const showFine = lod.fade < 0.95
