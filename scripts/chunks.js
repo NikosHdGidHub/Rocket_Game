@@ -174,14 +174,11 @@ function makeChunkMesh(cx, cz, items) {
   const VPR = CHUNK_SEG + 1
   const heightGrid = new Float32Array(VPR * VPR)
 
-  /* ---------- Проход 1: высоты, UV, цвета, нормали ---------- */
+  /* ---------- Проход 1: высоты, UV, цвета ---------- */
   for (let i = 0; i < pos.count; i++) {
     const wx = cxw + pos.getX(i)
     const wz = czw + pos.getZ(i)
-
     const h = terrainHeight(wx, wz)
-    const hx = terrainHeight(wx + step, wz)
-    const hz = terrainHeight(wx, wz + step)
 
     pos.setY(i, h)
 
@@ -191,11 +188,6 @@ function makeChunkMesh(cx, cz, items) {
 
     uv.setXY(i, wx / GROUND_TILE_LOCAL, wz / GROUND_TILE_LOCAL)
 
-    const nx = -(hx - h) / step
-    const nz = -(hz - h) / step
-    const len = Math.hypot(nx, 1, nz)
-    nrm.setXYZ(i, nx / len, 1 / len, nz / len)
-
     heightToTerrainColor(h, col)
     const b = terrainBrightnessNoise(wx, wz)
     colArr[i * 3] = col.r * b
@@ -203,7 +195,31 @@ function makeChunkMesh(cx, cz, items) {
     colArr[i * 3 + 2] = col.b * b
   }
 
-  /* ---------- Проход 2: запекание теней ---------- */
+  /* ---------- Проход 2: нормали из готовых высот ---------- */
+  for (let i = 0; i < pos.count; i++) {
+    const gix = Math.round((pos.getX(i) + CHUNK_SIZE / 2) / step)
+    const giz = Math.round((pos.getZ(i) + CHUNK_SIZE / 2) / step)
+    const h = heightGrid[giz * VPR + gix]
+
+    // hx/hz — уже посчитанные высоты соседей. Крайние вершины
+    // (правый столбец / нижняя строка) — единственные, кто досчитывает
+    // вручную через terrainHeight (их ~122 на чанк, не 11k).
+    const hx =
+      gix < CHUNK_SEG
+        ? heightGrid[giz * VPR + gix + 1]
+        : terrainHeight(cxw + pos.getX(i) + step, czw + pos.getZ(i))
+    const hz =
+      giz < CHUNK_SEG
+        ? heightGrid[(giz + 1) * VPR + gix]
+        : terrainHeight(cxw + pos.getX(i), czw + pos.getZ(i) + step)
+
+    const nx = -(hx - h) / step
+    const nz = -(hz - h) / step
+    const len = Math.hypot(nx, 1, nz)
+    nrm.setXYZ(i, nx / len, 1 / len, nz / len)
+  }
+
+  /* ---------- Запекание теней ---------- */
   const shLenXZ = Math.hypot(SUN_DIR.x, SUN_DIR.z) || 1
   const shDirX = -SUN_DIR.x / shLenXZ
   const shDirZ = -SUN_DIR.z / shLenXZ

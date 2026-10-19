@@ -10,7 +10,7 @@ import * as CFG from './config.js'
 import { scene, camera, groundTex, applySkyFog, fogU } from './scene.js'
 import { lod, rocketState } from './state.js'
 import { boss } from './entities.js'
-import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS, computeChunkProps } from './chunks.js'
+import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS, getProps } from './chunks.js'
 import { terrainHeight, heightToTerrainColor, hash2i } from './world/world.js'
 
 /* ================================================================
@@ -82,41 +82,103 @@ function createFarTileBuilder(fx, fz) {
   const vertsPerRow = farTileSeg + 1
   const totalRows = farTileSeg + 1
   const eps = FAR_TILE_SIZE / farTileSeg
+
+  let phase = 0 // 0 = высоты; 1 = нормали
   let row = 0
 
   return {
     geo,
     step(budgetMs) {
       const t0 = performance.now()
-      while (row < totalRows && performance.now() - t0 < budgetMs) {
-        const start = row * vertsPerRow
-        const end = start + vertsPerRow
-        for (let i = start; i < end; i++) {
-          const wx = cxw + pos.getX(i)
-          const wz = czw + pos.getZ(i)
-          const h = terrainHeight(wx, wz)
-          const hx = terrainHeight(wx + eps, wz)
-          const hz = terrainHeight(wx, wz + eps)
-          pos.setY(i, h)
-          uv.setXY(i, wx / TILE, wz / TILE)
-          const nx = -(hx - h) / eps
-          const nz = -(hz - h) / eps
-          const len = Math.hypot(nx, 1, nz)
-          nrm.setXYZ(i, nx / len, 1 / len, nz / len)
-          heightToTerrainColor(h, col)
-          colArr[i * 3] = col.r
-          colArr[i * 3 + 1] = col.g
-          colArr[i * 3 + 2] = col.b
+
+      /* ---------- Фаза 0: высоты, UV, цвета ---------- */
+      if (phase === 0) {
+        while (row < totalRows && performance.now() - t0 < budgetMs) {
+          const start = row * vertsPerRow
+          const end = start + vertsPerRow
+          for (let i = start; i < end; i++) {
+            const wx = cxw + pos.getX(i)
+            const wz = czw + pos.getZ(i)
+            const h = terrainHeight(wx, wz)
+            pos.setY(i, h)
+            uv.setXY(i, wx / TILE, wz / TILE)
+            heightToTerrainColor(h, col)
+            colArr[i * 3] = col.r
+            colArr[i * 3 + 1] = col.g
+            colArr[i * 3 + 2] = col.b
+          }
+          row++
         }
-        row++
+        if (row >= totalRows) {
+          pos.needsUpdate = true
+          uv.needsUpdate = true
+          phase = 1
+          row = 0
+        }
       }
-      if (row >= totalRows) {
-        pos.needsUpdate = true
-        uv.needsUpdate = true
-        nrm.needsUpdate = true
-        geo.attributes.color.needsUpdate = true
-        return true
+
+      /* ---------- Фаза 1: нормали из готовых высот ---------- */
+      if (phase === 1) {
+        while (row < farTileSeg && performance.now() - t0 < budgetMs) {
+          const iz = row
+          for (let ix = 0; ix < farTileSeg; ix++) {
+            const i00 = iz * vertsPerRow + ix
+            const h = pos.getY(i00)
+            const hx = pos.getY(i00 + 1)
+            const hz = pos.getY(i00 + vertsPerRow)
+            const nx = -(hx - h) / eps
+            const nz = -(hz - h) / eps
+            const len = Math.hypot(nx, 1, nz)
+            nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
+          }
+          row++
+        }
+        if (row >= farTileSeg) {
+          // Крайние ряды/столбцы — через terrainHeight (их мало)
+          // Нижняя строка (iz = farTileSeg)
+          for (let ix = 0; ix < farTileSeg; ix++) {
+            const i00 = farTileSeg * vertsPerRow + ix
+            const wx = cxw + pos.getX(i00)
+            const wz = czw + pos.getZ(i00)
+            const h = pos.getY(i00)
+            const hx = pos.getY(i00 + 1)
+            const hz = terrainHeight(wx, wz + eps)
+            const nx = -(hx - h) / eps
+            const nz = -(hz - h) / eps
+            const len = Math.hypot(nx, 1, nz)
+            nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
+          }
+          // Правый столбец (ix = farTileSeg), кроме нижнего угла
+          for (let iz = 0; iz < farTileSeg; iz++) {
+            const i00 = iz * vertsPerRow + farTileSeg
+            const wx = cxw + pos.getX(i00)
+            const wz = czw + pos.getZ(i00)
+            const h = pos.getY(i00)
+            const hx = terrainHeight(wx + eps, wz)
+            const hz = pos.getY(i00 + vertsPerRow)
+            const nx = -(hx - h) / eps
+            const nz = -(hz - h) / eps
+            const len = Math.hypot(nx, 1, nz)
+            nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
+          }
+          // Правый-нижний угол
+          const iC = farTileSeg * vertsPerRow + farTileSeg
+          const wxC = cxw + pos.getX(iC)
+          const wzC = czw + pos.getZ(iC)
+          const hC = pos.getY(iC)
+          const hxC = terrainHeight(wxC + eps, wzC)
+          const hzC = terrainHeight(wxC, wzC + eps)
+          const nxC = -(hxC - hC) / eps
+          const nzC = -(hzC - hC) / eps
+          const lenC = Math.hypot(nxC, 1, nzC)
+          nrm.setXYZ(iC, nxC / lenC, 1 / lenC, nzC / lenC)
+
+          nrm.needsUpdate = true
+          geo.attributes.color.needsUpdate = true
+          return true
+        }
       }
+
       return false
     },
   }
@@ -351,7 +413,7 @@ function createOverlayBuilder(ox, oz) {
         while (row < totalChunkCells && performance.now() - t0 < budgetMs) {
           const cx = c0x + (row % chunksPerSide)
           const cz = c0z + Math.floor(row / chunksPerSide)
-          const items = computeChunkProps(cx, cz)
+          const items = getProps(cx, cz)
 
           for (let k = 0; k < items.length; k++) {
             const it = items[k]

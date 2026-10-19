@@ -60,11 +60,11 @@ async function initialLoad() {
   const $text = document.getElementById('loadingText')
   if ($loading) $loading.style.display = 'flex'
 
-  // ---------- Считаем общий объём ----------
+  // ---------- Считаем объём: чанки + дальние тайлы ----------
+  // Overlay НЕ считаем — загрузим их в фоне после старта.
   const totalChunks = Chunks.countInitial()
   const totalFar = Lod.countInitialFar()
-  const totalOverlays = Lod.countInitialOverlays()
-  const total = totalChunks + totalFar + totalOverlays
+  const total = totalChunks + totalFar
 
   let label = 'Загрузка мира'
   let doneGlobal = 0
@@ -89,12 +89,11 @@ async function initialLoad() {
     setBar()
   })
 
-  // ---------- 3) Overlay (точечные деревья) ----------
-  label = 'Лес'
-  await Lod.loadInitialOverlays((done) => {
-    doneGlobal = totalChunks + totalFar + done
-    setBar()
-  })
+  // ---------- 3) Overlay — в фоне через главный цикл ----------
+  // Lod.update() сам вызывает refillOverlayChunks() при первом
+  // кадре (т.к. _lastOverlay.x = NaN). processLODWork тратит
+  // 3 мс/кадр на их загрузку. За 20–30 с до первого 2D-режима
+  // они успеют загрузиться.
 
   if ($loading) $loading.style.display = 'none'
 
