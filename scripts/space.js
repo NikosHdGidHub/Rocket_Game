@@ -239,19 +239,20 @@ function rebuildSphereInstances() {
   const jitter = SPC.spheres.colorJitter
   const cam = camera.position
 
-  // Собираем активные ячейки и сортируем по удалённости от камеры.
-  // Если (2·loadRadius+1)^3 · perCell > maxCount — без сортировки
-  // в инстанс попадают первые по порядку вставки ячейки (угол области),
-  // которые при большом loadRadius далеко за far-плоскостью → сферы невидимы.
-  const cellArr = []
-  for (const key of _activeCells) {
-    const p = key.split(',')
-    const ox = (+p[0] + 0.5) * CS - cam.x
-    const oy = (+p[1] + 0.5) * CS - cam.y
-    const oz = (+p[2] + 0.5) * CS - cam.z
-    cellArr.push({ key, d2: ox * ox + oy * oy + oz * oz })
+  // Сортируем по расстоянию ТОЛЬКО если реально не влезаем.
+  const totalCount = _activeCells.size * SPC.spheres.perCell
+  let cellArr = null
+  if (totalCount > maxN) {
+    cellArr = []
+    for (const key of _activeCells) {
+      const p = key.split(',')
+      const ox = (+p[0] + 0.5) * CS - cam.x
+      const oy = (+p[1] + 0.5) * CS - cam.y
+      const oz = (+p[2] + 0.5) * CS - cam.z
+      cellArr.push({ key, d2: ox * ox + oy * oy + oz * oz })
+    }
+    cellArr.sort((a, b) => a.d2 - b.d2)
   }
-  cellArr.sort((a, b) => a.d2 - b.d2)
 
   const colorAttr = _sphereMesh.geometry.getAttribute('aColor')
   const phaseAttr = _sphereMesh.geometry.getAttribute('aPhase')
@@ -259,7 +260,9 @@ function rebuildSphereInstances() {
   const phaseArr = phaseAttr.array
 
   let idx = 0
-  outer: for (const { key } of cellArr) {
+  const iterable = cellArr || _activeCells
+  outer: for (const entry of iterable) {
+    const key = cellArr ? entry.key : entry
     const items = _sphereCells.get(key)
     if (!items) continue
     for (let i = 0; i < items.length; i++) {

@@ -37,18 +37,39 @@ let _upgrades = [] // ссылка на CFG.UPGRADES
 let _costOf = () => 0 // колбэк расчёта цены
 let _onAchievements = null
 
+/* Кэши, чтобы не трогать DOM каждый кадр */
+let _lastDist = -1
+let _lastCoins = -1
+let _lastBest = -1
+let _lastFuel = -1
+let _lastInFlight = null
+
 /* ================================================================
    Display-функции (вызываются из game.js)
 ================================================================ */
 export function updateHUD() {
-  $dist.textContent = Math.max(0, Math.floor(window.__rocketPosX || 0))
-  $coins.textContent = G.coins
-  $best.textContent = Math.floor(G.best)
+  const d = Math.max(0, Math.floor(window.__rocketPosX || 0))
+  if (d !== _lastDist) {
+    _lastDist = d
+    $dist.textContent = d
+  }
+  if (G.coins !== _lastCoins) {
+    _lastCoins = G.coins
+    $coins.textContent = G.coins
+  }
+  const b = Math.floor(G.best)
+  if (b !== _lastBest) {
+    _lastBest = b
+    $best.textContent = b
+  }
 }
 // Внутренний хак: game.js обновит window.__rocketPosX перед вызовом.
 // Проще: game.js сам передаёт x. Дадим уточнённую версию ниже.
 export function setHUDDist(x) {
-  $dist.textContent = Math.max(0, Math.floor(x))
+  const v = Math.max(0, Math.floor(x))
+  if (v === _lastDist) return
+  _lastDist = v
+  $dist.textContent = v
 }
 
 export function renderShop() {
@@ -157,8 +178,11 @@ export function updateChestProgress(distance, progress, near, missed = false) {
 }
 
 export function updateFuelBar(fuel, maxFuel) {
-  $fuelFill.style.width = (fuel / maxFuel) * 100 + '%'
-  $fuelText.textContent = fuel.toFixed(1)
+  if (fuel !== _lastFuel) {
+    _lastFuel = fuel
+    $fuelFill.style.width = (fuel / maxFuel) * 100 + '%'
+    $fuelText.textContent = fuel.toFixed(1)
+  }
 }
 
 let cardCloseHandler = null
@@ -179,6 +203,8 @@ export function showCardPopup(card) {
 ================================================================ */
 export function update() {
   const inFlight = G.phase === 'fly'
+  if (inFlight === _lastInFlight) return
+  _lastInFlight = inFlight
 
   if (inFlight) {
     $boostUI.classList.add('on')
@@ -190,7 +216,6 @@ export function update() {
     $touchUI.classList.add('hidden')
   }
 
-  // Панель магазина видна только в ready/landed
   const panelVisible = G.phase === 'ready' || G.phase === 'landed'
   $launch.classList.toggle('hidden', !panelVisible)
   $shop.style.display = panelVisible ? '' : 'none'

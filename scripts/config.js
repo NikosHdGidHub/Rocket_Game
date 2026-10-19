@@ -679,7 +679,7 @@ export const OVERLAY = /** @type {const} */ ({
   size: 1600,
 
   /** Сегментов сетки у плоскости overlay (для подгонки по рельефу). */
-  segments: 200,
+  segments: 60,
 
   /**
    * Сторона canvas-текстуры (пиксели).
@@ -689,13 +689,13 @@ export const OVERLAY = /** @type {const} */ ({
    *   2048 → 0.78 м/px, ~400 МБ (для мощных GPU)
    * [типично] 1024–2048.
    */
-  canvasSize: 1536,
+  canvasSize: 1024,
 
   /** Радиус прогрузки (в overlay-чанках). */
-  loadRadius: 2,
+  loadRadius: 1,
 
   /** Радиус выгрузки. */
-  unloadRadius: 3,
+  unloadRadius: 2,
 
   /**
    * Диаметр точки в пикселях canvas.
@@ -1094,7 +1094,7 @@ export const SPACE = /** @type {const} */ ({
     /** Сфер в одной ячейке. */
     perCell: 2,
     /** Радиус загрузки ячеек вокруг камеры (в ячейках, по каждой оси). */
-    loadRadius: 20,
+    loadRadius: 6,
     /** Радиус сферы (м). */
     radius: [7, 30],
     /** Палитра — выбирается случайно на каждую сферу. */
