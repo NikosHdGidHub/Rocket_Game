@@ -12,6 +12,7 @@ import * as UI from './ui.js'
 import * as Ach from './achievements.js'
 import * as AchModal from './achievementsModal.js'
 import * as DayNight from './daynight.js'
+import * as Space from './space.js'
 import { G, time } from './state.js'
 import * as Sounds from './sounds.js'
 
@@ -50,6 +51,7 @@ Lod.setPhaseGetter(() => G.phase)
 
 Chunks.init() // навешивает sky-fog на propMat
 Lod.init() // создаёт farGroundMat (нужен groundTex)
+Space.init() //  (создаёт звёзды и InstancedMesh сфер)
 
 /* ================================================================
    2. Первичная загрузка с прогресс-баром.
@@ -115,6 +117,7 @@ function loop(now) {
   Chunks.update() // очередь 3D-чанков + persistent visibility
   Lod.update(dt) // LOD, fog-ellipse, far + overlay очереди
   DayNight.update(dt) // ← обновляем небо/свет по текущему времени цикла
+  Space.update() //  лерпит их к космосу, двигает звёзды/сферы
   UI.update() // HUD/панели по фазе
   Scene.updateScenery() // ← пересчитывает позицию солнца из SUN_DIR
 
@@ -152,3 +155,4 @@ window.dbgPersistent = () => {
 
 window.dbgDayNight = () => DayNight.debug()
 window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)
+window.dbgSpace = () => console.log(Space.debug())

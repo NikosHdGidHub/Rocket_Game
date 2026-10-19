@@ -25,6 +25,7 @@ export let hemiLight
 export const SKY_ZENITH = new THREE.Color(CFG.SKY.zenith)
 export const SKY_HORIZON = new THREE.Color(CFG.SKY.horizon)
 export const SUN_COLOR = new THREE.Color(CFG.SKY.sun)
+export const HAZE_COLOR = new THREE.Vector3(...CFG.SKY.hazeColor)
 export const SUN_DIR = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
 
 export const scene = new THREE.Scene()
@@ -57,7 +58,7 @@ export function applySkyFog(mat) {
     shader.uniforms.skyExponent = { value: CFG.SKY.exponent }
     shader.uniforms.sunColorF = { value: SUN_COLOR }
     shader.uniforms.sunDirF = { value: SUN_DIR }
-    shader.uniforms.hazeColorF = { value: new THREE.Vector3(...CFG.SKY.hazeColor) }
+    shader.uniforms.hazeColorF = { value: HAZE_COLOR }
     shader.uniforms.hazePowF = { value: CFG.SKY.hazePow }
     shader.uniforms.glowPowF = { value: CFG.SKY.glowPow }
     shader.uniforms.glowAmtF = { value: CFG.SKY.glowAmt }
@@ -187,7 +188,7 @@ export function init() {
       sunColor: { value: SUN_COLOR },
       sunDir: { value: SUN_DIR },
       exponent: { value: CFG.SKY.exponent },
-      hazeColor: { value: new THREE.Vector3(...CFG.SKY.hazeColor) },
+      hazeColor: { value: HAZE_COLOR },
       hazePow: { value: CFG.SKY.hazePow },
       glowPow: { value: CFG.SKY.glowPow },
       glowAmt: { value: CFG.SKY.glowAmt },

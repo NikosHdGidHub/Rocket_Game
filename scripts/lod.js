@@ -288,6 +288,36 @@ const OVERLAY_UNLOAD_R = CFG.OVERLAY.unloadRadius
 const overlayChunks = new Map()
 const pendingOverlays = new Map()
 
+/* ---------- Кэш prop-items для overlay ----------
+   getProps() из chunks.js прунится по радиусу loadForward/Back/Side (~50 cells),
+   а overlay требует 40×40 cells. Без своего кэша большинство cells пересчитываются
+   заново → 224k итераций computeChunkProps на каждый overlay-чанк.
+   Этот кэш держит ссылки на уже посчитанные items и переживает прунинг глобального. */
+const overlayPropsCache = new Map()
+
+function getOverlayProps(cx, cz) {
+  const key = cx + ',' + cz
+  let items = overlayPropsCache.get(key)
+  if (items === undefined) {
+    items = getProps(cx, cz) // заполняет и глобальный кэш — не мешает
+    overlayPropsCache.set(key, items)
+  }
+  return items
+}
+
+function pruneOverlayPropsCache(camX, camZ) {
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
+  // Радиус в chunk-cells: overlay-radius (2) × 8 cells + запас 4
+  const R = OVERLAY_LOAD_R * Math.round(OVERLAY_SIZE / CHUNK_SIZE) + 4 // ≈20
+  for (const key of overlayPropsCache.keys()) {
+    const [cs, czs] = key.split(',')
+    if (Math.abs(+cs - cxi) > R || Math.abs(+czs - czi) > R) {
+      overlayPropsCache.delete(key)
+    }
+  }
+}
+
 /* ---------- Хелперы рисования точек ---------- */
 function hexToRgb(hex) {
   return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]
@@ -413,7 +443,7 @@ function createOverlayBuilder(ox, oz) {
         while (row < totalChunkCells && performance.now() - t0 < budgetMs) {
           const cx = c0x + (row % chunksPerSide)
           const cz = c0z + Math.floor(row / chunksPerSide)
-          const items = getProps(cx, cz)
+          const items = getOverlayProps(cx, cz)
 
           for (let k = 0; k < items.length; k++) {
             const it = items[k]
@@ -454,6 +484,11 @@ function createOverlayBuilder(ox, oz) {
 // локальный алиас — W из builder не виден в замыкании выше
 const H_WRAP = OVERLAY_CANVAS
 
+function getOverlayOpacity() {
+  const groundFade =
+    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
+  return farHighMode ? 0 : lod.fade * groundFade
+}
 function finalizeOverlayChunk(key, ox, oz, builder) {
   const tex = new THREE.CanvasTexture(builder.canvas)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -476,8 +511,15 @@ function finalizeOverlayChunk(key, ox, oz, builder) {
   const mesh = new THREE.Mesh(builder.geo, mat)
   mesh.position.set(ox * OVERLAY_SIZE + OVERLAY_SIZE / 2, 0, oz * OVERLAY_SIZE + OVERLAY_SIZE / 2)
   mesh.renderOrder = 2
-  mesh.material.opacity = lod.fade
-  mesh.visible = lod.fade > 0.005
+  // Правильная текущая прозрачность (учитывает groundFade и farHighMode).
+  // Иначе новый чанк «вспыхивает» на 1+ кадров, пока кэш _lastOverlayOpacity
+  // не пересчитается — именно это и выглядит как «глюк оверлея».
+  const op = getOverlayOpacity()
+  mesh.material.opacity = op
+  mesh.visible = op > 0.005
+  // Инвалидируем кэш — на всякий случай, чтобы следующий кадр гарантированно
+  // переустановил opacity для всех чанков (включая этот новый).
+  _lastOverlayOpacity = NaN
   scene.add(mesh)
 
   overlayChunks.set(key, { mesh, mat, tex, geo: builder.geo })
@@ -533,6 +575,7 @@ export function refillOverlayChunks(camX, camZ) {
     }
   }
   for (const k of toUnload) unloadOverlayChunk(k)
+  pruneOverlayPropsCache(camX, camZ)
 }
 
 /* ================================================================
@@ -612,6 +655,14 @@ export function updateFogEllipse(dt) {
   }
 }
 
+// Плавное гашение земли у дальней плоскости (используем CFG.SPACE).
+function smoothstep(a, b, x) {
+  if (x <= a) return 0
+  if (x >= b) return 1
+  const t = (x - a) / (b - a)
+  return t * t * (3 - 2 * t)
+}
+
 /* ================================================================
    updateLOD — определение 2D/3D режима, fade, видимости,
    динамический туман по высоте.
@@ -620,6 +671,10 @@ const FOG_3D_NEAR = CFG.FOG.near3D
 const FOG_3D_FAR = CFG.FOG.far3D
 const FOG_2D_NEAR = CFG.FOG.near2D
 const FOG_2D_FAR = CFG.FOG.far2D
+
+let _lastOverlayOpacity = -1
+let _lastFarOpacity = -1
+let _lastShowFineChunks = null
 
 function updateLOD(dt) {
   const CHANGE_OVERLAY = CFG.LOD.changeAltitude
@@ -660,22 +715,36 @@ function updateLOD(dt) {
   if (lod.fade < 0.005) lod.fade = 0
   if (lod.fade > 0.995) lod.fade = 1
 
-  // Overlay виден только в 2D-режиме (lod.fade > 0) И в низком far-режиме.
-  // На высокой высоте точки деревьев уже нечитаемы — экономим fill-rate.
-  const overlayOpacity = farHighMode ? 0 : lod.fade
-  for (const c of overlayChunks.values()) {
-    c.mat.opacity = overlayOpacity
-    c.mesh.visible = overlayOpacity > 0.005
+  // ─── Ground fade у дальней плоскости ───
+  const groundFade =
+    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
+  const farOpacity = lod.fade * groundFade
+
+  // Overlay виден только в 2D-режиме И в низком far-режиме.
+  const overlayOpacity = getOverlayOpacity()
+
+  if (overlayOpacity !== _lastOverlayOpacity) {
+    for (const c of overlayChunks.values()) {
+      c.mat.opacity = overlayOpacity
+      c.mesh.visible = overlayOpacity > 0.005
+    }
+    _lastOverlayOpacity = overlayOpacity
   }
 
-  farGroundMat.opacity = lod.fade
-  const farVisible = lod.fade > 0.005
-  for (const c of farTiles.values()) c.mesh.visible = farVisible
+  if (farOpacity !== _lastFarOpacity) {
+    farGroundMat.opacity = farOpacity
+    const farVisible = farOpacity > 0.005
+    for (const c of farTiles.values()) c.mesh.visible = farVisible
+    _lastFarOpacity = farOpacity
+  }
 
   const showFine = lod.fade < 0.95
-  for (const [key, c] of chunks) {
-    if (PERSISTENT_CHUNKS.has(key)) continue
-    c.mesh.visible = showFine
+  if (showFine !== _lastShowFineChunks) {
+    for (const [key, c] of chunks) {
+      if (PERSISTENT_CHUNKS.has(key)) continue
+      c.mesh.visible = showFine
+    }
+    _lastShowFineChunks = showFine
   }
 
   const want3D = lod.fade < 0.15
@@ -734,11 +803,29 @@ export function update(dt) {
   const camZ = camera.position.z
 
   updateFogEllipse(dt)
-  updateLOD(dt) // обновляет lod.altSmooth, lod.fade, видимости
+  updateLOD(dt)
+
+  // ─── Полный космос: нижний мир уже погашен (groundFade=0). ───
+  // Ничего не грузим, а pending-очереди чистим, если что-то висело.
+  if (rocketState.pos.y >= CFG.SPACE.groundFadeEnd) {
+    if (pendingFarTiles.size > 0) {
+      for (const [, p] of pendingFarTiles) p.builder.geo.dispose()
+      pendingFarTiles.clear()
+    }
+    if (pendingOverlays.size > 0) {
+      for (const [, p] of pendingOverlays) p.builder.geo.dispose()
+      pendingOverlays.clear()
+    }
+    // Сбрасываем кэш клетки — при спуске refill отработает заново
+    _lastFar.x = NaN
+    _lastFar.z = NaN
+    _lastOverlay.x = NaN
+    _lastOverlay.z = NaN
+    return
+  }
 
   const modeChanged = updateFarMode(lod.altSmooth)
 
-  // far-тайлы: смена cell ИЛИ смена режима (low ↔ high)
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
   if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
@@ -747,7 +834,6 @@ export function update(dt) {
     _lastFar.z = fzi
   }
 
-  // overlay-чанки — как было
   const oxi = Math.floor(camX / OVERLAY_SIZE)
   const ozi = Math.floor(camZ / OVERLAY_SIZE)
   if (oxi !== _lastOverlay.x || ozi !== _lastOverlay.z) {

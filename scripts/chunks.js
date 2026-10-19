@@ -398,6 +398,11 @@ export function loadChunk(cx, cz) {
   const props = spawnChunkProps(cx, cz, items, mesh.userData.terrainSampler)
 
   scene.add(mesh)
+  // Явно задаём видимость — иначе новый чанк получит `visible = true`
+  // по умолчанию и будет мигать в 2D-режиме, пока loop showFine не сработает
+  // (с кэшем — сработает только при изменении lod.fade, а он может быть
+  //  стабилен = 1, и чанк останется видимым → проседание под overlay).
+  mesh.visible = lod.fade < 0.95
   for (const p of props) p.visible = lod.showing3D
   chunks.set(key, { mesh, props })
 }
@@ -526,6 +531,11 @@ let _lastPersist = { cxi: NaN, czi: NaN, showFine: null, showProps: null }
 let _preloading = false
 
 export function update() {
+  // Полный 2D без префетча — ни очередей, ни видимости не трогаем.
+  if (lod.fade > 0.5 && !_preloading && lod.altSmooth > CFG.CHUNKS.preloadAltitude) {
+    return
+  }
+
   const camX = camera.position.x
   const camZ = camera.position.z
 
