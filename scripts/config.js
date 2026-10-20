@@ -1478,8 +1478,6 @@ export const CARDS = /** @type {const} */ ([
     key: 'thrust2x',
     icon: '🔥',
     name: 'Улучшенный двигатель',
-    desc: 'Тяга ×' + CHESTS.buffChests[1],
-    name: 'Улучшенный двигатель',
     desc: 'Тяга ×1.4',
     buff: 1.4,
     color: 0xff5c33,
@@ -1488,8 +1486,8 @@ export const CARDS = /** @type {const} */ ([
     key: 'power2x',
     icon: '🦵',
     name: 'Могучий пинок',
-    desc: 'Сила пинка ×3.5',
-    buff: 3.5,
+    desc: 'Сила пинка ×3',
+    buff: 3.0,
     color: 0xffd75e,
   },
   {
@@ -1505,7 +1503,7 @@ export const CARDS = /** @type {const} */ ([
     icon: '⏱️',
     name: 'Планерист',
     desc: 'Гравитация ×0.8',
-    buff: 0.8,
+    buff: 0.7,
     color: 0xc38bff,
   },
   {
@@ -1514,14 +1512,6 @@ export const CARDS = /** @type {const} */ ([
     name: 'Форсаж',
     desc: 'Даёт новую способность «Форсаж»',
     desc_second: 'Улучшает способность «Форсаж»',
-    color: 0xc38bff,
-  },
-  {
-    key: 'forsage',
-    icon: '🚀',
-    name: 'Форсаж',
-    desc: 'Дает новую способность "Форсаж"',
-    desc_second: 'улучшает способность "Форсаж" в 2 раза',
     color: 0xc38bff,
   },
 ])

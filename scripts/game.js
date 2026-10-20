@@ -560,19 +560,6 @@ function updateRocket(dt) {
     const angState = Angles.update(deg, dt)
     UI.setAlignText(deg, angState)
 
-  // ─── Угол, цвет пламени и HUD — с плавным «перетеканием» ───
-  let intensityMul = 1
-  let targetFlame = _baseFlameColor
-
-  if (G.phase === 'fly') {
-    let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
-    while (diff > Math.PI) diff -= Math.PI * 2
-    while (diff < -Math.PI) diff += Math.PI * 2
-    const deg = (Math.abs(diff) * 180) / Math.PI
-
-    const angState = Angles.update(deg, dt)
-    UI.setAlignText(deg, angState)
-
     intensityMul = angState.flameIntensity
 
     // Приоритет цвета: форсаж (фиолетовый) → буст (по углу) → базовый.
@@ -585,8 +572,7 @@ function updateRocket(dt) {
     }
   }
 
-  // baseAmp: 1 при бусте/форсаже (с учётом угловой интенсивности),
-  // 0.35 в полёте без буста, 0 в остальных фазах.
+  // baseAmp: 1 при бусте/форсаже, 0.35 в полёте без буста, 0 в остальных фазах.
   const baseAmp = boosting || forsageActive ? 1 : G.phase === 'fly' ? 0.35 : 0
   const boostAmt = baseAmp * intensityMul
   const flick = 0.85 + Math.random() * 0.3
