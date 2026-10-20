@@ -51,13 +51,19 @@
     opacity: 0.7; margin: 20px 0 10px;
   }
 
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button.action {
     background: linear-gradient(180deg, #ffd75e, #ff9f1a); color: #20130a; border: none;
     padding: 12px 24px; border-radius: 10px; font-family: inherit; font-size: 14px;
     font-weight: 800; letter-spacing: 1px; cursor: pointer;
-    box-shadow: 0 4px 0 #b96a00; transition: 0.08s; margin-top: 16px;
+    box-shadow: 0 4px 0 #b96a00; transition: 0.08s;
   }
   button.action:active { transform: translateY(3px); box-shadow: 0 1px 0 #b96a00; }
+  button.action.optimize {
+    background: linear-gradient(180deg, #c38bff, #9b59b6);
+    box-shadow: 0 4px 0 #4a2470; color: #fff;
+  }
+  button.action:disabled { opacity: 0.6; cursor: wait; }
 
   .result-box {
     background: linear-gradient(160deg, #1a2440, #0f1527); border: 2px solid #ffd75e;
@@ -66,10 +72,19 @@
   }
   .result-item { text-align: center; }
   .result-value { font-size: 32px; font-weight: 900; color: #ffd75e; line-height: 1; }
+  .result-value.purple { color: #c38bff; }
   .result-label {
     font-size: 11px; letter-spacing: 1px; opacity: 0.6;
     margin-top: 6px; text-transform: uppercase;
   }
+
+  .opt-summary {
+    background: linear-gradient(160deg, #2a1a44, #1a0f2a); border: 2px solid #c38bff;
+    border-radius: 12px; padding: 16px 20px; margin-top: 16px; text-align: center;
+  }
+  .opt-summary .big { font-size: 26px; font-weight: 900; color: #c38bff; }
+  .opt-summary .sub { font-size: 12px; opacity: 0.75; margin-top: 6px; }
+  .opt-summary .gain { color: #7dffa0; font-weight: 700; }
 
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
@@ -106,6 +121,18 @@
     background: rgba(255,255,255,0.1); padding: 2px 6px;
     border-radius: 3px; color: #eaf2ff;
   }
+
+  .chart-container {
+    background: rgba(0,0,0,0.25); border-radius: 10px; padding: 12px;
+    border: 1px solid rgba(255,255,255,0.06); margin-top: 12px;
+  }
+  .chart-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px; opacity: 0.7;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .chart-svg { width: 100%; height: auto; display: block; }
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -129,8 +156,14 @@
   <div id="cards-inputs"></div>
   <div class="section-title">Стратегия полёта</div>
   <div id="opts-inputs"></div>
-  <button class="action" id="sim-btn">🔮 Симулировать</button>
+
+  <div class="btn-row">
+    <button class="action" id="sim-btn">🔮 Симулировать</button>
+    <button class="action optimize" id="opt-btn">🎯 Найти оптимум</button>
+  </div>
+
   <div id="single-results"></div>
+  <div id="charts-row" class="charts-row" style="display:none"></div>
 </div>
 
 <div id="compare" class="tab-content">
@@ -162,8 +195,7 @@ import * as CFG from '../scripts/config.js'
 import { terrainHeight } from '../scripts/world/world.js'
 
 /* ================================================================
-   SIMULATION — точная копия физики game.js → updateRocket().
-   + PD-контроллер «авто-подъём носа» во время активной тяги.
+   SIMULATION — физика game.js → updateRocket() + траектория.
 ================================================================ */
 function simulate(upgrades, cards, opts = {}) {
   const {
@@ -208,10 +240,9 @@ function simulate(upgrades, cards, opts = {}) {
   const yaw       = CFG.GAME.flightYaw || 0
   const REST_Y    = CFG.GAME.restY
 
-  // PD-контроллер (идеализированный «умный пилот»)
-  const PD_KP = 6.0   // рад/с на рад ошибки
-  const PD_KD = 2.5   // демпфирование
-  const PD_VEL_MAX = 5.0  // рад/с — ограничение желаемой угловой скорости
+  const PD_KP = 6.0
+  const PD_KD = 2.5
+  const PD_VEL_MAX = 5.0
   const noseTargetRad = noseLiftEnabled ? (noseLiftAngle * Math.PI) / 180 : null
 
   const horiz = Math.cos(LAUNCH_ANGLE) * launchSpeed
@@ -225,7 +256,13 @@ function simulate(upgrades, cards, opts = {}) {
   let t = 0
   let maxAlt = 0
   let maxSpeed = launchSpeed
-  let boostEndAngle = null // угол в момент, когда тяга закончилась
+  let boostEndAngle = null
+  let maxTimeReached = false
+
+  // Траектория: [x, y] каждые 0.1 с
+  const trajectory = [[0, REST_Y]]
+  let nextSampleT = 0.1
+  const SAMPLE_INTERVAL = 0.1
 
   const maxSteps = Math.ceil(maxTime / dt)
 
@@ -237,12 +274,10 @@ function simulate(upgrades, cards, opts = {}) {
     const boosting = boostThrottle === 'always' && !forsageActive && fuel > 0
     const thrustActive = boosting || forsageActive
 
-    // Фиксируем угол, когда тяга «гаснет» — для отладки
     if (boostEndAngle === null && !thrustActive && t > 0.01) {
       boostEndAngle = (angZ * 180) / Math.PI
     }
 
-    // ─── Тяга ───
     let appliedThrust = 0
     if (boosting) {
       appliedThrust += thrustAccBase
@@ -260,10 +295,8 @@ function simulate(upgrades, cards, opts = {}) {
       vz += c * Math.sin(yaw) * appliedThrust * dt
     }
 
-    // ─── Гравитация ───
     vy -= gravityEff * dt
 
-    // ─── Сопротивление ───
     const speed = Math.sqrt(vx * vx + vy * vy + vz * vz)
     if (speed > 0.01) {
       const noseX = Math.cos(angZ) * Math.cos(yaw)
@@ -278,7 +311,6 @@ function simulate(upgrades, cards, opts = {}) {
       vz -= vz * aDrag * dt
     }
 
-    // ─── Позиция ───
     x += vx * dt
     y += vy * dt
     z += vz * dt
@@ -286,10 +318,11 @@ function simulate(upgrades, cards, opts = {}) {
     if (y <= restY && vy < 0) {
       y = restY
       t += dt
+      // Финальная точка
+      trajectory.push([x, y])
       break
     }
 
-    // ─── Управление углом ───
     let rotInput = 0
     if (thrustActive && noseTargetRad !== null) {
       const error = noseTargetRad - angZ
@@ -303,7 +336,6 @@ function simulate(upgrades, cards, opts = {}) {
     angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, angVel))
     angZ += angVel * dt
 
-    // ─── Аэродинамическая стабилизация ───
     const spd = Math.sqrt(vx * vx + vy * vy + vz * vz)
     if (ALIGN > 0 && spd > MIN_SPEED) {
       const desired = Math.atan2(vy, Math.hypot(vx, vz))
@@ -319,6 +351,13 @@ function simulate(upgrades, cards, opts = {}) {
     const altNow = y - terrainY
     if (altNow > maxAlt) maxAlt = altNow
     if (spd > maxSpeed) maxSpeed = spd
+
+    if (t >= nextSampleT) {
+      trajectory.push([x, y])
+      nextSampleT += SAMPLE_INTERVAL
+    }
+
+    if (step === maxSteps - 1) maxTimeReached = true
   }
 
   return {
@@ -328,8 +367,136 @@ function simulate(upgrades, cards, opts = {}) {
     maxSpeed,
     fuelUsed: maxFuelVal - fuel,
     landingTerrain: terrainHeight(x, z),
-    boostEndAngle, // null = тяга не включалась или не выключалась
+    boostEndAngle,
+    trajectory,
+    maxTimeReached,
   }
+}
+
+/* ================================================================
+   FIND OPTIMUM — прогон 0..90° с шагом 1°.
+================================================================ */
+function findOptimum(upgrades, cards, baseOpts) {
+  const results = []
+  let best = null
+
+  for (let angle = 0; angle <= 90; angle += 1) {
+    const r = simulate(upgrades, cards, {
+      ...baseOpts,
+      noseLiftEnabled: true,
+      noseLiftAngle: angle,
+    })
+    results.push({ angle, distance: r.distance })
+    if (!best || r.distance > best.distance) {
+      best = { angle, distance: r.distance, result: r }
+    }
+  }
+
+  // Baseline: без подъёма носа
+  const noLift = simulate(upgrades, cards, { ...baseOpts, noseLiftEnabled: false })
+
+  return { results, best, noLift }
+}
+
+/* ================================================================
+   SVG CHARTS
+================================================================ */
+function renderTrajectoryChart(trajectory) {
+  const W = 440, H = 280
+  const padL = 55, padR = 20, padT = 20, padB = 40
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+
+  let maxX = 0, maxY = 0
+  let peakIdx = 0
+  for (let i = 0; i < trajectory.length; i++) {
+    const [tx, ty] = trajectory[i]
+    if (tx > maxX) maxX = tx
+    if (ty > maxY) { maxY = ty; peakIdx = i }
+  }
+  if (maxX <= 0) maxX = 1
+  if (maxY <= 0) maxY = 1
+  maxX *= 1.05
+  maxY *= 1.08
+
+  const toX = (v) => padL + (v / maxX) * plotW
+  const toY = (v) => padT + (1 - v / maxY) * plotH
+
+  const pts = trajectory.map(([tx, ty]) => `${toX(tx).toFixed(1)},${toY(ty).toFixed(1)}`).join(' ')
+
+  const fmtAxis = (v) => v >= 1000 ? Math.round(v / 1000) + 'к' : Math.round(v)
+  const xTicks = []
+  for (let i = 0; i <= 4; i++) {
+    const v = (maxX * i) / 4
+    const px = toX(v)
+    xTicks.push(`<line x1="${px}" y1="${padT}" x2="${px}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.06)"/>
+      <text x="${px}" y="${padT + plotH + 15}" fill="rgba(255,255,255,0.45)" font-size="10" text-anchor="middle">${fmtAxis(v)}</text>`)
+  }
+  const yTicks = []
+  for (let i = 0; i <= 4; i++) {
+    const v = (maxY * i) / 4
+    const px = toY(v)
+    yTicks.push(`<line x1="${padL}" y1="${px}" x2="${padL + plotW}" y2="${px}" stroke="rgba(255,255,255,0.06)"/>
+      <text x="${padL - 6}" y="${px + 3}" fill="rgba(255,255,255,0.45)" font-size="10" text-anchor="end">${Math.round(v)}</text>`)
+  }
+
+  const startPt = trajectory[0]
+  const endPt = trajectory[trajectory.length - 1]
+  const peakPt = trajectory[peakIdx]
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg">
+    ${xTicks.join('')}
+    ${yTicks.join('')}
+    <polyline points="${pts}" fill="none" stroke="#ffd75e" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${toX(startPt[0])}" cy="${toY(startPt[1])}" r="4" fill="#7dffa0"/>
+    <circle cx="${toX(endPt[0])}" cy="${toY(endPt[1])}" r="4" fill="#ff7a7a"/>
+    <circle cx="${toX(peakPt[0])}" cy="${toY(peakPt[1])}" r="4" fill="#ffd75e"/>
+    <text x="${toX(peakPt[0])}" y="${toY(peakPt[1]) - 8}" fill="#ffd75e" font-size="10" font-weight="700" text-anchor="middle">${Math.round(peakPt[1])} м</text>
+    <text x="${padL + plotW / 2}" y="${H - 8}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle">Дальность, м</text>
+    <text x="14" y="${padT + plotH / 2}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle" transform="rotate(-90 14 ${padT + plotH / 2})">Высота, м</text>
+  </svg>`
+}
+
+function renderAngleChart(results, best) {
+  const W = 440, H = 280
+  const padL = 55, padR = 20, padT = 20, padB = 40
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+
+  let maxY = 0
+  for (const r of results) if (r.distance > maxY) maxY = r.distance
+  if (maxY <= 0) maxY = 1
+  maxY *= 1.08
+
+  const toX = (angle) => padL + (angle / 90) * plotW
+  const toY = (dist) => padT + (1 - dist / maxY) * plotH
+
+  const pts = results.map(r => `${toX(r.angle).toFixed(1)},${toY(r.distance).toFixed(1)}`).join(' ')
+
+  const fmtAxis = (v) => v >= 1000 ? Math.round(v / 1000) + 'к' : Math.round(v)
+  const xTicks = []
+  for (let a = 0; a <= 90; a += 15) {
+    const px = toX(a)
+    xTicks.push(`<line x1="${px}" y1="${padT}" x2="${px}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.06)"/>
+      <text x="${px}" y="${padT + plotH + 15}" fill="rgba(255,255,255,0.45)" font-size="10" text-anchor="middle">${a}°</text>`)
+  }
+  const yTicks = []
+  for (let i = 0; i <= 4; i++) {
+    const v = (maxY * i) / 4
+    const px = toY(v)
+    yTicks.push(`<line x1="${padL}" y1="${px}" x2="${padL + plotW}" y2="${px}" stroke="rgba(255,255,255,0.06)"/>
+      <text x="${padL - 6}" y="${px + 3}" fill="rgba(255,255,255,0.45)" font-size="10" text-anchor="end">${fmtAxis(v)}</text>`)
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg">
+    ${xTicks.join('')}
+    ${yTicks.join('')}
+    <polyline points="${pts}" fill="none" stroke="#c38bff" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${toX(best.angle)}" cy="${toY(best.distance)}" r="5" fill="#ffd75e"/>
+    <text x="${toX(best.angle)}" y="${toY(best.distance) - 10}" fill="#ffd75e" font-size="10" font-weight="700" text-anchor="middle">${best.angle}° · ${fmtM(best.distance)}</text>
+    <text x="${padL + plotW / 2}" y="${H - 8}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle">Угол подъёма носа, °</text>
+    <text x="14" y="${padT + plotH / 2}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle" transform="rotate(-90 14 ${padT + plotH / 2})">Дальность, м</text>
+  </svg>`
 }
 
 /* ================================================================
@@ -393,7 +560,6 @@ function buildOptsInputs(containerId, prefix = '') {
   const $c = document.getElementById(containerId)
   $c.innerHTML = ''
 
-  // Forsage
   const r1 = document.createElement('div')
   r1.className = 'row'
   r1.innerHTML = `
@@ -405,7 +571,6 @@ function buildOptsInputs(containerId, prefix = '') {
     </select>`
   $c.appendChild(r1)
 
-  // Throttle strategy
   const r2 = document.createElement('div')
   r2.className = 'row'
   r2.innerHTML = `
@@ -416,7 +581,6 @@ function buildOptsInputs(containerId, prefix = '') {
     </div>`
   $c.appendChild(r2)
 
-  // Nose lift checkbox
   const r3 = document.createElement('div')
   r3.className = 'row'
   r3.innerHTML = `
@@ -427,7 +591,6 @@ function buildOptsInputs(containerId, prefix = '') {
     </label>`
   $c.appendChild(r3)
 
-  // Nose angle slider
   const r4 = document.createElement('div')
   r4.className = 'row'
   r4.innerHTML = `
@@ -442,7 +605,6 @@ function buildOptsInputs(containerId, prefix = '') {
   $hint.textContent = '0° = горизонт, 90° = вертикаль. После тяги нос выравнивается по курсу.'
   $c.appendChild($hint)
 
-  // Live updates
   const $angleSlider = document.getElementById(`${prefix}nose-angle`)
   const $angleVal = document.getElementById(`${prefix}nose-angle-val`)
   const $liftCheckbox = document.getElementById(`${prefix}nose-lift-enabled`)
@@ -483,6 +645,9 @@ function renderSingleResult(result, upgrades, cards, opts) {
   const angleInfo = result.boostEndAngle !== null
     ? `Угол в конце тяги: <b>${result.boostEndAngle.toFixed(0)}°</b>`
     : `Тяга не использовалась`
+  const timeWarn = result.maxTimeReached
+    ? `<br><span style="color:#ffb84d">⚠️ Полёт не закончился за ${result.time.toFixed(0)} с — результат обрезан по времени</span>`
+    : ''
 
   $out.innerHTML = `
     <div class="result-box">
@@ -504,7 +669,7 @@ function renderSingleResult(result, upgrades, cards, opts) {
       Макс. скорость: <b>${Math.round(result.maxSpeed)} м/с</b> ·
       Топливо сожжено: <b>${result.fuelUsed.toFixed(1)} с</b> ·
       Посадка на высоте: <b>${Math.round(result.landingTerrain)} м</b><br>
-      ${angleInfo}
+      ${angleInfo}${timeWarn}
     </div>`
 
   const rows = []
@@ -547,6 +712,73 @@ function renderSingleResult(result, upgrades, cards, opts) {
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`
+
+  // Trajectory chart
+  const $charts = document.getElementById('charts-row')
+  $charts.style.display = 'grid'
+  $charts.innerHTML = `
+    <div class="chart-container">
+      <div class="chart-title">✈️ Траектория полёта</div>
+      ${renderTrajectoryChart(result.trajectory)}
+    </div>`
+  $charts.dataset.mode = 'sim'
+}
+
+function renderOptimum(optData, upgrades, cards, opts) {
+  const { results, best, noLift } = optData
+  const $out = document.getElementById('single-results')
+  const gain = best.distance - noLift.distance
+  const gainPct = noLift.distance > 0 ? (gain / noLift.distance) * 100 : 0
+
+  const timeWarn = best.result.maxTimeReached
+    ? `<div style="color:#ffb84d;font-size:11px;margin-top:6px">⚠️ Один или несколько углов не завершили полёт за 240 с</div>`
+    : ''
+
+  $out.innerHTML = `
+    <div class="opt-summary">
+      <div class="big">🎯 Оптимум: ${best.angle}°</div>
+      <div class="sub">Дальность: <b style="color:#c38bff">${fmtM(best.distance)}</b></div>
+      <div class="sub">
+        Без подъёма: ${fmtM(noLift.distance)}
+        · <span class="gain">${gain >= 0 ? '+' : ''}${fmtM(gain)} (${gainPct > 0 ? '+' : ''}${gainPct.toFixed(1)}%)</span>
+      </div>
+      ${timeWarn}
+    </div>
+
+    <div class="result-box" style="margin-top:12px">
+      <div class="result-item">
+        <div class="result-value purple">${fmtM(best.distance)}</div>
+        <div class="result-label">Дальность (оптимум)</div>
+      </div>
+      <div class="result-item">
+        <div class="result-value">${fmtM(best.result.maxAltitude)}</div>
+        <div class="result-label">Макс. высота</div>
+      </div>
+      <div class="result-item">
+        <div class="result-value">${best.result.time.toFixed(1)} с</div>
+        <div class="result-label">Время полёта</div>
+      </div>
+    </div>
+
+    <div style="opacity:0.6;font-size:12px;margin-top:8px;text-align:center;line-height:1.6">
+      Монет: <b style="color:#ffd75e">${Math.floor(best.distance)}</b> ·
+      Макс. скорость: <b>${Math.round(best.result.maxSpeed)} м/с</b> ·
+      Топливо сожжено: <b>${best.result.fuelUsed.toFixed(1)} с</b> ·
+      Угол в конце тяги: <b>${best.result.boostEndAngle !== null ? best.result.boostEndAngle.toFixed(0) + '°' : '—'}</b>
+    </div>`
+
+  const $charts = document.getElementById('charts-row')
+  $charts.style.display = 'grid'
+  $charts.innerHTML = `
+    <div class="chart-container">
+      <div class="chart-title">✈️ Траектория (оптимум ${best.angle}°)</div>
+      ${renderTrajectoryChart(best.result.trajectory)}
+    </div>
+    <div class="chart-container">
+      <div class="chart-title">📈 Дальность vs угол подъёма</div>
+      ${renderAngleChart(results, best)}
+    </div>`
+  $charts.dataset.mode = 'opt'
 }
 
 function renderCompare(resA, resB) {
@@ -618,6 +850,29 @@ document.getElementById('sim-btn').addEventListener('click', () => {
   const { upgrades, cards, opts } = readState('')
   const result = simulate(upgrades, cards, opts)
   renderSingleResult(result, upgrades, cards, opts)
+})
+
+document.getElementById('opt-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('opt-btn')
+  const origText = btn.textContent
+  btn.textContent = '⏳ Считаю 91 угол…'
+  btn.disabled = true
+
+  // Даём браузеру перерисовать кнопку
+  await new Promise((r) => setTimeout(r, 20))
+
+  try {
+    const { upgrades, cards, opts } = readState('')
+    const t0 = performance.now()
+    const optData = findOptimum(upgrades, cards, opts)
+    const t1 = performance.now()
+    console.log(`Optimize: ${(t1 - t0).toFixed(0)} ms (${optData.results.length} angles)`)
+
+    renderOptimum(optData, upgrades, cards, opts)
+  } finally {
+    btn.textContent = origText
+    btn.disabled = false
+  }
 })
 
 document.getElementById('cmp-btn').addEventListener('click', () => {
