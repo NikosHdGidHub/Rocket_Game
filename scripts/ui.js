@@ -8,6 +8,7 @@ import { G, input } from './state.js'
 import { renderer } from './scene.js'
 import * as Settings from './settings.js'
 import * as Sounds from './sounds.js'
+import * as Abilities from './abilities.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')
@@ -28,6 +29,7 @@ const $pushBtn = document.getElementById('pushBtn')
 const $helpText = document.getElementById('helpText')
 const $rotUp = document.getElementById('rotUp')
 const $rotDown = document.getElementById('rotDown')
+const $forsageBtn = document.getElementById('forsageBtn')
 
 /* ---------- Внешние колбэки (заполняются в init) ---------- */
 let _onLaunch = null
@@ -36,6 +38,8 @@ let _onReset = null
 let _upgrades = [] // ссылка на CFG.UPGRADES
 let _costOf = () => 0 // колбэк расчёта цены
 let _onAchievements = null
+let _onActivateAbility = null
+let _lastForsageSig = null
 
 /* Кэши, чтобы не трогать DOM каждый кадр */
 let _lastDist = -1
@@ -191,14 +195,60 @@ export function updateFuelBar(fuel, maxFuel) {
   }
 }
 
+function updateForsageButton() {
+  if (!$forsageBtn) return
+  const st = Abilities.getState('forsage')
+  if (!st) return
+
+  let cls, fill
+  if (!st.unlocked) {
+    cls = 'blocked'
+    fill = 0
+  } else if (st.active) {
+    cls = 'active'
+    fill = st.activeProgress * 100
+  } else if (st.ready) {
+    cls = 'ready'
+    fill = 100
+  } else {
+    cls = 'cooldown'
+    fill = st.cooldownProgress * 100
+  }
+
+  // Не трогаем DOM лишний раз: сравниваем «сигнатуру» с точностью до 1%.
+  const sig = cls + ':' + Math.round(fill)
+  if (sig === _lastForsageSig) return
+  _lastForsageSig = sig
+
+  $forsageBtn.className = 'forsage-btn ' + cls
+  $forsageBtn.style.setProperty('--fill', fill.toFixed(1) + '%')
+}
+
 let cardCloseHandler = null
-export function showCardPopup(card) {
+export function showCardPopup(card, isUpgrade = false) {
   const $popup = document.getElementById('cardPopup')
+  const $card = $popup.querySelector('.card')
+  const $label = $popup.querySelector('.card-label')
+
   document.getElementById('cardIcon').textContent = card.icon
   document.getElementById('cardName').textContent = card.name
-  document.getElementById('cardDesc').textContent = card.desc
-  $popup.classList.add('on')
 
+  // Для forsage: первая карточка → desc, повторная → desc_second.
+  // Для остальных карточек desc_second отсутствует — поведение не меняется.
+  const descText = isUpgrade && card.desc_second ? card.desc_second : card.desc
+  document.getElementById('cardDesc').textContent = descText
+
+  // Заголовок: «РЕДКАЯ НАХОДКА» → «УЛУЧШЕНИЕ» при апгрейде.
+  if ($label) {
+    $label.textContent = isUpgrade ? 'УЛУЧШЕНИЕ' : 'РЕДКАЯ НАХОДКА'
+  }
+
+  if ($card) {
+    $card.style.borderColor =
+      card.color != null ? '#' + card.color.toString(16).padStart(6, '0') : ''
+  }
+
+  $popup.classList.add('on')
   if (cardCloseHandler) $popup.removeEventListener('click', cardCloseHandler)
   cardCloseHandler = () => $popup.classList.remove('on')
   $popup.addEventListener('click', cardCloseHandler)
@@ -208,6 +258,7 @@ export function showCardPopup(card) {
    Per-frame update: видимость панелей по фазе игры.
 ================================================================ */
 export function update() {
+  updateForsageButton()
   const inFlight = G.phase === 'fly'
   if (inFlight === _lastInFlight) return
   _lastInFlight = inFlight
@@ -247,6 +298,7 @@ export function init(callbacks) {
   _upgrades = callbacks.upgrades
   _costOf = callbacks.costOf
   _onAchievements = callbacks.onAchievements
+  _onActivateAbility = callbacks.onActivateAbility
 
   /* ---------- Клавиатура ---------- */
   addEventListener('keydown', (e) => {
@@ -260,6 +312,10 @@ export function init(callbacks) {
         _onLaunch && _onLaunch()
       }
     }
+    if (e.code === 'KeyF') {
+      e.preventDefault()
+      if (!e.repeat) _onActivateAbility && _onActivateAbility('forsage')
+    }
     if (e.code === 'KeyW') {
       input.keys.W = true
       e.preventDefault()
@@ -269,6 +325,7 @@ export function init(callbacks) {
       e.preventDefault()
     }
   })
+
   addEventListener('keyup', (e) => {
     if (e.code === 'Space') input.boost = false
     if (e.code === 'KeyW') input.keys.W = false
@@ -279,6 +336,13 @@ export function init(callbacks) {
   bindHold($rotUp, (v) => (input.touch.W = v))
   bindHold($rotDown, (v) => (input.touch.S = v))
   bindHold($pushBtn, (v) => (input.boost = v))
+  if ($forsageBtn) {
+    $forsageBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      _onActivateAbility && _onActivateAbility('forsage')
+    })
+  }
 
   /* ---------- Canvas ---------- */
   renderer.domElement.addEventListener('pointerdown', (e) => {

@@ -490,6 +490,134 @@ canvas {
 }
 
 /* ================================================================
+   Forsage button — фиолетовая кнопка способности «Форсаж».
+   Вдвое меньше PUSH, лежит слева от него.
+   Заливка (--fill) — универсальная «анимация заполнения»
+   и для активной фазы, и для перезарядки.
+   ================================================================ */
+
+#actionBtns {
+  display: flex;
+  align-items: flex-end; /* кнопки прижаты к низу — forsage ниже PUSH */
+  gap: 12px;
+}
+
+.forsage-btn {
+  --fill: 0%;
+  --fill-color: #9b59b6;
+
+  position: relative;
+  pointer-events: auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  color: #fff;
+
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.18), transparent 60%),
+    conic-gradient(from -90deg, var(--fill-color) var(--fill), rgba(28, 16, 46, 0.78) var(--fill));
+  box-shadow:
+    0 4px 0 #4a2470,
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.15);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+  transition:
+    transform 0.08s,
+    filter 0.2s;
+  overflow: hidden;
+}
+
+.forsage-btn .forsage-letter {
+  font-size: 22px;
+  font-weight: 900;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  z-index: 1;
+  transition: opacity 0.15s;
+}
+
+.forsage-btn .forsage-lock {
+  position: absolute;
+  font-size: 22px;
+  z-index: 2;
+  display: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+.forsage-btn:active:not(.blocked) {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #4a2470,
+    0 3px 8px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Заблокирована — серый цвет «всегда на перезарядке» + замок */
+.forsage-btn.blocked {
+  filter: grayscale(0.9) brightness(0.55);
+  cursor: not-allowed;
+}
+.forsage-btn.blocked .forsage-letter {
+  opacity: 0.1;
+}
+.forsage-btn.blocked .forsage-lock {
+  display: block;
+}
+
+/* Готова — полный яркий фиолетовый + мягкое свечение */
+.forsage-btn.ready {
+  --fill: 100%;
+  --fill-color: #c38bff;
+  box-shadow:
+    0 4px 0 #4a2470,
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    0 0 18px rgba(195, 139, 255, 0.55),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.15);
+}
+
+/* Активна — пульсация и мощное свечение */
+.forsage-btn.active {
+  --fill-color: #d4a4ff;
+  animation: forsagePulse 0.5s ease-in-out infinite;
+  box-shadow:
+    0 4px 0 #4a2470,
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(195, 139, 255, 0.85),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.15);
+}
+
+@keyframes forsagePulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.5);
+  }
+}
+
+@media (max-width: 640px) {
+  .forsage-btn {
+    width: 48px;
+    height: 48px;
+  }
+  .forsage-btn .forsage-letter,
+  .forsage-btn .forsage-lock {
+    font-size: 18px;
+  }
+}
+
+/* ================================================================
    Loading overlay — экран загрузки
    ================================================================ */
 #loading {

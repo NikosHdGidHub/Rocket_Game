@@ -9,6 +9,7 @@ import * as DayNight from './daynight.js'
 import { camera } from './scene.js'
 import { terrainHeight } from './world/world.js'
 import { G, rocketState, cam, input, lod, time, ghostRecorder, bestFlight } from './state.js'
+import * as Abilities from './abilities.js'
 import {
   rocket,
   flame,
@@ -36,6 +37,7 @@ const ANG_ACC = CFG.GAME.angAcc
 const ANG_DAMP = CFG.GAME.angDamp
 const ANG_MAX = CFG.GAME.angMax
 const _baseFlameColor = new THREE.Color(CFG.ROCKET.flame.outer)
+const _forsageFlameColor = new THREE.Color(CFG.ROCKET.flame.forsage)
 
 let boosting = false
 
@@ -48,12 +50,8 @@ export const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
 export const cardMul = (key) => {
   const n = G.cards[key] || 0
   if (n === 0) return 1
-  if (key === 'fuel2x') return Math.pow(CFG.CHESTS.buffChests[0], n)
-  if (key === 'thrust2x') return Math.pow(CFG.CHESTS.buffChests[1], n)
-  if (key === 'power2x') return Math.pow(CFG.CHESTS.buffChests[2], n)
-  if (key === 'aero2x') return Math.pow(CFG.CHESTS.buffChests[3], n)
-  if (key === 'airtime') return Math.pow(CFG.CHESTS.buffChests[4], n)
-  return 1
+  const card = CFG.CARDS.find((c) => c.key === key)
+  return card && typeof card.buff === 'number' ? Math.pow(card.buff, n) : 1
 }
 
 export const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('power2x')
@@ -200,6 +198,7 @@ function resetRocket() {
   rocket.position.copy(rocketState.pos)
   G.fuel = maxFuel()
   input.boost = false
+  Abilities.reset() // сброс способности
 }
 
 function launch() {
@@ -275,13 +274,26 @@ function land() {
     speed: speedAtTouchdown,
     nearestChestDist,
   })
+
+  // после посадки способность снова готова
+  Abilities.reset()
 }
 
 function pickCard() {
   const limit = CFG.CHESTS.cardTypeLimit
-  const allowed = CFG.CARDS.filter((c) => (G.cards[c.key] || 0) < limit)
+  // Обычные карточки. forsage выдаётся ТОЛЬКО из специальных сундуков
+  // (specialChests), поэтому из рандомного пула её исключаем.
+  const allowed = CFG.CARDS.filter((c) => c.key !== 'forsage' && (G.cards[c.key] || 0) < limit)
   if (allowed.length === 0) return null
   return allowed[Math.floor(Math.random() * allowed.length)]
+}
+
+function pickForsageCard() {
+  const card = CFG.CARDS.find((c) => c.key === 'forsage')
+  if (!card) return pickCard() // страховка
+  const maxLv = CFG.ABILITIES.forsage.levels.length
+  if ((G.cards.forsage || 0) >= maxLv) return pickCard() // fallback — уже прокачано
+  return card
 }
 
 function openChest(chest) {
@@ -289,10 +301,13 @@ function openChest(chest) {
   G.openedChests.add(chest.x)
   chest.group.visible = false
 
-  const card = pickCard()
+  const card = chest.type === 'forsage' ? pickForsageCard() : pickCard()
   if (card) {
+    // «Апгрейд» = у игрока уже была хотя бы одна такая карточка.
+    const isUpgrade = (G.cards[card.key] || 0) >= 1
     G.cards[card.key] = (G.cards[card.key] || 0) + 1
-    UI.showCardPopup(card)
+    UI.showCardPopup(card, isUpgrade)
+    Abilities.onCardObtained(card.key)
   } else {
     UI.showToast('Все карточки собраны! 🎉', CFG.UI.toastColors.upgrade)
   }
@@ -332,7 +347,7 @@ function recordGhostSample() {
     rocketState.pos.y,
     rocketState.pos.z,
     rocket.rotation.z,
-    boosting ? 1 : 0
+    boosting || Abilities.isActive('forsage') ? 1 : 0
   )
 }
 
@@ -449,18 +464,31 @@ function updateRocket(dt) {
   const p = rocketState
   const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
 
+  // Форсаж проверяем каждый кадр — понадобится и в блоке пламени.
+  const forsageActive = Abilities.isActive('forsage')
+
   if (G.phase === 'fly') {
     const ang = rocket.rotation.z
     const yaw = CFG.GAME.flightYaw || 0
 
-    boosting = input.boost && G.fuel > 0
+    // Форсаж отключает обычный буст (Вариант Б):
+    // PUSH не действует и НЕ тратит топливо, чтобы не суммировать тяги.
+    boosting = input.boost && G.fuel > 0 && !forsageActive
+
+    let appliedThrust = 0
     if (boosting) {
-      const ta = thrustAcc()
-      const c = Math.cos(ang)
-      p.vel.x += c * Math.cos(yaw) * ta * dt
-      p.vel.y += Math.sin(ang) * ta * dt
-      p.vel.z += c * Math.sin(yaw) * ta * dt
+      appliedThrust += thrustAcc()
       G.fuel = Math.max(0, G.fuel - dt)
+    }
+    if (forsageActive) {
+      appliedThrust += thrustAcc() * Abilities.thrustMultiplier('forsage')
+    }
+
+    if (appliedThrust > 0) {
+      const c = Math.cos(ang)
+      p.vel.x += c * Math.cos(yaw) * appliedThrust * dt
+      p.vel.y += Math.sin(ang) * appliedThrust * dt
+      p.vel.z += c * Math.sin(yaw) * appliedThrust * dt
     }
 
     p.vel.y -= GRAVITY * gravityMul() * dt
@@ -532,25 +560,56 @@ function updateRocket(dt) {
     const angState = Angles.update(deg, dt)
     UI.setAlignText(deg, angState)
 
+  // ─── Угол, цвет пламени и HUD — с плавным «перетеканием» ───
+  let intensityMul = 1
+  let targetFlame = _baseFlameColor
+
+  if (G.phase === 'fly') {
+    let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
+    while (diff > Math.PI) diff -= Math.PI * 2
+    while (diff < -Math.PI) diff += Math.PI * 2
+    const deg = (Math.abs(diff) * 180) / Math.PI
+
+    const angState = Angles.update(deg, dt)
+    UI.setAlignText(deg, angState)
+
     intensityMul = angState.flameIntensity
-    // Цвет «боевого» пламени — только при бусте; иначе базовый.
-    targetFlame = boosting ? angState.flameColor : _baseFlameColor
+
+    // Приоритет цвета: форсаж (фиолетовый) → буст (по углу) → базовый.
+    if (forsageActive) {
+      targetFlame = _forsageFlameColor
+    } else if (boosting) {
+      targetFlame = angState.flameColor
+    } else {
+      targetFlame = _baseFlameColor
+    }
   }
 
-  const baseAmp = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
+  // baseAmp: 1 при бусте/форсаже (с учётом угловой интенсивности),
+  // 0.35 в полёте без буста, 0 в остальных фазах.
+  const baseAmp = boosting || forsageActive ? 1 : G.phase === 'fly' ? 0.35 : 0
   const boostAmt = baseAmp * intensityMul
   const flick = 0.85 + Math.random() * 0.3
+  const flameScale = forsageActive ? 1.35 : 1.0
 
-  flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
-  flameInner.scale.set(boostAmt * flick * 1.1, boostAmt * flick, boostAmt * flick)
+  flame.scale.set(
+    boostAmt * flick * flameScale,
+    boostAmt * flick * flameScale,
+    boostAmt * flick * flameScale
+  )
+  flameInner.scale.set(
+    boostAmt * flick * 1.1 * flameScale,
+    boostAmt * flick * flameScale,
+    boostAmt * flick * flameScale
+  )
   flame.visible = boostAmt > 0.05
   flameInner.visible = flame.visible
 
-  // Градиент: цвет огня вычисляется из угла в angles.js и применяется
+  // Градиент: цвет огня из angles.js (или фиолетовый при форсаже).
   flameMat.color.copy(targetFlame)
 
-  flameMat.opacity = boosting ? 0.95 : 0.5
-  exhaustLight.intensity = boostAmt * (boosting ? 45 : 8)
+  flameMat.opacity = boosting || forsageActive ? 0.95 : 0.5
+  exhaustLight.intensity = boostAmt * (boosting || forsageActive ? 45 : 8)
 }
 
 /* ================================================================
@@ -620,6 +679,7 @@ function updateCamera(dt) {
    Общий update.
 ================================================================ */
 export function update(dt) {
+  Abilities.update(dt)
   updateChestsFX(dt, rocketState.pos.x, rocketState.pos.z)
   updateBoss(dt)
   updateRocket(dt)
@@ -702,6 +762,23 @@ function updateChestTracker() {
     UI.updateChestProgress(d, progress, d < CFG.CHESTS.nearRadius, false)
   }
 }
+
+/* ================================================================
+   DEBUG: открыть сундук по X (для теста без полёта на 15000 м).
+   Возвращает сундук в исходное состояние — можно тестировать повторно.
+================================================================ */
+/* export function debugOpenChestAt(x) {
+  const chest = chests.find((c) => c.x === x)
+  if (!chest) {
+    console.warn(`[DEBUG] Сундук на X=${x} не найден`)
+    return
+  }
+  chest.opened = false
+  chest.group.visible = true
+  G.openedChests.delete(x)
+  openChest(chest)
+  console.log(`[DEBUG] Открыт сундук X=${x}, type=${chest.type}`)
+}*/
 
 /* ================================================================
    init — вызвать после scene.init() и entities.init().
