@@ -14,6 +14,7 @@ import * as AchModal from './achievementsModal.js'
 import * as DayNight from './daynight.js'
 import * as Space from './space.js'
 import { G, time } from './state.js'
+import * as Abilities from './abilities.js'
 import * as Sounds from './sounds.js'
 
 /* ================================================================
@@ -32,6 +33,7 @@ UI.init({
   onBuy: Game.buy,
   onReset: Game.resetProgress,
   onAchievements: AchModal.open, // ← открытие модалки по 🏆
+  onActivateAbility: Abilities.activate,
   upgrades: Game.UPGRADES,
   costOf: Game.costOf,
 })
@@ -44,6 +46,44 @@ Ach.onChange((ach, milestone) => {
 })
 
 Game.init() // loadProgress + resetRocket + HUD
+
+Abilities.syncFromCards() // восстановить level из G.cards (из сейва)
+
+/* ================================================================
+   🧪 DEBUG: тестовая выдача способности «Форсаж»
+   Удалить перед релизом.
+   ================================================================ */
+/*function dbgGiveForsage(level = 1, showPopup = false) {
+  const maxLv = CFG.ABILITIES.forsage.levels.length
+  const lv = Math.max(1, Math.min(level, maxLv))
+  G.cards.forsage = Math.max(G.cards.forsage || 0, lv)
+  Abilities.onCardObtained('forsage')
+  if (showPopup) {
+    const card = CFG.CARDS.find((c) => c.key === 'forsage')
+    if (card) UI.showCardPopup(card)
+  }
+  Game.saveProgress()
+  console.log(`[DEBUG] Форсаж выдан: level=${G.abilities.forsage.level}, cards=${G.cards.forsage}`)
+}
+
+window.dbgGiveForsage = dbgGiveForsage
+window.dbgRemoveForsage = () => {
+  G.cards.forsage = 0
+  Abilities.syncFromCards()
+  const a = G.abilities.forsage
+  a.active = false
+  a.activeEnd = 0
+  a.cooldownEnd = 0
+  Game.saveProgress()
+  console.log('[DEBUG] Форсаж убран')
+}
+
+// Автовыдача при старте (молча, без попапа) — чтобы сразу тестить.
+// Убрать/закомментировать, когда тест закончится.
+if (!G.abilities.forsage.level) {
+  dbgGiveForsage(1, false)
+  console.log('🧪 Форсаж автоматически выдан для теста')
+}*/
 
 Entities.resyncChests() // ← теперь флаги сундуков актуальны
 

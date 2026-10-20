@@ -17,6 +17,17 @@ export const G = {
   upgrades: { ...CFG.GAME.initialUpgrades },
   cards: {}, // { fuel2x: n, thrust2x: n, ... }
   openedChests: new Set(), // X-координаты открытых сундуков
+
+  // NEW: способности. level синхронизируется из cards через syncFromCards().
+  // active / activeEnd / cooldownEnd — рантайм-состояние (в сейв не пишем).
+  abilities: {
+    forsage: {
+      level: 0, // 0 = закрыто, 1..N — уровни из CFG.ABILITIES.forsage.levels
+      active: false,
+      activeEnd: 0,
+      cooldownEnd: 0,
+    },
+  },
 }
 
 /** Кинематика ракеты. */

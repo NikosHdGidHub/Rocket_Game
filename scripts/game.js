@@ -9,6 +9,7 @@ import * as DayNight from './daynight.js'
 import { camera } from './scene.js'
 import { terrainHeight } from './world/world.js'
 import { G, rocketState, cam, input, lod, time, ghostRecorder, bestFlight } from './state.js'
+import * as Abilities from './abilities.js'
 import {
   rocket,
   flame,
@@ -197,6 +198,7 @@ function resetRocket() {
   rocket.position.copy(rocketState.pos)
   G.fuel = maxFuel()
   input.boost = false
+  Abilities.reset() // сброс способности
 }
 
 function launch() {
@@ -272,6 +274,9 @@ function land() {
     speed: speedAtTouchdown,
     nearestChestDist,
   })
+
+  // после посадки способность снова готова
+  Abilities.reset()
 }
 
 function pickCard() {
@@ -290,6 +295,8 @@ function openChest(chest) {
   if (card) {
     G.cards[card.key] = (G.cards[card.key] || 0) + 1
     UI.showCardPopup(card)
+
+    Abilities.onCardObtained(card.key)
   } else {
     UI.showToast('Все карточки собраны! 🎉', CFG.UI.toastColors.upgrade)
   }
@@ -329,7 +336,7 @@ function recordGhostSample() {
     rocketState.pos.y,
     rocketState.pos.z,
     rocket.rotation.z,
-    boosting ? 1 : 0
+    boosting || Abilities.isActive('forsage') ? 1 : 0
   )
 }
 
@@ -446,18 +453,31 @@ function updateRocket(dt) {
   const p = rocketState
   const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
 
+  // Форсаж проверяем каждый кадр — понадобится и в блоке пламени.
+  const forsageActive = Abilities.isActive('forsage')
+
   if (G.phase === 'fly') {
     const ang = rocket.rotation.z
     const yaw = CFG.GAME.flightYaw || 0
 
-    boosting = input.boost && G.fuel > 0
+    // Форсаж отключает обычный буст (Вариант Б):
+    // PUSH не действует и НЕ тратит топливо, чтобы не суммировать тяги.
+    boosting = input.boost && G.fuel > 0 && !forsageActive
+
+    let appliedThrust = 0
     if (boosting) {
-      const ta = thrustAcc()
-      const c = Math.cos(ang)
-      p.vel.x += c * Math.cos(yaw) * ta * dt
-      p.vel.y += Math.sin(ang) * ta * dt
-      p.vel.z += c * Math.sin(yaw) * ta * dt
+      appliedThrust += thrustAcc()
       G.fuel = Math.max(0, G.fuel - dt)
+    }
+    if (forsageActive) {
+      appliedThrust += thrustAcc() * Abilities.thrustMultiplier('forsage')
+    }
+
+    if (appliedThrust > 0) {
+      const c = Math.cos(ang)
+      p.vel.x += c * Math.cos(yaw) * appliedThrust * dt
+      p.vel.y += Math.sin(ang) * appliedThrust * dt
+      p.vel.z += c * Math.sin(yaw) * appliedThrust * dt
     }
 
     p.vel.y -= GRAVITY * gravityMul() * dt
@@ -525,19 +545,32 @@ function updateRocket(dt) {
 
     UI.setAlignText(deg)
 
-    if (boosting) {
+    if (forsageActive) {
+      flameMat.color.setHex(CFG.ROCKET.flame.forsage)
+    } else if (boosting) {
       flameMat.color.setHex(deg < 15 ? CFG.ROCKET.flame.aligned : CFG.ROCKET.flame.misaligned)
+    } else {
+      flameMat.color.setHex(CFG.ROCKET.flame.outer) // idle-огонёк — сбрасываем
     }
   }
 
-  const boostAmt = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
+  const boostAmt = boosting || forsageActive ? 1 : G.phase === 'fly' ? 0.35 : 0
   const flick = 0.85 + Math.random() * 0.3
-  flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
-  flameInner.scale.set(boostAmt * flick * 1.1, boostAmt * flick, boostAmt * flick)
+  const flameScale = forsageActive ? 1.35 : 1.0 // форсаж — пламя заметно крупнее
+  flame.scale.set(
+    boostAmt * flick * flameScale,
+    boostAmt * flick * flameScale,
+    boostAmt * flick * flameScale
+  )
+  flameInner.scale.set(
+    boostAmt * flick * 1.1 * flameScale,
+    boostAmt * flick * flameScale,
+    boostAmt * flick * flameScale
+  )
   flame.visible = boostAmt > 0.05
   flameInner.visible = flame.visible
-  flameMat.opacity = boosting ? 0.95 : 0.5
-  exhaustLight.intensity = boostAmt * (boosting ? 45 : 8)
+  flameMat.opacity = boosting || forsageActive ? 0.95 : 0.5
+  exhaustLight.intensity = boostAmt * (boosting || forsageActive ? 45 : 8)
 }
 
 /* ================================================================
@@ -607,6 +640,7 @@ function updateCamera(dt) {
    Общий update.
 ================================================================ */
 export function update(dt) {
+  Abilities.update(dt)
   updateChestsFX(dt, rocketState.pos.x, rocketState.pos.z)
   updateBoss(dt)
   updateRocket(dt)
