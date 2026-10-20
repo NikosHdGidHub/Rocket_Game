@@ -1005,6 +1005,9 @@ export const ROCKET = /** @type {const} */ ({
     forsage: 0x9b59b6, //фиолетовое пламя при форсаже
   },
 
+  /** коэффициент размера форсажа */
+  forsageScale: 1.15,
+
   /** Цвет точечного света от сопла. */
   exhaustLight: 0xff9a3c,
 

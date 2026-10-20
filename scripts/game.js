@@ -576,7 +576,7 @@ function updateRocket(dt) {
   const baseAmp = boosting || forsageActive ? 1 : G.phase === 'fly' ? 0.35 : 0
   const boostAmt = baseAmp * intensityMul
   const flick = 0.85 + Math.random() * 0.3
-  const flameScale = forsageActive ? 1.35 : 1.0
+  const flameScale = forsageActive ? CFG.ROCKET.forsageScale : 1.0
 
   flame.scale.set(
     boostAmt * flick * flameScale,

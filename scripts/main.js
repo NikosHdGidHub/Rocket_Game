@@ -144,22 +144,49 @@ async function initialLoad() {
 }
 
 /* ================================================================
-   3. Главный цикл.
+   3. Главный цикл (fixed timestep).
+
+   Физика всегда идёт шагами FIXED_DT = 1/60.
+   Рендер и «плавные» модули (LOD, туман, HUD) — раз в кадр по realDt.
+   Так траектория полёта ОДИНАКОВА на 30, 60 и 144 fps.
 ================================================================ */
+const FIXED_DT = 1 / 60 // фиксированный шаг физики
+const MAX_FRAME_DT = 0.1 // защита от «спирали смерти» при лагах
+const MAX_STEPS = 6 // не больше 6 шагов за кадр (~100 мс)
+
 let last = performance.now()
+let accumulator = 0
+let firstFrame = true
 
 function loop(now) {
-  const dt = Math.min(0.033, (now - last) / 1000)
-  last = now
-  time.gameTime += dt // ← игровое время
+  // Первый кадр — «сброс» таймера: initialLoad мог занять секунды.
+  if (firstFrame) {
+    last = now
+    firstFrame = false
+  }
 
-  Game.update(dt) // фазы босса, физика ракеты, камера, сундуки
-  Chunks.update() // очередь 3D-чанков + persistent visibility
-  Lod.update(dt) // LOD, fog-ellipse, far + overlay очереди
-  DayNight.update(dt) // ← обновляем небо/свет по текущему времени цикла
-  Space.update() //  лерпит их к космосу, двигает звёзды/сферы
-  UI.update() // HUD/панели по фазе
-  Scene.updateScenery() // ← пересчитывает позицию солнца из SUN_DIR
+  const realDt = Math.min(MAX_FRAME_DT, (now - last) / 1000)
+  last = now
+
+  // ─── Физика: фиксированные шаги ───
+  accumulator += realDt
+  let steps = 0
+  while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+    time.gameTime += FIXED_DT // игровое время = сумма шагов физики
+    Game.update(FIXED_DT) // босс, физика, камера, сундуки, способность
+    accumulator -= FIXED_DT
+    steps++
+  }
+  // Не даём «долгу» накапливаться при долгих лагах
+  if (steps >= MAX_STEPS) accumulator = 0
+
+  // ─── Визуал и фон: раз в кадр, в реальном времени ───
+  Chunks.update() // очередь 3D-чанков (dt не нужен)
+  Lod.update(realDt) // LOD, fog, far/overlay
+  DayNight.update(realDt) // небо и свет по времени цикла
+  Space.update() // космос, звёзды, сферы
+  UI.update() // HUD по фазе
+  Scene.updateScenery() // солнце следует за камерой
 
   Scene.render()
   requestAnimationFrame(loop)

@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>🚀 Rocket Game — Calculator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117; color: #eaf2ff; padding: 20px 24px 60px; min-height: 100vh;
+  }
+  h1 { font-size: 22px; font-weight: 800; margin-bottom: 16px; letter-spacing: 0.5px; }
+  .tabs {
+    display: flex; gap: 8px; margin-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px;
+  }
+  .tab {
+    background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #eaf2ff;
+    padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    font-weight: 600; font-family: inherit; transition: 0.15s;
+  }
+  .tab:hover { border-color: #ffd75e; color: #ffd75e; }
+  .tab.active { background: rgba(255,215,94,0.15); border-color: #ffd75e; color: #ffd75e; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .row {
+    display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center;
+    padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 8px;
+    margin-bottom: 6px;
+  }
+  .row label { font-size: 13px; font-weight: 600; }
+  .row input[type=range] { width: 100%; accent-color: #ffd75e; }
+  .row .value { font-weight: 700; color: #ffd75e; min-width: 30px; text-align: right; }
+  .row .input-num {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+    color: #eaf2ff; padding: 6px 10px; border-radius: 6px; font-family: inherit;
+    font-size: 13px; font-weight: 600; width: 60px;
+  }
+  .row .hint { font-size: 11px; opacity: 0.55; }
+
+  .section-title {
+    font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
+    opacity: 0.7; margin: 20px 0 10px;
+  }
+
+  button.action {
+    background: linear-gradient(180deg, #ffd75e, #ff9f1a); color: #20130a; border: none;
+    padding: 12px 24px; border-radius: 10px; font-family: inherit; font-size: 14px;
+    font-weight: 800; letter-spacing: 1px; cursor: pointer;
+    box-shadow: 0 4px 0 #b96a00; transition: 0.08s; margin-top: 16px;
+  }
+  button.action:active { transform: translateY(3px); box-shadow: 0 1px 0 #b96a00; }
+
+  .result-box {
+    background: linear-gradient(160deg, #1a2440, #0f1527); border: 2px solid #ffd75e;
+    border-radius: 16px; padding: 20px; margin-top: 16px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+  }
+  .result-item { text-align: center; }
+  .result-value { font-size: 32px; font-weight: 900; color: #ffd75e; line-height: 1; }
+  .result-label {
+    font-size: 11px; letter-spacing: 1px; opacity: 0.6;
+    margin-top: 6px; text-transform: uppercase;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    opacity: 0.6; font-weight: 700;
+  }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .good { color: #7dffa0; }
+  .bad  { color: #ff7a7a; }
+  .neutral { opacity: 0.4; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  select {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+    color: #eaf2ff; padding: 6px 10px; border-radius: 6px; font-family: inherit;
+    font-size: 13px; font-weight: 600;
+  }
+
+  .radio-group { display: flex; gap: 12px; flex-wrap: wrap; }
+  .radio-group label {
+    display: flex; align-items: center; gap: 6px; font-size: 13px;
+    font-weight: 500; cursor: pointer;
+  }
+  .radio-group input[type=radio] { accent-color: #ffd75e; }
+
+  .notice {
+    background: rgba(255,159,26,0.1); border: 1px solid rgba(255,159,26,0.35);
+    border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.5;
+    margin-bottom: 16px; color: #ffb84d;
+  }
+  .notice code {
+    background: rgba(255,255,255,0.1); padding: 2px 6px;
+    border-radius: 3px; color: #eaf2ff;
+  }
+</style>
+</head>
+<body>
+
+<div class="notice" id="serverNotice">
+  <b>Нужен локальный сервер.</b> В корне проекта:
+  <code>python -m http.server 8000</code> → открой
+  <code>localhost:8000/tools/calculator.html</code>
+</div>
+
+<h1>🚀 Rocket Game — Calculator</h1>
+
+<div class="tabs">
+  <button class="tab active" data-tab="single">Один билд</button>
+  <button class="tab" data-tab="compare">Сравнить два</button>
+</div>
+
+<!-- ========== SINGLE ========== -->
+<div id="single" class="tab-content active">
+  <div class="section-title">Апгрейды</div>
+  <div id="upgrades-inputs"></div>
+  <div class="section-title">Карточки (0–2 копии)</div>
+  <div id="cards-inputs"></div>
+  <div class="section-title">Способность и стратегия</div>
+  <div id="opts-inputs"></div>
+  <button class="action" id="sim-btn">🔮 Симулировать</button>
+  <div id="single-results"></div>
+</div>
+
+<!-- ========== COMPARE ========== -->
+<div id="compare" class="tab-content">
+  <div class="two-col">
+    <div>
+      <div class="section-title">Игрок A</div>
+      <div id="upA"></div>
+    </div>
+    <div>
+      <div class="section-title">Игрок B</div>
+      <div id="upB"></div>
+    </div>
+  </div>
+  <button class="action" id="cmp-btn">⚖️ Сравнить</button>
+  <div id="cmp-results"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as CFG from '../scripts/config.js'
+import { terrainHeight } from '../scripts/world/world.js'
+
+/* ================================================================
+   SIMULATION — точная копия физики из game.js → updateRocket().
+   Fixed timestep 1/60 (после патча в main.js).
+================================================================ */
+function simulate(upgrades, cards, opts = {}) {
+  const {
+    boostThrottle = 'always',
+    forsageLevel = 0,
+    dt = 1 / 60,
+    maxTime = 240,
+  } = opts
+
+  const cardMul = (key) => {
+    const n = cards[key] || 0
+    if (n === 0) return 1
+    const card = CFG.CARDS.find((c) => c.key === key)
+    return card && typeof card.buff === 'number' ? Math.pow(card.buff, n) : 1
+  }
+
+  const launchSpeed    = CFG.RULES.launchSpeed(upgrades)   * cardMul('power2x')
+  const maxFuel        = CFG.RULES.maxFuel(upgrades)       * cardMul('fuel2x')
+  const thrustAccBase  = CFG.RULES.thrustAcc(upgrades)     * cardMul('thrust2x')
+  const gravityEff     = CFG.GAME.gravity                  * cardMul('airtime')
+  const dragMul        = cardMul('aero2x')
+  const dragCoefAtAngle = (alpha) =>
+    CFG.RULES.dragCoefAtAngle(upgrades, alpha) * dragMul
+
+  let forsageMult = 1
+  let forsageDurationLeft = 0
+  if (forsageLevel > 0) {
+    const idx = Math.min(forsageLevel, CFG.ABILITIES.forsage.levels.length) - 1
+    const lv = CFG.ABILITIES.forsage.levels[idx]
+    forsageMult = lv.multiplier
+    forsageDurationLeft = lv.duration
+  }
+
+  const LAUNCH_ANGLE = CFG.GAME.launchAngle
+  const yaw          = CFG.GAME.flightYaw || 0
+  const REST_Y       = CFG.GAME.restY
+  const ANG_DAMP     = CFG.GAME.angDamp
+  const ANG_MAX      = CFG.GAME.angMax
+  const ALIGN_RATE   = CFG.GAME.aeroAlign
+  const MIN_SPEED    = CFG.GAME.aeroAlignMinSpeed
+
+  const horiz = Math.cos(LAUNCH_ANGLE) * launchSpeed
+  let vx = Math.cos(yaw) * horiz
+  let vy = Math.sin(LAUNCH_ANGLE) * launchSpeed
+  let vz = Math.sin(yaw) * horiz
+  let x = 0, y = REST_Y, z = 0
+  let angZ = LAUNCH_ANGLE
+  let angVel = 0
+  let fuel = maxFuel
+  let t = 0
+  let maxAlt = 0
+  let maxSpeed = launchSpeed
+
+  const maxSteps = Math.ceil(maxTime / dt)
+
+  for (let step = 0; step < maxSteps; step++) {
+    const terrainY = terrainHeight(x, z)
+    const restY = terrainY + REST_Y
+
+    const forsageActive = forsageDurationLeft > 0
+    const boosting = boostThrottle === 'always' && !forsageActive && fuel > 0
+
+    let appliedThrust = 0
+    if (boosting) {
+      appliedThrust += thrustAccBase
+      fuel = Math.max(0, fuel - dt)
+    }
+    if (forsageActive) {
+      appliedThrust += thrustAccBase * forsageMult
+      forsageDurationLeft -= dt
+    }
+
+    if (appliedThrust > 0) {
+      const c = Math.cos(angZ)
+      vx += c * Math.cos(yaw) * appliedThrust * dt
+      vy += Math.sin(angZ) * appliedThrust * dt
+      vz += c * Math.sin(yaw) * appliedThrust * dt
+    }
+
+    vy -= gravityEff * dt
+
+    const speed = Math.sqrt(vx * vx + vy * vy + vz * vz)
+    if (speed > 0.01) {
+      const noseX = Math.cos(angZ) * Math.cos(yaw)
+      const noseY = Math.sin(angZ)
+      const noseZ = Math.cos(angZ) * Math.sin(yaw)
+      const dot = (noseX * vx + noseY * vy + noseZ * vz) / speed
+      const alpha = Math.acos(Math.max(-1, Math.min(1, dot)))
+      const k = dragCoefAtAngle(alpha) * CFG.RULES.airDensity(y)
+      const aDrag = k * speed
+      vx -= vx * aDrag * dt
+      vy -= vy * aDrag * dt
+      vz -= vz * aDrag * dt
+    }
+
+    x += vx * dt
+    y += vy * dt
+    z += vz * dt
+
+    if (y <= restY && vy < 0) {
+      y = restY
+      t += dt
+      break
+    }
+
+    angVel -= angVel * ANG_DAMP * dt
+    angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, angVel))
+    angZ += angVel * dt
+
+    const spd = Math.sqrt(vx * vx + vy * vy + vz * vz)
+    if (ALIGN_RATE > 0 && spd > MIN_SPEED) {
+      const desired = Math.atan2(vy, Math.hypot(vx, vz))
+      let diff = desired - angZ
+      while (diff > Math.PI) diff -= Math.PI * 2
+      while (diff < -Math.PI) diff += Math.PI * 2
+      const maxStep = ALIGN_RATE * dt
+      const step2 = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
+      angZ += step2
+    }
+
+    t += dt
+    const altNow = y - terrainY
+    if (altNow > maxAlt) maxAlt = altNow
+    if (spd > maxSpeed) maxSpeed = spd
+  }
+
+  return {
+    distance: Math.max(0, x),
+    maxAltitude: maxAlt,
+    time: t,
+    maxSpeed,
+    fuelUsed: maxFuel - fuel,
+    landingTerrain: terrainHeight(x, z),
+  }
+}
+
+/* ================================================================
+   UI HELPERS
+================================================================ */
+const fmtM = (m) => {
+  if (m < 1000) return Math.round(m) + ' м'
+  if (m < 10000) return (m / 1000).toFixed(2) + ' км'
+  return Math.round(m / 1000) + ' км'
+}
+const fmtCost = (c) => c >= 1000 ? Math.round(c / 1000) + 'k' : String(c)
+
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'))
+    document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'))
+    tab.classList.add('active')
+    document.getElementById(tab.dataset.tab).classList.add('active')
+  })
+})
+
+/* ---------- Builders ---------- */
+function buildUpgradeInputs(containerId, prefix = '') {
+  const $c = document.getElementById(containerId)
+  $c.innerHTML = ''
+  for (const u of CFG.UPGRADES) {
+    const row = document.createElement('div')
+    row.className = 'row'
+    const maxLvl = u.maxLevel ?? 12
+    const initLvl = CFG.GAME.initialUpgrades[u.key] ?? 1
+    row.innerHTML = `
+      <label>${u.icon} ${u.name}</label>
+      <div style="display:flex;align-items:center;gap:12px">
+        <input type="range" id="${prefix}${u.key}" min="1" max="${maxLvl}" value="${initLvl}" style="flex:1">
+        <span class="value" id="${prefix}${u.key}-val">${initLvl}</span>
+      </div>`
+    $c.appendChild(row)
+    const input = row.querySelector('input')
+    const val = row.querySelector('.value')
+    input.addEventListener('input', () => { val.textContent = input.value })
+  }
+}
+
+function buildCardInputs(containerId, prefix = '') {
+  const $c = document.getElementById(containerId)
+  $c.innerHTML = ''
+  for (const card of CFG.CARDS) {
+    if (card.key === 'forsage') continue
+    const row = document.createElement('div')
+    row.className = 'row'
+    row.innerHTML = `
+      <label>${card.icon} ${card.name}</label>
+      <div style="display:flex;align-items:center;gap:12px">
+        <input type="number" class="input-num" id="${prefix}card-${card.key}" min="0" max="2" value="0">
+        <span class="hint">${card.desc}</span>
+      </div>`
+    $c.appendChild(row)
+  }
+}
+
+function buildOptsInputs(containerId, prefix = '') {
+  const $c = document.getElementById(containerId)
+  $c.innerHTML = ''
+  const r1 = document.createElement('div')
+  r1.className = 'row'
+  r1.innerHTML = `
+    <label>🚀 Форсаж (уровень)</label>
+    <select id="${prefix}forsage-lvl">
+      <option value="0">0 — нет способности</option>
+      <option value="1">1 — ×2 тяга, 3с, КД 60</option>
+      <option value="2">2 — ×3 тяга, 4с, КД 45</option>
+    </select>`
+  $c.appendChild(r1)
+
+  const r2 = document.createElement('div')
+  r2.className = 'row'
+  r2.innerHTML = `
+    <label>Стратегия PUSH</label>
+    <div class="radio-group">
+      <label><input type="radio" name="${prefix}throttle" value="always" checked> Всегда</label>
+      <label><input type="radio" name="${prefix}throttle" value="never"> Никогда</label>
+    </div>`
+  $c.appendChild(r2)
+}
+
+function readState(prefix = '') {
+  const upgrades = {}
+  for (const u of CFG.UPGRADES) {
+    upgrades[u.key] = +document.getElementById(`${prefix}${u.key}`).value
+  }
+  const cards = {}
+  for (const card of CFG.CARDS) {
+    if (card.key === 'forsage') continue
+    const el = document.getElementById(`${prefix}card-${card.key}`)
+    cards[card.key] = el ? +el.value : 0
+  }
+  const forsageLevel = +document.getElementById(`${prefix}forsage-lvl`).value
+  const throttle = document.querySelector(`input[name="${prefix}throttle"]:checked`).value
+  return { upgrades, cards, opts: { forsageLevel, boostThrottle: throttle } }
+}
+
+/* ---------- Single render ---------- */
+function renderSingleResult(result, upgrades, cards, opts) {
+  const $out = document.getElementById('single-results')
+
+  $out.innerHTML = `
+    <div class="result-box">
+      <div class="result-item">
+        <div class="result-value">${fmtM(result.distance)}</div>
+        <div class="result-label">Дальность</div>
+      </div>
+      <div class="result-item">
+        <div class="result-value">${fmtM(result.maxAltitude)}</div>
+        <div class="result-label">Макс. высота</div>
+      </div>
+      <div class="result-item">
+        <div class="result-value">${result.time.toFixed(1)} с</div>
+        <div class="result-label">Время полёта</div>
+      </div>
+    </div>
+    <div style="opacity:0.6;font-size:12px;margin-top:8px;text-align:center">
+      Монет: <b style="color:#ffd75e">${Math.floor(result.distance)}</b> ·
+      Макс. скорость: <b>${Math.round(result.maxSpeed)} м/с</b> ·
+      Топливо сожжено: <b>${result.fuelUsed.toFixed(1)} с</b> ·
+      Посадка на высоте: <b>${Math.round(result.landingTerrain)} м</b>
+    </div>`
+
+  const rows = []
+  for (const u of CFG.UPGRADES) {
+    const lvl = upgrades[u.key]
+    const maxLvl = u.maxLevel ?? 12
+    if (lvl >= maxLvl) {
+      rows.push(`<tr>
+        <td>${u.icon} ${u.name}</td>
+        <td class="num">${lvl}</td>
+        <td class="num neutral">MAX</td>
+        <td class="num neutral">—</td>
+        <td class="num neutral">—</td>
+      </tr>`)
+      continue
+    }
+    const cost = CFG.RULES.upgradeCost(u, lvl)
+    const nextResult = simulate({ ...upgrades, [u.key]: lvl + 1 }, cards, opts)
+    const gain = nextResult.distance - result.distance
+    const roi = cost > 0 ? (gain / cost) * 1000 : 0  // м за 1000 монет
+    const cls = roi > 30 ? 'good' : roi > 5 ? '' : 'bad'
+    rows.push(`<tr>
+      <td>${u.icon} ${u.name}</td>
+      <td class="num">${lvl}</td>
+      <td class="num">${fmtCost(cost)}</td>
+      <td class="num ${cls}">${gain >= 0 ? '+' : ''}${fmtM(gain)}</td>
+      <td class="num ${cls}">${roi.toFixed(1)}</td>
+    </tr>`)
+  }
+
+  $out.innerHTML += `
+    <div class="section-title">Что купить дальше? (следующий уровень)</div>
+    <table>
+      <thead><tr>
+        <th>Апгрейд</th>
+        <th style="text-align:right">Ур.</th>
+        <th style="text-align:right">Цена</th>
+        <th style="text-align:right">Прирост</th>
+        <th style="text-align:right">м / 1000💰</th>
+      </tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>`
+}
+
+/* ---------- Compare render ---------- */
+function renderCompare(resA, resB) {
+  const $out = document.getElementById('cmp-results')
+  const diff = resB.distance - resA.distance
+  const diffPct = resA.distance > 0 ? (diff / resA.distance) * 100 : 0
+  const diffCls = Math.abs(diffPct) < 0.5 ? 'neutral' : diff > 0 ? 'good' : 'bad'
+
+  $out.innerHTML = `
+    <div class="result-box" style="grid-template-columns: repeat(3, 1fr)">
+      <div class="result-item">
+        <div class="result-value">${fmtM(resA.distance)}</div>
+        <div class="result-label">A</div>
+      </div>
+      <div class="result-item">
+        <div class="result-value">${fmtM(resB.distance)}</div>
+        <div class="result-label">B</div>
+      </div>
+      <div class="result-item">
+        <div class="result-value ${diffCls}">${diff > 0 ? '+' : ''}${fmtM(diff)}<br>
+          <span style="font-size:18px">${diffPct > 0 ? '+' : ''}${diffPct.toFixed(1)}%</span>
+        </div>
+        <div class="result-label">B относительно A</div>
+      </div>
+    </div>
+    <table style="margin-top:16px">
+      <thead><tr><th></th><th style="text-align:right">A</th><th style="text-align:right">B</th></tr></thead>
+      <tbody>
+        <tr><td>Дальность</td><td class="num">${fmtM(resA.distance)}</td><td class="num">${fmtM(resB.distance)}</td></tr>
+        <tr><td>Макс. высота</td><td class="num">${fmtM(resA.maxAltitude)}</td><td class="num">${fmtM(resB.maxAltitude)}</td></tr>
+        <tr><td>Время полёта</td><td class="num">${resA.time.toFixed(1)} с</td><td class="num">${resB.time.toFixed(1)} с</td></tr>
+        <tr><td>Макс. скорость</td><td class="num">${Math.round(resA.maxSpeed)} м/с</td><td class="num">${Math.round(resB.maxSpeed)} м/с</td></tr>
+      </tbody>
+    </table>`
+}
+
+/* ---------- Compare column builder ---------- */
+function buildCompareColumn(containerId, prefix) {
+  const $c = document.getElementById(containerId)
+  $c.innerHTML = ''
+
+  const $upg = document.createElement('div')
+  $upg.id = `${containerId}-upg`
+  $c.appendChild($upg)
+  buildUpgradeInputs(`${containerId}-upg`, prefix)
+
+  const $cards = document.createElement('div')
+  $cards.id = `${containerId}-cards`
+  $cards.style.marginTop = '12px'
+  $c.appendChild($cards)
+  buildCardInputs(`${containerId}-cards`, prefix)
+
+  const $opts = document.createElement('div')
+  $opts.id = `${containerId}-opts`
+  $opts.style.marginTop = '12px'
+  $c.appendChild($opts)
+  buildOptsInputs(`${containerId}-opts`, prefix)
+}
+
+/* ================================================================
+   INIT
+================================================================ */
+buildUpgradeInputs('upgrades-inputs')
+buildCardInputs('cards-inputs')
+buildOptsInputs('opts-inputs')
+buildCompareColumn('upA', 'A-')
+buildCompareColumn('upB', 'B-')
+
+document.getElementById('sim-btn').addEventListener('click', () => {
+  const { upgrades, cards, opts } = readState('')
+  const t0 = performance.now()
+  const result = simulate(upgrades, cards, opts)
+  const t1 = performance.now()
+  console.log(`Simulation: ${(t1 - t0).toFixed(1)} ms`)
+  renderSingleResult(result, upgrades, cards, opts)
+})
+
+document.getElementById('cmp-btn').addEventListener('click', () => {
+  const stateA = readState('A-')
+  const stateB = readState('B-')
+  const resA = simulate(stateA.upgrades, stateA.cards, stateA.opts)
+  const resB = simulate(stateB.upgrades, stateB.cards, stateB.opts)
+  renderCompare(resA, resB)
+})
+</script>
+</body>
+</html>
