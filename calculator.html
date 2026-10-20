@@ -32,13 +32,19 @@
   }
   .row label { font-size: 13px; font-weight: 600; }
   .row input[type=range] { width: 100%; accent-color: #ffd75e; }
-  .row .value { font-weight: 700; color: #ffd75e; min-width: 30px; text-align: right; }
+  .row input[type=range]:disabled { opacity: 0.35; }
+  .row .value { font-weight: 700; color: #ffd75e; min-width: 40px; text-align: right; }
   .row .input-num {
     background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
     color: #eaf2ff; padding: 6px 10px; border-radius: 6px; font-family: inherit;
     font-size: 13px; font-weight: 600; width: 60px;
   }
   .row .hint { font-size: 11px; opacity: 0.55; }
+  .row .check-label {
+    display: flex; align-items: center; gap: 8px; font-size: 13px;
+    font-weight: 500; cursor: pointer;
+  }
+  .row input[type=checkbox] { accent-color: #ffd75e; width: 16px; height: 16px; }
 
   .section-title {
     font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
@@ -104,10 +110,9 @@
 </head>
 <body>
 
-<div class="notice" id="serverNotice">
-  <b>Нужен локальный сервер.</b> В корне проекта:
-  <code>python -m http.server 8000</code> → открой
-  <code>localhost:8000/tools/calculator.html</code>
+<div class="notice">
+  Открывай через локальный сервер: <code>python -m http.server 8000</code>
+  → <code>localhost:8000/tools/calculator.html</code>
 </div>
 
 <h1>🚀 Rocket Game — Calculator</h1>
@@ -117,19 +122,17 @@
   <button class="tab" data-tab="compare">Сравнить два</button>
 </div>
 
-<!-- ========== SINGLE ========== -->
 <div id="single" class="tab-content active">
   <div class="section-title">Апгрейды</div>
   <div id="upgrades-inputs"></div>
   <div class="section-title">Карточки (0–2 копии)</div>
   <div id="cards-inputs"></div>
-  <div class="section-title">Способность и стратегия</div>
+  <div class="section-title">Стратегия полёта</div>
   <div id="opts-inputs"></div>
   <button class="action" id="sim-btn">🔮 Симулировать</button>
   <div id="single-results"></div>
 </div>
 
-<!-- ========== COMPARE ========== -->
 <div id="compare" class="tab-content">
   <div class="two-col">
     <div>
@@ -159,13 +162,15 @@ import * as CFG from '../scripts/config.js'
 import { terrainHeight } from '../scripts/world/world.js'
 
 /* ================================================================
-   SIMULATION — точная копия физики из game.js → updateRocket().
-   Fixed timestep 1/60 (после патча в main.js).
+   SIMULATION — точная копия физики game.js → updateRocket().
+   + PD-контроллер «авто-подъём носа» во время активной тяги.
 ================================================================ */
 function simulate(upgrades, cards, opts = {}) {
   const {
     boostThrottle = 'always',
     forsageLevel = 0,
+    noseLiftEnabled = false,
+    noseLiftAngle = 45,
     dt = 1 / 60,
     maxTime = 240,
   } = opts
@@ -177,11 +182,11 @@ function simulate(upgrades, cards, opts = {}) {
     return card && typeof card.buff === 'number' ? Math.pow(card.buff, n) : 1
   }
 
-  const launchSpeed    = CFG.RULES.launchSpeed(upgrades)   * cardMul('power2x')
-  const maxFuel        = CFG.RULES.maxFuel(upgrades)       * cardMul('fuel2x')
-  const thrustAccBase  = CFG.RULES.thrustAcc(upgrades)     * cardMul('thrust2x')
-  const gravityEff     = CFG.GAME.gravity                  * cardMul('airtime')
-  const dragMul        = cardMul('aero2x')
+  const launchSpeed     = CFG.RULES.launchSpeed(upgrades) * cardMul('power2x')
+  const maxFuelVal      = CFG.RULES.maxFuel(upgrades)     * cardMul('fuel2x')
+  const thrustAccBase   = CFG.RULES.thrustAcc(upgrades)   * cardMul('thrust2x')
+  const gravityEff      = CFG.GAME.gravity                * cardMul('airtime')
+  const dragMul         = cardMul('aero2x')
   const dragCoefAtAngle = (alpha) =>
     CFG.RULES.dragCoefAtAngle(upgrades, alpha) * dragMul
 
@@ -194,13 +199,20 @@ function simulate(upgrades, cards, opts = {}) {
     forsageDurationLeft = lv.duration
   }
 
+  const ANG_ACC   = CFG.GAME.angAcc
+  const ANG_DAMP  = CFG.GAME.angDamp
+  const ANG_MAX   = CFG.GAME.angMax
+  const ALIGN     = CFG.GAME.aeroAlign
+  const MIN_SPEED = CFG.GAME.aeroAlignMinSpeed
   const LAUNCH_ANGLE = CFG.GAME.launchAngle
-  const yaw          = CFG.GAME.flightYaw || 0
-  const REST_Y       = CFG.GAME.restY
-  const ANG_DAMP     = CFG.GAME.angDamp
-  const ANG_MAX      = CFG.GAME.angMax
-  const ALIGN_RATE   = CFG.GAME.aeroAlign
-  const MIN_SPEED    = CFG.GAME.aeroAlignMinSpeed
+  const yaw       = CFG.GAME.flightYaw || 0
+  const REST_Y    = CFG.GAME.restY
+
+  // PD-контроллер (идеализированный «умный пилот»)
+  const PD_KP = 6.0   // рад/с на рад ошибки
+  const PD_KD = 2.5   // демпфирование
+  const PD_VEL_MAX = 5.0  // рад/с — ограничение желаемой угловой скорости
+  const noseTargetRad = noseLiftEnabled ? (noseLiftAngle * Math.PI) / 180 : null
 
   const horiz = Math.cos(LAUNCH_ANGLE) * launchSpeed
   let vx = Math.cos(yaw) * horiz
@@ -209,10 +221,11 @@ function simulate(upgrades, cards, opts = {}) {
   let x = 0, y = REST_Y, z = 0
   let angZ = LAUNCH_ANGLE
   let angVel = 0
-  let fuel = maxFuel
+  let fuel = maxFuelVal
   let t = 0
   let maxAlt = 0
   let maxSpeed = launchSpeed
+  let boostEndAngle = null // угол в момент, когда тяга закончилась
 
   const maxSteps = Math.ceil(maxTime / dt)
 
@@ -222,7 +235,14 @@ function simulate(upgrades, cards, opts = {}) {
 
     const forsageActive = forsageDurationLeft > 0
     const boosting = boostThrottle === 'always' && !forsageActive && fuel > 0
+    const thrustActive = boosting || forsageActive
 
+    // Фиксируем угол, когда тяга «гаснет» — для отладки
+    if (boostEndAngle === null && !thrustActive && t > 0.01) {
+      boostEndAngle = (angZ * 180) / Math.PI
+    }
+
+    // ─── Тяга ───
     let appliedThrust = 0
     if (boosting) {
       appliedThrust += thrustAccBase
@@ -240,8 +260,10 @@ function simulate(upgrades, cards, opts = {}) {
       vz += c * Math.sin(yaw) * appliedThrust * dt
     }
 
+    // ─── Гравитация ───
     vy -= gravityEff * dt
 
+    // ─── Сопротивление ───
     const speed = Math.sqrt(vx * vx + vy * vy + vz * vz)
     if (speed > 0.01) {
       const noseX = Math.cos(angZ) * Math.cos(yaw)
@@ -256,6 +278,7 @@ function simulate(upgrades, cards, opts = {}) {
       vz -= vz * aDrag * dt
     }
 
+    // ─── Позиция ───
     x += vx * dt
     y += vy * dt
     z += vz * dt
@@ -266,19 +289,30 @@ function simulate(upgrades, cards, opts = {}) {
       break
     }
 
+    // ─── Управление углом ───
+    let rotInput = 0
+    if (thrustActive && noseTargetRad !== null) {
+      const error = noseTargetRad - angZ
+      const desiredVel = Math.max(-PD_VEL_MAX, Math.min(PD_VEL_MAX, error * PD_KP))
+      const rawInput = ((desiredVel - angVel) * PD_KD) / ANG_ACC
+      rotInput = Math.max(-1, Math.min(1, rawInput))
+    }
+
+    angVel += rotInput * ANG_ACC * dt
     angVel -= angVel * ANG_DAMP * dt
     angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, angVel))
     angZ += angVel * dt
 
+    // ─── Аэродинамическая стабилизация ───
     const spd = Math.sqrt(vx * vx + vy * vy + vz * vz)
-    if (ALIGN_RATE > 0 && spd > MIN_SPEED) {
+    if (ALIGN > 0 && spd > MIN_SPEED) {
       const desired = Math.atan2(vy, Math.hypot(vx, vz))
       let diff = desired - angZ
       while (diff > Math.PI) diff -= Math.PI * 2
       while (diff < -Math.PI) diff += Math.PI * 2
-      const maxStep = ALIGN_RATE * dt
-      const step2 = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
-      angZ += step2
+      const maxStep = ALIGN * dt
+      const applied = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
+      angZ += applied
     }
 
     t += dt
@@ -292,8 +326,9 @@ function simulate(upgrades, cards, opts = {}) {
     maxAltitude: maxAlt,
     time: t,
     maxSpeed,
-    fuelUsed: maxFuel - fuel,
+    fuelUsed: maxFuelVal - fuel,
     landingTerrain: terrainHeight(x, z),
+    boostEndAngle, // null = тяга не включалась или не выключалась
   }
 }
 
@@ -316,7 +351,6 @@ document.querySelectorAll('.tab').forEach((tab) => {
   })
 })
 
-/* ---------- Builders ---------- */
 function buildUpgradeInputs(containerId, prefix = '') {
   const $c = document.getElementById(containerId)
   $c.innerHTML = ''
@@ -358,6 +392,8 @@ function buildCardInputs(containerId, prefix = '') {
 function buildOptsInputs(containerId, prefix = '') {
   const $c = document.getElementById(containerId)
   $c.innerHTML = ''
+
+  // Forsage
   const r1 = document.createElement('div')
   r1.className = 'row'
   r1.innerHTML = `
@@ -369,6 +405,7 @@ function buildOptsInputs(containerId, prefix = '') {
     </select>`
   $c.appendChild(r1)
 
+  // Throttle strategy
   const r2 = document.createElement('div')
   r2.className = 'row'
   r2.innerHTML = `
@@ -378,6 +415,44 @@ function buildOptsInputs(containerId, prefix = '') {
       <label><input type="radio" name="${prefix}throttle" value="never"> Никогда</label>
     </div>`
   $c.appendChild(r2)
+
+  // Nose lift checkbox
+  const r3 = document.createElement('div')
+  r3.className = 'row'
+  r3.innerHTML = `
+    <label>Авто-подъём носа</label>
+    <label class="check-label">
+      <input type="checkbox" id="${prefix}nose-lift-enabled" checked>
+      <span class="hint">Пока есть тяга — держать нос на угле N</span>
+    </label>`
+  $c.appendChild(r3)
+
+  // Nose angle slider
+  const r4 = document.createElement('div')
+  r4.className = 'row'
+  r4.innerHTML = `
+    <label>Угол подъёма</label>
+    <div style="display:flex;align-items:center;gap:12px">
+      <input type="range" id="${prefix}nose-angle" min="0" max="90" step="1" value="45" style="flex:1">
+      <span class="value" id="${prefix}nose-angle-val">45°</span>
+    </div>`
+  $c.appendChild(r4)
+  const $hint = document.createElement('div')
+  $hint.style.cssText = 'font-size:11px;opacity:0.55;margin:4px 0 8px;padding-left:232px'
+  $hint.textContent = '0° = горизонт, 90° = вертикаль. После тяги нос выравнивается по курсу.'
+  $c.appendChild($hint)
+
+  // Live updates
+  const $angleSlider = document.getElementById(`${prefix}nose-angle`)
+  const $angleVal = document.getElementById(`${prefix}nose-angle-val`)
+  const $liftCheckbox = document.getElementById(`${prefix}nose-lift-enabled`)
+  $angleSlider.addEventListener('input', () => {
+    $angleVal.textContent = $angleSlider.value + '°'
+  })
+  $liftCheckbox.addEventListener('change', () => {
+    $angleSlider.disabled = !$liftCheckbox.checked
+    $angleVal.style.opacity = $liftCheckbox.checked ? '1' : '0.3'
+  })
 }
 
 function readState(prefix = '') {
@@ -393,12 +468,21 @@ function readState(prefix = '') {
   }
   const forsageLevel = +document.getElementById(`${prefix}forsage-lvl`).value
   const throttle = document.querySelector(`input[name="${prefix}throttle"]:checked`).value
-  return { upgrades, cards, opts: { forsageLevel, boostThrottle: throttle } }
+  const noseLiftEnabled = document.getElementById(`${prefix}nose-lift-enabled`).checked
+  const noseLiftAngle = +document.getElementById(`${prefix}nose-angle`).value
+  return {
+    upgrades,
+    cards,
+    opts: { forsageLevel, boostThrottle: throttle, noseLiftEnabled, noseLiftAngle },
+  }
 }
 
-/* ---------- Single render ---------- */
 function renderSingleResult(result, upgrades, cards, opts) {
   const $out = document.getElementById('single-results')
+
+  const angleInfo = result.boostEndAngle !== null
+    ? `Угол в конце тяги: <b>${result.boostEndAngle.toFixed(0)}°</b>`
+    : `Тяга не использовалась`
 
   $out.innerHTML = `
     <div class="result-box">
@@ -415,11 +499,12 @@ function renderSingleResult(result, upgrades, cards, opts) {
         <div class="result-label">Время полёта</div>
       </div>
     </div>
-    <div style="opacity:0.6;font-size:12px;margin-top:8px;text-align:center">
+    <div style="opacity:0.6;font-size:12px;margin-top:8px;text-align:center;line-height:1.6">
       Монет: <b style="color:#ffd75e">${Math.floor(result.distance)}</b> ·
       Макс. скорость: <b>${Math.round(result.maxSpeed)} м/с</b> ·
       Топливо сожжено: <b>${result.fuelUsed.toFixed(1)} с</b> ·
-      Посадка на высоте: <b>${Math.round(result.landingTerrain)} м</b>
+      Посадка на высоте: <b>${Math.round(result.landingTerrain)} м</b><br>
+      ${angleInfo}
     </div>`
 
   const rows = []
@@ -439,7 +524,7 @@ function renderSingleResult(result, upgrades, cards, opts) {
     const cost = CFG.RULES.upgradeCost(u, lvl)
     const nextResult = simulate({ ...upgrades, [u.key]: lvl + 1 }, cards, opts)
     const gain = nextResult.distance - result.distance
-    const roi = cost > 0 ? (gain / cost) * 1000 : 0  // м за 1000 монет
+    const roi = cost > 0 ? (gain / cost) * 1000 : 0
     const cls = roi > 30 ? 'good' : roi > 5 ? '' : 'bad'
     rows.push(`<tr>
       <td>${u.icon} ${u.name}</td>
@@ -464,7 +549,6 @@ function renderSingleResult(result, upgrades, cards, opts) {
     </table>`
 }
 
-/* ---------- Compare render ---------- */
 function renderCompare(resA, resB) {
   const $out = document.getElementById('cmp-results')
   const diff = resB.distance - resA.distance
@@ -499,7 +583,6 @@ function renderCompare(resA, resB) {
     </table>`
 }
 
-/* ---------- Compare column builder ---------- */
 function buildCompareColumn(containerId, prefix) {
   const $c = document.getElementById(containerId)
   $c.innerHTML = ''
@@ -533,10 +616,7 @@ buildCompareColumn('upB', 'B-')
 
 document.getElementById('sim-btn').addEventListener('click', () => {
   const { upgrades, cards, opts } = readState('')
-  const t0 = performance.now()
   const result = simulate(upgrades, cards, opts)
-  const t1 = performance.now()
-  console.log(`Simulation: ${(t1 - t0).toFixed(1)} ms`)
   renderSingleResult(result, upgrades, cards, opts)
 })
 
