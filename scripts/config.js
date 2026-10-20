@@ -934,13 +934,74 @@ export const ROCKET = /** @type {const} */ ({
     red: 0xe63946, // красный нос и плавники
     glass: 0x2b3a55, // тёмно-синий иллюминатор
   },
+  /**
+   * Углы отклонения носа от курса.
+   * Управляют цветом пламени, интенсивностью огня и цветом подсказки в HUD.
+   *
+   * Между соседними "стопами" значения ЛИНЕЙНО интерполируются по углу,
+   * а затем сглаживаются во времени (см. ROCKET.anglesSmooth) — поэтому
+   * цвет плавно "перетекает", а не скачет по порогам.
+   *
+   * Поля стопа:
+   *   angle          — верхняя граница диапазона, °
+   *   flameColor     — цвет пламени во время буста (hex)
+   *   flameIntensity — множитель амплитуды огня (1.0 = номинал)
+   *   textColor      — цвет текста угла в HUD (hex)
+   *   aligned        — (опц.) true → HUD показывает "🎯 0°" вместо реального угла
+   */
+  anglesCourse: {
+    forward: {
+      angle: 5,
+      aligned: true,
+      flameColor: 0x9fe8ff, // #9fe8ff
+      flameIntensity: 1.25, // огонь крупнее
+      textColor: 0x83ffa4, // #83ffa4
+    },
+    almostForward: {
+      angle: 10,
+      flameColor: 0xffeec5, // #ffeec5
+      flameIntensity: 1.15,
+      textColor: 0xc3f28e, // #c3f28e
+    },
+    adjustment: {
+      angle: 22,
+      flameColor: 0xffb710, // #ffb710
+      flameIntensity: 1.05,
+      textColor: 0xf6e420, // #f6e420
+    },
+    change: {
+      angle: 35,
+      flameColor: 0xffa510, // #ffa510
+      flameIntensity: 1.0,
+      textColor: 0xffc938, // #ffc938
+    },
+    deviation: {
+      angle: 50,
+      flameColor: 0xff8600, // #ff8600
+      flameIntensity: 0.9,
+      textColor: 0xffa938, // #ffa938
+    },
+    side: {
+      angle: 90,
+      flameColor: 0xff7000, // #ff7000
+      flameIntensity: 0.8,
+      textColor: 0xff6969, // #ff6969
+    },
+    back: {
+      angle: 180,
+      flameColor: 0xff4600, // #ff4600
+      flameIntensity: 0.4, // огонь сильно меньше
+      textColor: 0xe5d15d, // #e5d15d
+    },
+  },
 
   /** Цвета пламени. */
   flame: {
-    outer: 0xffb703, // оранжевое внешнее (обычный буст)
-    inner: 0xfff6d0, // светлое ядро
-    aligned: 0x9fe8ff, // голубое, когда нос соосно скорости
-    misaligned: 0xffb703, // оранжевое, когда «боком» — буст неэффективен
+    outer: 0xffb703, // #ffb703 оранжевое внешнее (обычный буст)
+    inner: 0xfff6d0, // #fff6d0 светлое ядро
+    aligned: 0x9fe8ff, // #9fe8ff  голубое, когда нос соосно скорости +-
+    misaligned: 0xff9603, // #ff9603  оранжевое, когда «боком» — буст неэффективен отклонение около 30°
+    backMove: 0xff4603, // #ff4603  красное, когда задом — буст неэффективен отклонение более 90°
   },
 
   /** Цвет точечного света от сопла. */
@@ -1391,7 +1452,7 @@ export const CARDS = /** @type {const} */ ([
   {
     key: 'thrust2x',
     icon: '🔥',
-    name: 'Форсаж',
+    name: 'Улучшенный двигатель',
     desc: 'Тяга ×' + CHESTS.buffChests[1],
     color: 0xff5c33,
   },
@@ -1416,7 +1477,39 @@ export const CARDS = /** @type {const} */ ([
     desc: 'Гравитация ×' + CHESTS.buffChests[4],
     color: 0xc38bff,
   },
+  {
+    key: 'forsage',
+    icon: '🚀',
+    name: 'Форсаж',
+    desc: 'Дает новую способность "Форсаж"',
+    desc_second: 'улучшает способность "Форсаж" в 2 раза',
+    color: 0xc38bff,
+  },
 ])
+
+/* ================================================================
+   СПОСОБНОСТИ — активные умения, получаемые через карточки.
+
+   Структура:
+     icon       — эмодзи для кнопки / попапа
+     name       — название
+     levels[]   — уровни (1-based). level = число карточек, но не
+                  выше levels.length. Каждый уровень задаёт СВОИ
+                  параметры (а не общий множитель):
+                    multiplier — во сколько раз тяга во время действия
+                    duration   — сколько секунд длится
+                    cooldown   — сколько секунд перезарядка
+   ================================================================ */
+export const ABILITIES = /** @type {const} */ ({
+  forsage: {
+    icon: '🚀',
+    name: 'Форсаж',
+    levels: [
+      { multiplier: 2.0, duration: 3.0, cooldown: 60 },
+      { multiplier: 3.0, duration: 4.0, cooldown: 45 },
+    ],
+  },
+})
 
 /* ================================================================
    ДОСТИЖЕНИЯ — все определения в одном месте.

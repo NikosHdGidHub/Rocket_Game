@@ -24,6 +24,8 @@ import {
   updateChests as updateChestsFX,
   updateGhostRocket,
 } from './entities.js'
+import * as Angles from './angles.js'
+
 import * as UI from './ui.js'
 
 /* ---------- Физические константы ---------- */
@@ -33,6 +35,7 @@ const LAUNCH_ANGLE = CFG.GAME.launchAngle
 const ANG_ACC = CFG.GAME.angAcc
 const ANG_DAMP = CFG.GAME.angDamp
 const ANG_MAX = CFG.GAME.angMax
+const _baseFlameColor = new THREE.Color(CFG.ROCKET.flame.outer)
 
 let boosting = false
 
@@ -516,26 +519,36 @@ function updateRocket(dt) {
     }
   }
 
-  // Индикатор выравнивания + цвет пламени
+  // ─── Угол, цвет пламени и HUD — с плавным «перетеканием» ───
+  let intensityMul = 1
+  let targetFlame = _baseFlameColor
+
   if (G.phase === 'fly') {
     let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
     while (diff > Math.PI) diff -= Math.PI * 2
     while (diff < -Math.PI) diff += Math.PI * 2
     const deg = (Math.abs(diff) * 180) / Math.PI
 
-    UI.setAlignText(deg)
+    const angState = Angles.update(deg, dt)
+    UI.setAlignText(deg, angState)
 
-    if (boosting) {
-      flameMat.color.setHex(deg < 15 ? CFG.ROCKET.flame.aligned : CFG.ROCKET.flame.misaligned)
-    }
+    intensityMul = angState.flameIntensity
+    // Цвет «боевого» пламени — только при бусте; иначе базовый.
+    targetFlame = boosting ? angState.flameColor : _baseFlameColor
   }
 
-  const boostAmt = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
+  const baseAmp = boosting ? 1 : G.phase === 'fly' ? 0.35 : 0
+  const boostAmt = baseAmp * intensityMul
   const flick = 0.85 + Math.random() * 0.3
+
   flame.scale.set(boostAmt * flick, boostAmt * flick, boostAmt * flick)
   flameInner.scale.set(boostAmt * flick * 1.1, boostAmt * flick, boostAmt * flick)
   flame.visible = boostAmt > 0.05
   flameInner.visible = flame.visible
+
+  // Градиент: цвет огня вычисляется из угла в angles.js и применяется
+  flameMat.color.copy(targetFlame)
+
   flameMat.opacity = boosting ? 0.95 : 0.5
   exhaustLight.intensity = boostAmt * (boosting ? 45 : 8)
 }

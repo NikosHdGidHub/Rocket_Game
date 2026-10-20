@@ -133,16 +133,22 @@ export function showLandToast(dist, isRecord) {
   toastTimer = setTimeout(() => $toast.classList.remove('on'), CFG.UI.toastDuration)
 }
 
-export function setAlignText(deg) {
-  if (deg < 8) {
-    $alignText.textContent = '🎯 0°'
-    $alignText.style.color = '#7dffa0'
-  } else if (deg < 25) {
-    $alignText.textContent = Math.round(deg) + '°'
-    $alignText.style.color = '#ffd75e'
-  } else {
-    $alignText.textContent = Math.round(deg) + '°'
-    $alignText.style.color = '#ff7a7a'
+/* ================================================================
+   Подсказка угла. Значения (цвет, aligned) приходят из angles.js —
+   ui.js только отображает, не считает пороги.
+================================================================ */
+let _lastAlignText = ''
+let _lastAlignColor = ''
+
+export function setAlignText(deg, state) {
+  const text = state.aligned ? '🎯 0°' : Math.round(deg) + '°'
+  if (text !== _lastAlignText) {
+    $alignText.textContent = text
+    _lastAlignText = text
+  }
+  if (state.textColor !== _lastAlignColor) {
+    $alignText.style.color = state.textColor
+    _lastAlignColor = state.textColor
   }
 }
 
