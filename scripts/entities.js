@@ -185,7 +185,7 @@ scene.add(chestGroup)
 
 export const chests = [] // { x, z, group, beam, glow, opened }
 
-/* ---------- Общие материалы (создаются ОДИН раз) ---------- */
+/* ---------- Общие материалы корпуса и окантовки (один раз на всех) ---------- */
 const chestBodyMat = new THREE.MeshStandardMaterial({
   color: 0x6b3a14,
   roughness: 0.7,
@@ -198,23 +198,37 @@ const chestTrimMat = new THREE.MeshStandardMaterial({
   emissive: 0xffb300,
   emissiveIntensity: 0.6,
 })
-const chestBeamMat = new THREE.MeshBasicMaterial({
-  color: CFG.CHESTS.beamColor,
-  transparent: true,
-  opacity: CFG.CHESTS.beamOpacity,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  fog: false,
-  side: THREE.DoubleSide,
-})
-const chestGlowMat = new THREE.MeshBasicMaterial({
-  color: CFG.CHESTS.glowColor,
-  transparent: true,
-  opacity: 0.5,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  fog: false,
-})
+
+/* ---------- Материалы beam/glow по типам (лениво) ---------- */
+const chestMats = {} // type → { beam, glow }
+
+function getChestMats(type) {
+  if (chestMats[type]) return chestMats[type]
+  const override = CFG.CHESTS.types[type] || {}
+  const beamColor = override.beamColor ?? CFG.CHESTS.beamColor
+  const glowColor = override.glowColor ?? CFG.CHESTS.glowColor
+
+  const beam = new THREE.MeshBasicMaterial({
+    color: beamColor,
+    transparent: true,
+    opacity: CFG.CHESTS.beamOpacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    side: THREE.DoubleSide,
+  })
+  const glow = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  })
+
+  chestMats[type] = { beam, glow }
+  return chestMats[type]
+}
 
 /* ---------- Один общий источник света, «переезжает» к ближайшему сундуку ---------- */
 const chestLight = new THREE.PointLight(CFG.CHESTS.glowColor, 0, 40)
@@ -236,8 +250,9 @@ const beamGeo = new THREE.CylinderGeometry(
 )
 const glowGeo = new THREE.SphereGeometry(2.2, 12, 10)
 
-function buildChestMesh(x, z) {
+function buildChestMesh(x, z, type) {
   const g = new THREE.Group()
+  const mats = getChestMats(type)
 
   const body = new THREE.Mesh(bodyGeo, chestBodyMat)
   body.position.y = 0.7
@@ -259,13 +274,12 @@ function buildChestMesh(x, z) {
   lock.position.set(0, 0.85, 0.85)
   g.add(lock)
 
-  const beam = new THREE.Mesh(beamGeo, chestBeamMat)
+  const beam = new THREE.Mesh(beamGeo, mats.beam)
   beam.position.y = CFG.CHESTS.beamHeight / 2
   beam.renderOrder = 5
-  // frustumCulled оставляем по умолчанию = true
   g.add(beam)
 
-  const glow = new THREE.Mesh(glowGeo, chestGlowMat)
+  const glow = new THREE.Mesh(glowGeo, mats.glow)
   glow.position.y = 1.2
   glow.renderOrder = 4
   g.add(glow)
@@ -285,11 +299,12 @@ function chestZ(x) {
 export function initChests() {
   for (const x of CFG.CHESTS.xPositions) {
     const z = chestZ(x)
+    const type = CFG.CHESTS.specialChests[x] || 'random'
     const opened = G.openedChests.has(x)
-    const { group, beam, glow } = buildChestMesh(x, z)
+    const { group, beam, glow } = buildChestMesh(x, z, type)
     group.visible = !opened
     chestGroup.add(group)
-    chests.push({ x, z, group, beam, glow, opened })
+    chests.push({ x, z, group, beam, glow, opened, type })
   }
 }
 
@@ -313,34 +328,34 @@ export function resyncChests() {
 export function updateChests(dt, rx, rz) {
   const t = performance.now() * 0.001
 
-  // Глобальная пульсация столба — один материал на всех
-  chestBeamMat.opacity = CFG.CHESTS.beamOpacity * (0.75 + Math.sin(t * 2) * 0.25)
+  // Глобальная пульсация всех beam-материалов
+  const pulse = CFG.CHESTS.beamOpacity * (0.75 + Math.sin(t * 2) * 0.25)
+  for (const mats of Object.values(chestMats)) {
+    mats.beam.opacity = pulse
+  }
 
-  // Ищем ближайший неоткрытый сундук
   let nearest = null
   let nearestD2 = Infinity
 
   for (const c of chests) {
     if (c.opened) continue
-
     const dx = rx - c.x
     const dz = rz - c.z
     const d2 = dx * dx + dz * dz
-
     if (d2 < nearestD2) {
       nearestD2 = d2
       nearest = c
     }
-
-    // Пульсация размера свечения — пропорционально близости
     const dist = Math.sqrt(d2)
     const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
     c.glow.scale.setScalar(1 + near * 0.6)
   }
 
-  // Один источник света — на ближайший сундук в радиусе 500 м
   const R = 500
   if (nearest && nearestD2 < R * R) {
+    const override = CFG.CHESTS.types[nearest.type] || {}
+    const glowColor = override.glowColor ?? CFG.CHESTS.glowColor
+    chestLight.color.setHex(glowColor)
     const gy = terrainHeight(nearest.x, nearest.z)
     chestLight.position.set(nearest.x, gy + 2.0, nearest.z)
     chestLight.intensity = CFG.CHESTS.glowIntensity * 2

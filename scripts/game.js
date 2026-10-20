@@ -46,12 +46,8 @@ export const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
 export const cardMul = (key) => {
   const n = G.cards[key] || 0
   if (n === 0) return 1
-  if (key === 'fuel2x') return Math.pow(CFG.CHESTS.buffChests[0], n)
-  if (key === 'thrust2x') return Math.pow(CFG.CHESTS.buffChests[1], n)
-  if (key === 'power2x') return Math.pow(CFG.CHESTS.buffChests[2], n)
-  if (key === 'aero2x') return Math.pow(CFG.CHESTS.buffChests[3], n)
-  if (key === 'airtime') return Math.pow(CFG.CHESTS.buffChests[4], n)
-  return 1
+  const card = CFG.CARDS.find((c) => c.key === key)
+  return card && typeof card.buff === 'number' ? Math.pow(card.buff, n) : 1
 }
 
 export const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('power2x')
@@ -281,9 +277,19 @@ function land() {
 
 function pickCard() {
   const limit = CFG.CHESTS.cardTypeLimit
-  const allowed = CFG.CARDS.filter((c) => (G.cards[c.key] || 0) < limit)
+  // Обычные карточки. forsage выдаётся ТОЛЬКО из специальных сундуков
+  // (specialChests), поэтому из рандомного пула её исключаем.
+  const allowed = CFG.CARDS.filter((c) => c.key !== 'forsage' && (G.cards[c.key] || 0) < limit)
   if (allowed.length === 0) return null
   return allowed[Math.floor(Math.random() * allowed.length)]
+}
+
+function pickForsageCard() {
+  const card = CFG.CARDS.find((c) => c.key === 'forsage')
+  if (!card) return pickCard() // страховка
+  const maxLv = CFG.ABILITIES.forsage.levels.length
+  if ((G.cards.forsage || 0) >= maxLv) return pickCard() // fallback — уже прокачано
+  return card
 }
 
 function openChest(chest) {
@@ -291,11 +297,12 @@ function openChest(chest) {
   G.openedChests.add(chest.x)
   chest.group.visible = false
 
-  const card = pickCard()
+  const card = chest.type === 'forsage' ? pickForsageCard() : pickCard()
   if (card) {
+    // «Апгрейд» = у игрока уже была хотя бы одна такая карточка.
+    const isUpgrade = (G.cards[card.key] || 0) >= 1
     G.cards[card.key] = (G.cards[card.key] || 0) + 1
-    UI.showCardPopup(card)
-
+    UI.showCardPopup(card, isUpgrade)
     Abilities.onCardObtained(card.key)
   } else {
     UI.showToast('Все карточки собраны! 🎉', CFG.UI.toastColors.upgrade)
@@ -723,6 +730,23 @@ function updateChestTracker() {
     UI.updateChestProgress(d, progress, d < CFG.CHESTS.nearRadius, false)
   }
 }
+
+/* ================================================================
+   DEBUG: открыть сундук по X (для теста без полёта на 15000 м).
+   Возвращает сундук в исходное состояние — можно тестировать повторно.
+================================================================ */
+/* export function debugOpenChestAt(x) {
+  const chest = chests.find((c) => c.x === x)
+  if (!chest) {
+    console.warn(`[DEBUG] Сундук на X=${x} не найден`)
+    return
+  }
+  chest.opened = false
+  chest.group.visible = true
+  G.openedChests.delete(x)
+  openChest(chest)
+  console.log(`[DEBUG] Открыт сундук X=${x}, type=${chest.type}`)
+}*/
 
 /* ================================================================
    init — вызвать после scene.init() и entities.init().

@@ -219,13 +219,30 @@ function updateForsageButton() {
 }
 
 let cardCloseHandler = null
-export function showCardPopup(card) {
+export function showCardPopup(card, isUpgrade = false) {
   const $popup = document.getElementById('cardPopup')
+  const $card = $popup.querySelector('.card')
+  const $label = $popup.querySelector('.card-label')
+
   document.getElementById('cardIcon').textContent = card.icon
   document.getElementById('cardName').textContent = card.name
-  document.getElementById('cardDesc').textContent = card.desc
-  $popup.classList.add('on')
 
+  // Для forsage: первая карточка → desc, повторная → desc_second.
+  // Для остальных карточек desc_second отсутствует — поведение не меняется.
+  const descText = isUpgrade && card.desc_second ? card.desc_second : card.desc
+  document.getElementById('cardDesc').textContent = descText
+
+  // Заголовок: «РЕДКАЯ НАХОДКА» → «УЛУЧШЕНИЕ» при апгрейде.
+  if ($label) {
+    $label.textContent = isUpgrade ? 'УЛУЧШЕНИЕ' : 'РЕДКАЯ НАХОДКА'
+  }
+
+  if ($card) {
+    $card.style.borderColor =
+      card.color != null ? '#' + card.color.toString(16).padStart(6, '0') : ''
+  }
+
+  $popup.classList.add('on')
   if (cardCloseHandler) $popup.removeEventListener('click', cardCloseHandler)
   cardCloseHandler = () => $popup.classList.remove('on')
   $popup.addEventListener('click', cardCloseHandler)
