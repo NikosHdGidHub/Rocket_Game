@@ -26,14 +26,23 @@
   .tab-content.active { display: block; }
 
   .row {
-    display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center;
+    display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: center;
     padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 8px;
     margin-bottom: 6px;
   }
   .row label { font-size: 13px; font-weight: 600; }
   .row input[type=range] { width: 100%; accent-color: #ffd75e; }
   .row input[type=range]:disabled { opacity: 0.35; }
-  .row .value { font-weight: 700; color: #ffd75e; min-width: 40px; text-align: right; }
+  .row .value {
+    font-weight: 700; color: #ffd75e; min-width: 34px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .row .spent {
+    font-size: 11px; font-weight: 700; color: #ffd75e;
+    min-width: 96px; text-align: right;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
   .row .input-num {
     background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
     color: #eaf2ff; padding: 6px 10px; border-radius: 6px; font-family: inherit;
@@ -45,6 +54,21 @@
     font-weight: 500; cursor: pointer;
   }
   .row input[type=checkbox] { accent-color: #ffd75e; width: 16px; height: 16px; }
+
+  /* Строка «Итого вложено» — визуально отделена */
+  .row.total-row {
+    background: rgba(255,215,94,0.06);
+    border: 1px solid rgba(255,215,94,0.2);
+    margin-top: 10px;
+  }
+  .row.total-row label {
+    font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+    color: #ffd75e; text-transform: uppercase; opacity: 0.9;
+  }
+  .row.total-row .total-val {
+    text-align: right; font-size: 15px; font-weight: 900; color: #ffd75e;
+    font-variant-numeric: tabular-nums;
+  }
 
   .section-title {
     font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
@@ -195,6 +219,38 @@ import * as CFG from '../scripts/config.js'
 import { terrainHeight } from '../scripts/world/world.js'
 
 /* ================================================================
+   ХЕЛПЕРЫ — суммы апгрейдов
+================================================================ */
+const fmtSpent = (n) => Math.floor(n).toLocaleString('ru-RU')
+const fmtCost  = (c) => c >= 1000 ? Math.round(c / 1000) + 'k' : String(c)
+const fmtM = (m) => {
+  if (m < 1000) return Math.round(m) + ' м'
+  if (m < 10000) return (m / 1000).toFixed(2) + ' км'
+  return Math.round(m / 1000) + ' км'
+}
+
+/** Сколько всего потрачено на апгрейд, чтобы дойти до уровня `level`. */
+function totalSpent(u, level) {
+  let total = 0
+  for (let L = 1; L < level; L++) {
+    total += CFG.RULES.upgradeCost(u, L)
+  }
+  return total
+}
+
+function updateUpgradesTotal(prefix) {
+  const $el = document.getElementById(`${prefix}upgrades-total`)
+  if (!$el) return
+  let sum = 0
+  for (const u of CFG.UPGRADES) {
+    const inp = document.getElementById(`${prefix}${u.key}`)
+    if (!inp) continue
+    sum += totalSpent(u, +inp.value)
+  }
+  $el.textContent = sum > 0 ? fmtSpent(sum) + ' 💰' : '—'
+}
+
+/* ================================================================
    SIMULATION — физика game.js → updateRocket() + траектория.
 ================================================================ */
 function simulate(upgrades, cards, opts = {}) {
@@ -204,7 +260,7 @@ function simulate(upgrades, cards, opts = {}) {
     noseLiftEnabled = false,
     noseLiftAngle = 45,
     dt = 1 / 60,
-    maxTime = 240,
+    maxTime = 3600,
   } = opts
 
   const cardMul = (key) => {
@@ -259,7 +315,6 @@ function simulate(upgrades, cards, opts = {}) {
   let boostEndAngle = null
   let maxTimeReached = false
 
-  // Траектория: [x, y] каждые 0.1 с
   const trajectory = [[0, REST_Y]]
   let nextSampleT = 0.1
   const SAMPLE_INTERVAL = 0.1
@@ -318,7 +373,6 @@ function simulate(upgrades, cards, opts = {}) {
     if (y <= restY && vy < 0) {
       y = restY
       t += dt
-      // Финальная точка
       trajectory.push([x, y])
       break
     }
@@ -368,47 +422,85 @@ function simulate(upgrades, cards, opts = {}) {
     fuelUsed: maxFuelVal - fuel,
     landingTerrain: terrainHeight(x, z),
     boostEndAngle,
-    trajectory,
+    trajectory: downsampleTrajectory(trajectory, 2000),
     maxTimeReached,
   }
 }
 
+/** Не даём SVG получить 20 000 точек — режем до ~2000, сохраняя форму. */
+function downsampleTrajectory(traj, maxPts) {
+  if (traj.length <= maxPts) return traj
+  const out = [traj[0]]
+  const step = (traj.length - 1) / (maxPts - 1)
+  for (let i = 1; i < maxPts - 1; i++) {
+    out.push(traj[Math.round(i * step)])
+  }
+  out.push(traj[traj.length - 1])
+  return out
+}
+
+/**
+ * Трёхуровневый расчёт: 300с → 900с → 3600с.
+ * Стартуем с короткого лимита (быстро), удлиняем только если полёт не завершён.
+ */
+function simulateAdaptive(upgrades, cards, opts) {
+  const tiers = [300, 900, 3600]
+  let r = null
+  for (const maxTime of tiers) {
+    r = simulate(upgrades, cards, { ...opts, maxTime })
+    if (!r.maxTimeReached) break
+  }
+  return r
+}
+
 /* ================================================================
-   FIND OPTIMUM — прогон 0..90° с шагом 1°.
+   FIND OPTIMUM
 ================================================================ */
-function findOptimum(upgrades, cards, baseOpts) {
+async function findOptimumAsync(upgrades, cards, baseOpts, onProgress) {
   const results = []
   let best = null
 
   for (let angle = 0; angle <= 90; angle += 1) {
-    const r = simulate(upgrades, cards, {
+    const r = simulateAdaptive(upgrades, cards, {
       ...baseOpts,
       noseLiftEnabled: true,
       noseLiftAngle: angle,
     })
-    results.push({ angle, distance: r.distance })
-    if (!best || r.distance > best.distance) {
+    results.push({ angle, distance: r.distance, truncated: r.maxTimeReached })
+    // Не-обрезанный всегда выигрывает у обрезанного
+    const better =
+      !best ||
+      (!r.maxTimeReached && (best.result.maxTimeReached || r.distance > best.distance)) ||
+      (r.maxTimeReached === best.result.maxTimeReached && r.distance > best.distance)
+    if (better) {
       best = { angle, distance: r.distance, result: r }
+    }
+    if (angle % 10 === 9) {
+      onProgress?.(angle + 1)
+      await new Promise((r) => setTimeout(r, 0))
     }
   }
 
-  // Baseline: без подъёма носа
-  const noLift = simulate(upgrades, cards, { ...baseOpts, noseLiftEnabled: false })
-
+  const noLift = simulateAdaptive(upgrades, cards, { ...baseOpts, noseLiftEnabled: false })
   return { results, best, noLift }
 }
 
 /* ================================================================
    SVG CHARTS
 ================================================================ */
+const fmtAxis = (v) => {
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M'
+  if (v >= 1e3) return Math.round(v / 1e3) + 'к'
+  return Math.round(v)
+}
+
 function renderTrajectoryChart(trajectory) {
   const W = 440, H = 280
   const padL = 55, padR = 20, padT = 20, padB = 40
   const plotW = W - padL - padR
   const plotH = H - padT - padB
 
-  let maxX = 0, maxY = 0
-  let peakIdx = 0
+  let maxX = 0, maxY = 0, peakIdx = 0
   for (let i = 0; i < trajectory.length; i++) {
     const [tx, ty] = trajectory[i]
     if (tx > maxX) maxX = tx
@@ -424,7 +516,6 @@ function renderTrajectoryChart(trajectory) {
 
   const pts = trajectory.map(([tx, ty]) => `${toX(tx).toFixed(1)},${toY(ty).toFixed(1)}`).join(' ')
 
-  const fmtAxis = (v) => v >= 1000 ? Math.round(v / 1000) + 'к' : Math.round(v)
   const xTicks = []
   for (let i = 0; i <= 4; i++) {
     const v = (maxX * i) / 4
@@ -437,7 +528,7 @@ function renderTrajectoryChart(trajectory) {
     const v = (maxY * i) / 4
     const px = toY(v)
     yTicks.push(`<line x1="${padL}" y1="${px}" x2="${padL + plotW}" y2="${px}" stroke="rgba(255,255,255,0.06)"/>
-      <text x="${padL - 6}" y="${px + 3}" fill="rgba(255,255,255,0.45)" font-size="10" text-anchor="end">${Math.round(v)}</text>`)
+      <text x="${padL - 6}" y="${px + 3}" fill="rgba(255,255,255,0.45)" font-size="10" text-anchor="end">${fmtAxis(v)}</text>`)
   }
 
   const startPt = trajectory[0]
@@ -451,7 +542,7 @@ function renderTrajectoryChart(trajectory) {
     <circle cx="${toX(startPt[0])}" cy="${toY(startPt[1])}" r="4" fill="#7dffa0"/>
     <circle cx="${toX(endPt[0])}" cy="${toY(endPt[1])}" r="4" fill="#ff7a7a"/>
     <circle cx="${toX(peakPt[0])}" cy="${toY(peakPt[1])}" r="4" fill="#ffd75e"/>
-    <text x="${toX(peakPt[0])}" y="${toY(peakPt[1]) - 8}" fill="#ffd75e" font-size="10" font-weight="700" text-anchor="middle">${Math.round(peakPt[1])} м</text>
+    <text x="${toX(peakPt[0])}" y="${toY(peakPt[1]) - 8}" fill="#ffd75e" font-size="10" font-weight="700" text-anchor="middle">${fmtAxis(peakPt[1])}</text>
     <text x="${padL + plotW / 2}" y="${H - 8}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle">Дальность, м</text>
     <text x="14" y="${padT + plotH / 2}" fill="rgba(255,255,255,0.55)" font-size="11" text-anchor="middle" transform="rotate(-90 14 ${padT + plotH / 2})">Высота, м</text>
   </svg>`
@@ -473,7 +564,6 @@ function renderAngleChart(results, best) {
 
   const pts = results.map(r => `${toX(r.angle).toFixed(1)},${toY(r.distance).toFixed(1)}`).join(' ')
 
-  const fmtAxis = (v) => v >= 1000 ? Math.round(v / 1000) + 'к' : Math.round(v)
   const xTicks = []
   for (let a = 0; a <= 90; a += 15) {
     const px = toX(a)
@@ -500,15 +590,8 @@ function renderAngleChart(results, best) {
 }
 
 /* ================================================================
-   UI HELPERS
+   UI
 ================================================================ */
-const fmtM = (m) => {
-  if (m < 1000) return Math.round(m) + ' м'
-  if (m < 10000) return (m / 1000).toFixed(2) + ' км'
-  return Math.round(m / 1000) + ' км'
-}
-const fmtCost = (c) => c >= 1000 ? Math.round(c / 1000) + 'k' : String(c)
-
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'))
@@ -521,6 +604,8 @@ document.querySelectorAll('.tab').forEach((tab) => {
 function buildUpgradeInputs(containerId, prefix = '') {
   const $c = document.getElementById(containerId)
   $c.innerHTML = ''
+  const updaters = []
+
   for (const u of CFG.UPGRADES) {
     const row = document.createElement('div')
     row.className = 'row'
@@ -531,12 +616,37 @@ function buildUpgradeInputs(containerId, prefix = '') {
       <div style="display:flex;align-items:center;gap:12px">
         <input type="range" id="${prefix}${u.key}" min="1" max="${maxLvl}" value="${initLvl}" style="flex:1">
         <span class="value" id="${prefix}${u.key}-val">${initLvl}</span>
+        <span class="spent" id="${prefix}${u.key}-spent" title="Всего потрачено на этот апгрейд"></span>
       </div>`
     $c.appendChild(row)
+
     const input = row.querySelector('input')
     const val = row.querySelector('.value')
-    input.addEventListener('input', () => { val.textContent = input.value })
+    const spentEl = row.querySelector('.spent')
+
+    const update = () => {
+      const lvl = +input.value
+      val.textContent = lvl
+      const total = totalSpent(u, lvl)
+      spentEl.textContent = total > 0 ? fmtSpent(total) : ''
+      updateUpgradesTotal(prefix)
+    }
+    input.addEventListener('input', update)
+    updaters.push(update)
   }
+
+  // Итоговая строка — всегда внизу
+  const totalRow = document.createElement('div')
+  totalRow.className = 'row total-row'
+  totalRow.innerHTML = `
+    <label>💎 Итого вложено</label>
+    <div style="text-align:right">
+      <span class="total-val" id="${prefix}upgrades-total">—</span>
+    </div>`
+  $c.appendChild(totalRow)
+
+  // Первичная отрисовка всех значений + итога
+  for (const upd of updaters) upd()
 }
 
 function buildCardInputs(containerId, prefix = '') {
@@ -600,10 +710,6 @@ function buildOptsInputs(containerId, prefix = '') {
       <span class="value" id="${prefix}nose-angle-val">45°</span>
     </div>`
   $c.appendChild(r4)
-  const $hint = document.createElement('div')
-  $hint.style.cssText = 'font-size:11px;opacity:0.55;margin:4px 0 8px;padding-left:232px'
-  $hint.textContent = '0° = горизонт, 90° = вертикаль. После тяги нос выравнивается по курсу.'
-  $c.appendChild($hint)
 
   const $angleSlider = document.getElementById(`${prefix}nose-angle`)
   const $angleVal = document.getElementById(`${prefix}nose-angle-val`)
@@ -646,7 +752,7 @@ function renderSingleResult(result, upgrades, cards, opts) {
     ? `Угол в конце тяги: <b>${result.boostEndAngle.toFixed(0)}°</b>`
     : `Тяга не использовалась`
   const timeWarn = result.maxTimeReached
-    ? `<br><span style="color:#ffb84d">⚠️ Полёт не закончился за ${result.time.toFixed(0)} с — результат обрезан по времени</span>`
+    ? `<br><span style="color:#ffb84d">⚠️ Полёт не завершился за ${result.time.toFixed(0)} с — результат обрезан</span>`
     : ''
 
   $out.innerHTML = `
@@ -687,7 +793,7 @@ function renderSingleResult(result, upgrades, cards, opts) {
       continue
     }
     const cost = CFG.RULES.upgradeCost(u, lvl)
-    const nextResult = simulate({ ...upgrades, [u.key]: lvl + 1 }, cards, opts)
+    const nextResult = simulateAdaptive({ ...upgrades, [u.key]: lvl + 1 }, cards, opts)
     const gain = nextResult.distance - result.distance
     const roi = cost > 0 ? (gain / cost) * 1000 : 0
     const cls = roi > 30 ? 'good' : roi > 5 ? '' : 'bad'
@@ -713,7 +819,6 @@ function renderSingleResult(result, upgrades, cards, opts) {
       <tbody>${rows.join('')}</tbody>
     </table>`
 
-  // Trajectory chart
   const $charts = document.getElementById('charts-row')
   $charts.style.display = 'grid'
   $charts.innerHTML = `
@@ -721,17 +826,17 @@ function renderSingleResult(result, upgrades, cards, opts) {
       <div class="chart-title">✈️ Траектория полёта</div>
       ${renderTrajectoryChart(result.trajectory)}
     </div>`
-  $charts.dataset.mode = 'sim'
 }
 
-function renderOptimum(optData, upgrades, cards, opts) {
+function renderOptimum(optData) {
   const { results, best, noLift } = optData
   const $out = document.getElementById('single-results')
   const gain = best.distance - noLift.distance
   const gainPct = noLift.distance > 0 ? (gain / noLift.distance) * 100 : 0
 
-  const timeWarn = best.result.maxTimeReached
-    ? `<div style="color:#ffb84d;font-size:11px;margin-top:6px">⚠️ Один или несколько углов не завершили полёт за 240 с</div>`
+  const truncCount = results.filter((r) => r.truncated).length
+  const timeWarn = truncCount > 0
+    ? `<div style="color:#ffb84d;font-size:11px;margin-top:6px">⚠️ ${truncCount} угл. обрезаны по времени (300→900→3600 с)</div>`
     : ''
 
   $out.innerHTML = `
@@ -778,7 +883,6 @@ function renderOptimum(optData, upgrades, cards, opts) {
       <div class="chart-title">📈 Дальность vs угол подъёма</div>
       ${renderAngleChart(results, best)}
     </div>`
-  $charts.dataset.mode = 'opt'
 }
 
 function renderCompare(resA, resB) {
@@ -848,27 +952,23 @@ buildCompareColumn('upB', 'B-')
 
 document.getElementById('sim-btn').addEventListener('click', () => {
   const { upgrades, cards, opts } = readState('')
-  const result = simulate(upgrades, cards, opts)
+  const result = simulateAdaptive(upgrades, cards, opts)
   renderSingleResult(result, upgrades, cards, opts)
 })
 
 document.getElementById('opt-btn').addEventListener('click', async () => {
   const btn = document.getElementById('opt-btn')
   const origText = btn.textContent
-  btn.textContent = '⏳ Считаю 91 угол…'
+  btn.textContent = '⏳ 0/91…'
   btn.disabled = true
-
-  // Даём браузеру перерисовать кнопку
   await new Promise((r) => setTimeout(r, 20))
 
   try {
     const { upgrades, cards, opts } = readState('')
-    const t0 = performance.now()
-    const optData = findOptimum(upgrades, cards, opts)
-    const t1 = performance.now()
-    console.log(`Optimize: ${(t1 - t0).toFixed(0)} ms (${optData.results.length} angles)`)
-
-    renderOptimum(optData, upgrades, cards, opts)
+    const optData = await findOptimumAsync(upgrades, cards, opts, (done) => {
+      btn.textContent = `⏳ ${done}/91…`
+    })
+    renderOptimum(optData)
   } finally {
     btn.textContent = origText
     btn.disabled = false
@@ -878,8 +978,8 @@ document.getElementById('opt-btn').addEventListener('click', async () => {
 document.getElementById('cmp-btn').addEventListener('click', () => {
   const stateA = readState('A-')
   const stateB = readState('B-')
-  const resA = simulate(stateA.upgrades, stateA.cards, stateA.opts)
-  const resB = simulate(stateB.upgrades, stateB.cards, stateB.opts)
+  const resA = simulateAdaptive(stateA.upgrades, stateA.cards, stateA.opts)
+  const resB = simulateAdaptive(stateB.upgrades, stateB.cards, stateB.opts)
   renderCompare(resA, resB)
 })
 </script>
