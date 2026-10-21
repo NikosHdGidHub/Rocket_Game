@@ -74,9 +74,14 @@ export function getProps(cx, cz) {
  */
 function collectShadowItems(cx, cz) {
   return [
+    ...getProps(cx - 1, cz - 1),
+    ...getProps(cx - 1, cz),
+    ...getProps(cx - 1, cz + 1),
+    ...getProps(cx, cz - 1),
     ...getProps(cx, cz),
-    ...getProps(cx + 1, cz),
     ...getProps(cx, cz + 1),
+    ...getProps(cx + 1, cz - 1),
+    ...getProps(cx + 1, cz),
     ...getProps(cx + 1, cz + 1),
   ]
 }

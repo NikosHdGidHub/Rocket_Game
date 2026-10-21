@@ -618,7 +618,7 @@ export const CHUNKS = /** @type {const} */ ({
 
   /**
    * Постоянные чанки вокруг точки старта (0, 0)*/
-  persistentStart: { xMin: -1, xMax: 4, zMin: -2, zMax: 2 },
+  persistentStart: { xMin: -1, xMax: 7, zMin: -3, zMax: 3 },
 
   /** Радиус видимости для persistent-чанков (в чанках). Должен быть равен дальности прорисовки*/
   persistentVisibleRadius: 9,
