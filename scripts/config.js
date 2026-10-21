@@ -1239,11 +1239,11 @@ export const GAME = /** @type {const} */ ({
   /** Потолок угловой скорости (рад/с). */
   angMax: 18.0,
 
-  /**
-   * Плотность воздуха по высоте (экспоненциальное падение).
-   * На 0 м = 1, на airHeight м = 0.37.
-   */
+  /** Плотность воздуха по высоте (экспоненциальное падение). На 0 м = 1, на airHeight м = 0.37.*/
   airHeight: 6000,
+  /** Высота отключения двигателей */
+  airEngineHeight: 10000, // Эффективность топлива постепенно (линейно) снижается. Расход остается прежнем. Пламя становиться слабее и краснее. на airEngineHeight м тяга = 0%. (Без прокачек)
+
   /** Общая сложность игры (0.75 - 2.0) */
   upgrade_cost_diff: 1.4,
 
@@ -1265,26 +1265,12 @@ export const GAME = /** @type {const} */ ({
 ================================================================ */
 
 export const SAVE = /** @type {const} */ ({
-  /**
-   * Ключ в localStorage.
-   * [влияет] смена ключа = старые сохранения «теряются» (остаются в LS,
-   *          но игра их больше не читает).
-   * [типично] '<game>_save_v<N>' — версия прямо в ключе, удобно для миграций.
-   */
-  key: 'rocket_game_save_v1',
+  /** Ключ в localStorage.*/
+  key: 'rocket_game_save_v2',
 
-  /**
-   * Версия схемы сохранения.
-   * [влияет] если менять структуру data — инкрементируй и добавь миграцию.
-   */
-  version: 1,
+  version: 2,
 
-  /**
-   * Автосохранение.
-   * [влияет] false = игра НЕ пишет в localStorage (загрузка всё равно работает).
-   *          true  = сохранение после каждого апгрейда и каждой посадки.
-   * [типично] true в релизе, false в отладке.
-   */
+  /** Автосохранение.*/
   autoSave: true,
 })
 
@@ -1458,64 +1444,171 @@ export const CHESTS = /** @type {const} */ ({
   /** На каком расстоянии (м) сундук «подсвечивается» ярче. */
   nearRadius: 500,
 
-  /** Лимит одного типа карточки. */
+  /** Лимит одного семейства (family). Один и тот же вариант можно получить дважды. */
   cardTypeLimit: 2,
 })
 
 /**
- * Редкие карточки. Каждая — множитель, навсегда.
- * buff — числовой множитель (используется в cardMul()).
- * Дубликаты перемножаются: 2× fuel2x (1.8² = 3.24) к топливу.
- * У forsage нет buff — способность качается через отдельную систему.
+ * Редкие карточки.
+ *
+ * Структура:
+ *   id         — уникальный ключ (используется в сейве!)
+ *   family     — семейство (лимит на семейство)
+ *   variant    — название варианта (уточнение)
+ *   desc_buff  — текст баффа для UI
+ *   desc_debuff — текст дебаффа для UI
+ *   effects    — массив { stat, mult, isBuff } — механические множители
+ *   flags      — нецифровые эффекты (['engineAlwaysOn'])
+ *   condition  — условие появления ('forsage' — только если открыт форсаж)
+ *   special    — true → не выпадает в рандоме (только из фиолетовых сундуков)
+ *   color      — hex для рамки карточки
  */
 export const CARDS = /** @type {const} */ ([
+  // ── FUEL ──
   {
-    key: 'fuel2x',
+    id: 'fuel_heavy',
+    family: 'fuel',
     icon: '⛽',
     name: 'Двойной бак',
-    desc: 'Топливо ×1.8',
-    buff: 1.8,
-    color: 0xff9f1a,
+    variant: 'Тяжёлые баки',
+    desc_buff: 'Топливо ×2',
+    desc_debuff: 'Тяга ×0.7',
+    effects: [
+      { stat: 'maxFuel', mult: 2.0, isBuff: true },
+      { stat: 'thrustAcc', mult: 0.7, isBuff: false },
+    ],
+    color: 0xff631a, // #ff631a
   },
   {
-    key: 'thrust2x',
+    id: 'fuel_oversized',
+    family: 'fuel',
+    icon: '⛽',
+    name: 'Двойной бак',
+    variant: 'Негабаритные баки',
+    desc_buff: 'Топливо ×2',
+    desc_debuff: 'Сопротивление воздуха ×1.7',
+    effects: [
+      { stat: 'maxFuel', mult: 2.0, isBuff: true },
+      { stat: 'drag', mult: 1.7, isBuff: false },
+    ],
+    color: 0xff631a, // #ff631a
+  },
+  {
+    id: 'fuel_solid',
+    family: 'fuel',
+    icon: '⛽',
+    name: 'Двойной бак',
+    variant: 'Твёрдое топливо',
+    desc_buff: 'Топливо ×2',
+    desc_debuff: 'Двигатель всегда включён',
+    effects: [{ stat: 'maxFuel', mult: 2.0, isBuff: true }],
+    flags: ['engineAlwaysOn'],
+    once: true,
+    color: 0xff631a, // #ff631a
+  },
+
+  // ── ENGINE ──
+  {
+    id: 'engine_light',
+    family: 'engine',
     icon: '🔥',
-    name: 'Улучшенный двигатель',
-    desc: 'Тяга ×1.4',
-    buff: 1.4,
-    color: 0xff5c33,
+    name: 'Новый двигатель',
+    variant: 'Лёгкая конструкция',
+    desc_buff: 'Тяга ×2',
+    desc_debuff: 'Топливо ×0.7',
+    effects: [
+      { stat: 'thrustAcc', mult: 2.0, isBuff: true },
+      { stat: 'maxFuel', mult: 0.7, isBuff: false },
+    ],
+    color: 0xf2e533,
   },
   {
-    key: 'power2x',
+    id: 'engine_updated',
+    family: 'engine',
+    icon: '🔥',
+    name: 'Новый двигатель',
+    variant: 'Обновлённые двигатели',
+    desc_buff: 'Тяга ×1.4',
+    effects: [{ stat: 'thrustAcc', mult: 1.4, isBuff: true }],
+    color: 0xf2e533,
+  },
+  {
+    id: 'engine_external',
+    family: 'engine',
+    icon: '🔥',
+    name: 'Новый двигатель',
+    variant: 'Внешние двигатели',
+    desc_buff: 'Тяга ×1.8',
+    desc_debuff: 'Сопротивление воздуха ×1.7',
+    effects: [
+      { stat: 'thrustAcc', mult: 1.8, isBuff: true },
+      { stat: 'drag', mult: 1.7, isBuff: false },
+    ],
+    color: 0xf2e533,
+  },
+  {
+    id: 'engine_forsage',
+    family: 'engine',
+    icon: '🔥',
+    name: 'Новый двигатель',
+    variant: 'Форсажный двигатель',
+    desc_buff: 'Тяга в форсаже ×2',
+    desc_debuff: 'Тяга в полёте ×0.9',
+    effects: [
+      { stat: 'forsageThrust', mult: 2.0, isBuff: true },
+      { stat: 'thrustAcc', mult: 0.9, isBuff: false },
+    ],
+    condition: 'forsage',
+    color: 0xcf33f2,
+  },
+
+  // ── POWER ──
+  {
+    id: 'power_punch',
+    family: 'power',
     icon: '🦵',
     name: 'Могучий пинок',
-    desc: 'Сила пинка ×3',
-    buff: 3.0,
-    color: 0xffd75e,
+    desc_buff: 'Сила пинка ×3',
+    effects: [{ stat: 'launchSpeed', mult: 3.0, isBuff: true }],
+    color: 0x6df58d,
   },
+
+  // ── STREAMLINING ──
   {
-    key: 'aero2x',
+    id: 'stream_smooth',
+    family: 'streamlining',
     icon: '✈',
     name: 'Обтекаемость',
-    desc: 'Сопротивление ×0.7',
-    buff: 0.7,
-    color: 0x9fe8ff,
+    variant: 'Гладкий фюзеляж',
+    desc_buff: 'Сопротивление ×0.7',
+    effects: [{ stat: 'drag', mult: 0.7, isBuff: true }],
+    color: 0xb3ecea,
   },
   {
-    key: 'airtime',
-    icon: '⏱️',
-    name: 'Планерист',
-    desc: 'Гравитация ×0.8',
-    buff: 0.7,
-    color: 0xc38bff,
+    id: 'stream_body',
+    family: 'streamlining',
+    icon: '✈',
+    name: 'Обтекаемость',
+    variant: 'Дополнительный фюзеляж',
+    desc_buff: 'Сопротивление ×0.5',
+    desc_debuff: 'Тяга ×0.8',
+    effects: [
+      { stat: 'drag', mult: 0.5, isBuff: true },
+      { stat: 'thrustAcc', mult: 0.8, isBuff: false },
+    ],
+    color: 0xb3ecea,
   },
+
+  // ── FORSAGE (special) ──
   {
-    key: 'forsage',
+    id: 'forsage',
+    family: 'forsage',
+    special: true,
     icon: '🚀',
     name: 'Форсаж',
-    desc: 'Даёт новую способность «Форсаж»',
-    desc_second: 'Улучшает способность «Форсаж»',
-    color: 0xc38bff,
+    desc_buff: 'Даёт новую способность «Форсаж»',
+    desc_upgrade: 'Улучшает способность «Форсаж»',
+    color: 0xb134ff,
   },
 ])
 

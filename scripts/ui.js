@@ -224,34 +224,91 @@ function updateForsageButton() {
   $forsageBtn.style.setProperty('--fill', fill.toFixed(1) + '%')
 }
 
-let cardCloseHandler = null
-export function showCardPopup(card, isUpgrade = false) {
+/* ================================================================
+   Card popup — выбор одной из двух карточек
+================================================================ */
+let _currentCardCloseHandler = null
+
+export function showCardChoices(cards, onPick, opts = {}) {
   const $popup = document.getElementById('cardPopup')
-  const $card = $popup.querySelector('.card')
-  const $label = $popup.querySelector('.card-label')
+  const $container = document.getElementById('cardChoices')
+  if (!$popup || !$container) return
 
-  document.getElementById('cardIcon').textContent = card.icon
-  document.getElementById('cardName').textContent = card.name
-
-  // Для forsage: первая карточка → desc, повторная → desc_second.
-  // Для остальных карточек desc_second отсутствует — поведение не меняется.
-  const descText = isUpgrade && card.desc_second ? card.desc_second : card.desc
-  document.getElementById('cardDesc').textContent = descText
-
-  // Заголовок: «РЕДКАЯ НАХОДКА» → «УЛУЧШЕНИЕ» при апгрейде.
-  if ($label) {
-    $label.textContent = isUpgrade ? 'УЛУЧШЕНИЕ' : 'РЕДКАЯ НАХОДКА'
+  if (_currentCardCloseHandler) {
+    $popup.removeEventListener('click', _currentCardCloseHandler)
+    _currentCardCloseHandler = null
   }
 
-  if ($card) {
-    $card.style.borderColor =
-      card.color != null ? '#' + card.color.toString(16).padStart(6, '0') : ''
+  $container.innerHTML = ''
+  const single = cards.length === 1
+
+  for (const card of cards) {
+    const el = createCardElement(card, single, opts)
+    el.addEventListener('click', (e) => {
+      e.stopPropagation()
+      closeCardPopup()
+      onPick(card)
+    })
+    $container.appendChild(el)
   }
 
   $popup.classList.add('on')
-  if (cardCloseHandler) $popup.removeEventListener('click', cardCloseHandler)
-  cardCloseHandler = () => $popup.classList.remove('on')
-  $popup.addEventListener('click', cardCloseHandler)
+
+  if (single) {
+    // Одна карточка — тап в любом месте закрывает
+    _currentCardCloseHandler = () => {
+      closeCardPopup()
+      onPick(cards[0])
+    }
+    $popup.addEventListener('click', _currentCardCloseHandler)
+  }
+}
+
+function closeCardPopup() {
+  const $popup = document.getElementById('cardPopup')
+  if ($popup) $popup.classList.remove('on')
+  if (_currentCardCloseHandler && $popup) {
+    $popup.removeEventListener('click', _currentCardCloseHandler)
+    _currentCardCloseHandler = null
+  }
+}
+
+function createCardElement(card, isSingle, opts = {}) {
+  const isUpgrade =
+    opts.isUpgradeOverride !== undefined ? opts.isUpgradeOverride : (G.cards[card.id] || 0) >= 1
+
+  const el = document.createElement('div')
+  el.className = 'card'
+  if (card.color != null) {
+    el.style.borderColor = '#' + card.color.toString(16).padStart(6, '0')
+  }
+
+  let label
+  if (isSingle) label = isUpgrade ? 'УЛУЧШЕНИЕ' : 'РЕДКАЯ НАХОДКА'
+  else label = 'ВЫБЕРИ КАРТУ'
+
+  let effectsHtml = ''
+  if (card.special) {
+    // Forsage-style: одна строка описания, desc_upgrade при апгрейде
+    const descText = isUpgrade && card.desc_upgrade ? card.desc_upgrade : card.desc_buff
+    if (descText) effectsHtml = `<div class="card-buff">${descText}</div>`
+  } else {
+    if (card.desc_buff) effectsHtml += `<div class="card-buff">▲ ${card.desc_buff}</div>`
+    if (card.desc_debuff) effectsHtml += `<div class="card-debuff">▼ ${card.desc_debuff}</div>`
+  }
+
+  const hint = isSingle ? 'тап — закрыть' : 'тап — выбрать'
+
+  el.innerHTML = `
+    <div class="card-glow"></div>
+    <div class="card-label">${label}</div>
+    <div class="card-icon">${card.icon}</div>
+    <div class="card-name">${card.name}</div>
+    ${card.variant ? `<div class="card-variant">${card.variant}</div>` : ''}
+    <div class="card-effects">${effectsHtml}</div>
+    <div class="card-hint">${hint}</div>
+  `
+  return el
 }
 
 /* ================================================================

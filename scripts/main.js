@@ -233,4 +233,4 @@ window.dbgPersistent = () => {
 window.dbgDayNight = () => DayNight.debug()
 window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)
 window.dbgSpace = () => console.log(Space.debug())
-//window.dbgOpenChestAt = Game.debugOpenChestAt
+window.dbgOpenChestAt = Game.debugOpenChestAt

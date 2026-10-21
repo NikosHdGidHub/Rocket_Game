@@ -781,7 +781,7 @@ canvas {
 }
 
 /* ================================================================
-   Card popup — редкая карточка после сундука
+   Card popup — выбор из одной/двух карточек
    ================================================================ */
 #cardPopup {
   position: fixed;
@@ -795,16 +795,26 @@ canvas {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.35s;
+  padding: 20px;
 }
 #cardPopup.on {
   opacity: 1;
   pointer-events: auto;
 }
 
+.card-choices {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 .card {
   position: relative;
-  width: min(300px, 78vw);
-  padding: 28px 22px 22px;
+  width: min(280px, 44vw);
+  padding: 24px 20px 18px;
   border-radius: 22px;
   background: linear-gradient(160deg, #1a2440, #0f1527 70%);
   border: 2px solid #ffd75e;
@@ -816,10 +826,19 @@ canvas {
   color: #eaf2ff;
   font-family: inherit;
   transform: scale(0.7) rotate(-4deg);
-  transition: transform 0.4s cubic-bezier(0.2, 1.6, 0.5, 1);
+  transition:
+    transform 0.4s cubic-bezier(0.2, 1.6, 0.5, 1),
+    filter 0.2s;
+  cursor: pointer;
 }
 #cardPopup.on .card {
   transform: scale(1) rotate(0deg);
+}
+.card:hover {
+  filter: brightness(1.1);
+}
+#cardPopup.on .card:hover {
+  transform: scale(1.04) rotate(0deg);
 }
 
 .card-glow {
@@ -837,29 +856,55 @@ canvas {
   letter-spacing: 3px;
   color: #ffd75e;
   opacity: 0.85;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .card-icon {
-  font-size: 64px;
+  font-size: 56px;
   line-height: 1;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   filter: drop-shadow(0 6px 20px rgba(255, 215, 94, 0.6));
 }
 
 .card-name {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
   letter-spacing: 0.5px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
-.card-desc {
-  font-size: 13px;
-  font-weight: 600;
-  color: #ffd75e;
-  letter-spacing: 0.5px;
-  margin-bottom: 16px;
+.card-variant {
+  font-size: 12px;
+  font-weight: 700;
+  color: #b8c8e0;
+  margin-bottom: 12px;
+  letter-spacing: 0.3px;
+}
+
+.card-effects {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  min-height: 44px;
+  justify-content: center;
+}
+
+.card-buff {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7dffa0;
+  letter-spacing: 0.3px;
+}
+
+.card-debuff {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff7a7a;
+  letter-spacing: 0.3px;
 }
 
 .card-hint {
@@ -867,6 +912,24 @@ canvas {
   opacity: 0.5;
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  .card-choices {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .card {
+    width: min(300px, 82vw);
+    padding: 18px 16px 14px;
+  }
+  .card-icon {
+    font-size: 44px;
+  }
+  .card-name {
+    font-size: 16px;
+  }
 }
 
 /* ================================================================

@@ -480,8 +480,8 @@
       }
 
       /* ================================================================
-   SIMULATION
-================================================================ */
+          SIMULATION
+      ================================================================ */
       function simulate(upgrades, cards, opts = {}) {
         const {
           boostThrottle = 'always',
@@ -492,19 +492,37 @@
           maxTime = 3600,
         } = opts
 
-        const cardMul = (key) => {
-          const n = cards[key] || 0
-          if (n === 0) return 1
-          const card = CFG.CARDS.find((c) => c.key === key)
-          return card && typeof card.buff === 'number' ? Math.pow(card.buff, n) : 1
+        // Множитель по статам от всех полученных карточек
+        const cardEffects = (stat) => {
+          let mult = 1
+          for (const [id, count] of Object.entries(cards)) {
+            if (!count) continue
+            const card = CFG.CARDS.find((c) => c.id === id)
+            if (!card || !card.effects) continue
+            for (const eff of card.effects) {
+              if (eff.stat === stat) mult *= Math.pow(eff.mult, count)
+            }
+          }
+          return mult
         }
 
-        const launchSpeed = CFG.RULES.launchSpeed(upgrades) * cardMul('power2x')
-        const maxFuelVal = CFG.RULES.maxFuel(upgrades) * cardMul('fuel2x')
-        const thrustAccBase = CFG.RULES.thrustAcc(upgrades) * cardMul('thrust2x')
-        const gravityEff = CFG.GAME.gravity * cardMul('airtime')
-        const dragMul = cardMul('aero2x')
+        const hasFlag = (flag) => {
+          for (const [id, count] of Object.entries(cards)) {
+            if (!count) continue
+            const card = CFG.CARDS.find((c) => c.id === id)
+            if (card && card.flags && card.flags.includes(flag)) return true
+          }
+          return false
+        }
+
+        const launchSpeed = CFG.RULES.launchSpeed(upgrades) * cardEffects('launchSpeed')
+        const maxFuelVal = CFG.RULES.maxFuel(upgrades) * cardEffects('maxFuel')
+        const thrustAccBase = CFG.RULES.thrustAcc(upgrades) * cardEffects('thrustAcc')
+        const forsageThrustMul = cardEffects('forsageThrust')
+        const gravityEff = CFG.GAME.gravity * cardEffects('gravity')
+        const dragMul = cardEffects('drag')
         const dragCoefAtAngle = (alpha) => CFG.RULES.dragCoefAtAngle(upgrades, alpha) * dragMul
+        const alwaysOn = hasFlag('engineAlwaysOn')
 
         let forsageMult = 1
         let forsageDurationLeft = 0
@@ -554,9 +572,10 @@
         for (let step = 0; step < maxSteps; step++) {
           const terrainY = terrainHeight(x, z)
           const restY = terrainY + REST_Y
-
           const forsageActive = forsageDurationLeft > 0
-          const boosting = boostThrottle === 'always' && !forsageActive && fuel > 0
+
+          const engineEff = Math.max(0, 1 - Math.max(0, y) / CFG.GAME.airEngineHeight)
+          const boosting = (alwaysOn || boostThrottle === 'always') && !forsageActive && fuel > 0
           const thrustActive = boosting || forsageActive
 
           if (boostEndAngle === null && !thrustActive && t > 0.01) {
@@ -565,11 +584,11 @@
 
           let appliedThrust = 0
           if (boosting) {
-            appliedThrust += thrustAccBase
+            appliedThrust += thrustAccBase * engineEff
             fuel = Math.max(0, fuel - dt)
           }
           if (forsageActive) {
-            appliedThrust += thrustAccBase * forsageMult
+            appliedThrust += thrustAccBase * forsageMult * forsageThrustMul * engineEff
             forsageDurationLeft -= dt
           }
 
@@ -907,14 +926,15 @@
         const $c = document.getElementById(containerId)
         $c.innerHTML = ''
         for (const card of CFG.CARDS) {
-          if (card.key === 'forsage') continue
+          if (card.special) continue
           const row = document.createElement('div')
           row.className = 'row'
+          const displayName = card.variant ? `${card.name} · ${card.variant}` : card.name
           row.innerHTML = `
-      <label>${card.icon} ${card.name}</label>
+      <label>${card.icon} ${displayName}</label>
       <div style="display:flex;align-items:center;gap:12px">
-        <input type="number" class="input-num" id="${prefix}card-${card.key}" min="0" max="2" value="0">
-        <span class="hint">${card.desc}</span>
+        <input type="number" class="input-num" id="${prefix}card-${card.id}" min="0" max="2" value="0">
+        <span class="hint">${card.desc_buff || ''}${card.desc_debuff ? ' / ' + card.desc_debuff : ''}</span>
       </div>`
           $c.appendChild(row)
         }
@@ -983,9 +1003,9 @@
           upgrades[u.key] = +document.getElementById(`${prefix}${u.key}`).value
         const cards = {}
         for (const card of CFG.CARDS) {
-          if (card.key === 'forsage') continue
-          const el = document.getElementById(`${prefix}card-${card.key}`)
-          cards[card.key] = el ? +el.value : 0
+          if (card.special) continue
+          const el = document.getElementById(`${prefix}card-${card.id}`)
+          cards[card.id] = el ? +el.value : 0
         }
         const forsageLevel = +document.getElementById(`${prefix}forsage-lvl`).value
         const throttle = document.querySelector(`input[name="${prefix}throttle"]:checked`).value
@@ -1095,35 +1115,42 @@
        * Форсаж обрабатывается отдельно (это уровень способности, не пассивная карточка).
        */
       function renderCardInfluence(baseResult, upgrades, cards, opts) {
-        const limit = CFG.CHESTS.cardTypeLimit ?? 2
+        const limit = CFG.CHESTS.cardTypeLimit
         const rows = []
 
-        // Пассивные карточки
+        // Суммарно по каждому family
+        const familyCounts = {}
         for (const card of CFG.CARDS) {
-          if (card.key === 'forsage') continue
+          if (card.special) continue
+          familyCounts[card.family] = (familyCounts[card.family] || 0) + (cards[card.id] || 0)
+        }
 
-          const cur = cards[card.key] || 0
-          const isMax = cur >= limit
+        for (const card of CFG.CARDS) {
+          if (card.special) continue
+          const cur = cards[card.id] || 0
+          const familyAtLimit = (familyCounts[card.family] || 0) >= limit
+          const onceBlocked = card.once && cur >= 1
+          const displayName = card.variant ? `${card.name} · ${card.variant}` : card.name
 
-          if (isMax) {
+          if (familyAtLimit || onceBlocked) {
             rows.push(`<tr>
-        <td>${card.icon} ${card.name}</td>
-        <td class="num">${cur}/${limit}</td>
+        <td>${card.icon} ${displayName}</td>
+        <td class="num">${cur}</td>
         <td class="num neutral">MAX</td>
         <td class="num neutral">—</td>
       </tr>`)
             continue
           }
 
-          const nextCards = { ...cards, [card.key]: cur + 1 }
+          const nextCards = { ...cards, [card.id]: cur + 1 }
           const nextResult = simulateAdaptive(upgrades, nextCards, opts)
           const gain = nextResult.distance - baseResult.distance
           const pct = baseResult.distance > 0 ? (gain / baseResult.distance) * 100 : 0
           const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
 
           rows.push(`<tr>
-      <td>${card.icon} ${card.name}</td>
-      <td class="num">${cur}/${limit}</td>
+      <td>${card.icon} ${displayName}</td>
+      <td class="num">${cur}</td>
       <td class="num ${cls}">${gain >= 0 ? '+' : ''}${fmtM(gain)}</td>
       <td class="num ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</td>
     </tr>`)

@@ -51,19 +51,40 @@ let boosting = false
 export const UPGRADES = CFG.UPGRADES
 export const costOf = (u) => CFG.RULES.upgradeCost(u, G.upgrades[u.key])
 
-export const cardMul = (key) => {
-  const n = G.cards[key] || 0
-  if (n === 0) return 1
-  const card = CFG.CARDS.find((c) => c.key === key)
-  return card && typeof card.buff === 'number' ? Math.pow(card.buff, n) : 1
+/**
+ * Множитель от всех полученных карточек для заданного стата.
+ * Для каждого стата (maxFuel, thrustAcc, drag, launchSpeed, forsageThrust, gravity)
+ * перемножает mult^count по всем карточкам.
+ */
+export const cardMul = (stat) => {
+  let mult = 1
+  for (const [id, count] of Object.entries(G.cards)) {
+    if (!count) continue
+    const card = CFG.CARDS.find((c) => c.id === id)
+    if (!card || !card.effects) continue
+    for (const eff of card.effects) {
+      if (eff.stat === stat) mult *= Math.pow(eff.mult, count)
+    }
+  }
+  return mult
 }
 
-export const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('power2x')
-export const maxFuel = () => CFG.RULES.maxFuel(G.upgrades) * cardMul('fuel2x')
-export const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades) * cardMul('thrust2x')
-export const dragCoefAtAngle = (a) => CFG.RULES.dragCoefAtAngle(G.upgrades, a) * cardMul('aero2x')
+/** Есть ли у игрока хотя бы одна карточка с указанным флагом. */
+export const hasFlag = (flag) => {
+  for (const [id, count] of Object.entries(G.cards)) {
+    if (!count) continue
+    const card = CFG.CARDS.find((c) => c.id === id)
+    if (card && card.flags && card.flags.includes(flag)) return true
+  }
+  return false
+}
+
+export const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('launchSpeed')
+export const maxFuel = () => CFG.RULES.maxFuel(G.upgrades) * cardMul('maxFuel')
+export const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades) * cardMul('thrustAcc')
+export const dragCoefAtAngle = (a) => CFG.RULES.dragCoefAtAngle(G.upgrades, a) * cardMul('drag')
 export const airDensity = (y) => CFG.RULES.airDensity(y)
-export const gravityMul = () => cardMul('airtime')
+export const gravityMul = () => cardMul('gravity') // нет карточки — всегда 1
 
 /* ================================================================
    SAVE / LOAD
@@ -118,10 +139,11 @@ export function loadProgress() {
       }
     }
     if (data.cards && typeof data.cards === 'object') {
-      for (const c of CFG.CARDS) {
-        const v = data.cards[c.key]
-        if (typeof v === 'number' && isFinite(v) && v >= 0) {
-          G.cards[c.key] = Math.floor(v)
+      for (const [id, count] of Object.entries(data.cards)) {
+        if (typeof count !== 'number' || !isFinite(count) || count < 0) continue
+        // Принимаем только известные id — защита от мусора
+        if (CFG.CARDS.some((c) => c.id === id)) {
+          G.cards[id] = Math.floor(count)
         }
       }
     }
@@ -291,41 +313,82 @@ function land() {
   Abilities.reset()
 }
 
-function pickCard() {
-  const limit = CFG.CHESTS.cardTypeLimit
-  // Обычные карточки. forsage выдаётся ТОЛЬКО из специальных сундуков
-  // (specialChests), поэтому из рандомного пула её исключаем.
-  const allowed = CFG.CARDS.filter((c) => c.key !== 'forsage' && (G.cards[c.key] || 0) < limit)
-  if (allowed.length === 0) return null
-  return allowed[Math.floor(Math.random() * allowed.length)]
+/* ================================================================
+   Карточки: выбор из двух
+================================================================ */
+function isConditionMet(cond) {
+  if (cond === 'forsage') return (G.cards.forsage || 0) >= 1
+  return true
 }
 
-function pickForsageCard() {
-  const card = CFG.CARDS.find((c) => c.key === 'forsage')
-  if (!card) return pickCard() // страховка
-  const maxLv = CFG.ABILITIES.forsage.levels.length
-  if ((G.cards.forsage || 0) >= maxLv) return pickCard() // fallback — уже прокачано
-  return card
+function getFamilyCount(family) {
+  let total = 0
+  for (const card of CFG.CARDS) {
+    if (card.family === family) total += G.cards[card.id] || 0
+  }
+  return total
+}
+
+function isAvailable(card) {
+  if (card.special) return false
+  if (card.once && (G.cards[card.id] || 0) >= 1) return false
+  if (card.condition && !isConditionMet(card.condition)) return false
+  if (getFamilyCount(card.family) >= CFG.CHESTS.cardTypeLimit) return false
+  return true
+}
+
+/** Доступные сейчас карточки (до 2 штук, без дублей по id). */
+function pickTwoCards() {
+  const available = CFG.CARDS.filter(isAvailable)
+  if (available.length === 0) return []
+
+  const card1 = available[Math.floor(Math.random() * available.length)]
+  const rest = available.filter((c) => c.id !== card1.id)
+  if (rest.length === 0) return [card1]
+
+  const card2 = rest[Math.floor(Math.random() * rest.length)]
+  return [card1, card2]
 }
 
 function openChest(chest) {
   chest.opened = true
   G.openedChests.add(chest.x)
   chest.group.visible = false
+  Achievements.onChestOpen(G.openedChests.size)
 
-  const card = chest.type === 'forsage' ? pickForsageCard() : pickCard()
-  if (card) {
-    // «Апгрейд» = у игрока уже была хотя бы одна такая карточка.
-    const isUpgrade = (G.cards[card.key] || 0) >= 1
-    G.cards[card.key] = (G.cards[card.key] || 0) + 1
-    UI.showCardPopup(card, isUpgrade)
-    Abilities.onCardObtained(card.key)
-  } else {
-    UI.showToast('Все карточки собраны! 🎉', CFG.UI.toastColors.upgrade)
+  // ── Специальный сундук (forsage) ──
+  if (chest.type === 'forsage') {
+    const maxLv = CFG.ABILITIES.forsage.levels.length
+    const curLv = G.cards.forsage || 0
+
+    if (curLv < maxLv) {
+      const card = CFG.CARDS.find((c) => c.family === 'forsage')
+      if (card) {
+        // Карточка применяется сразу — но UI нужно показать прежнее состояние
+        const isUpgrade = curLv >= 1
+        G.cards.forsage = curLv + 1
+        UI.showCardChoices([card], () => {}, { isUpgradeOverride: isUpgrade })
+        Abilities.onCardObtained('forsage')
+        saveProgress()
+        return
+      }
+    }
+    // Fallback: форсаж уже максимум — выдаём обычные карточки
   }
 
-  saveProgress()
-  Achievements.onChestOpen(G.openedChests.size)
+  // ── Обычный сундук ──
+  const options = pickTwoCards()
+  if (options.length === 0) {
+    UI.showToast('Все карточки собраны! 🎉', CFG.UI.toastColors.upgrade)
+    saveProgress()
+    return
+  }
+
+  UI.showCardChoices(options, (picked) => {
+    G.cards[picked.id] = (G.cards[picked.id] || 0) + 1
+    saveProgress()
+  })
+  saveProgress() // ← сохраняем факт открытия сундука сразу
 }
 
 /* ================================================================
@@ -481,7 +544,6 @@ function updateBossAnim(dt) {
 function updateRocketPhysics(dt) {
   const p = rocketState
 
-  // ← Сохраняем состояние ПЕРЕД шагом
   p.prevPos.copy(p.pos)
   p.prevVel.copy(p.vel)
   p.prevRotZ = p.rotZ
@@ -493,15 +555,21 @@ function updateRocketPhysics(dt) {
     const ang = p.rotZ
     const yaw = CFG.GAME.flightYaw || 0
 
-    boosting = input.boost && G.fuel > 0 && !forsageActive
+    // Эффективность двигателя по высоте: 1 → 0 линейно до airEngineHeight
+    const engineEff = Math.max(0, 1 - Math.max(0, p.pos.y) / CFG.GAME.airEngineHeight)
+
+    // Флаг «двигатель всегда включён»
+    const alwaysOn = hasFlag('engineAlwaysOn')
+    boosting = (alwaysOn || input.boost) && G.fuel > 0 && !forsageActive
 
     let appliedThrust = 0
     if (boosting) {
-      appliedThrust += thrustAcc()
+      appliedThrust += thrustAcc() * engineEff
       G.fuel = Math.max(0, G.fuel - dt)
     }
     if (forsageActive) {
-      appliedThrust += thrustAcc() * Abilities.thrustMultiplier('forsage')
+      appliedThrust +=
+        thrustAcc() * Abilities.thrustMultiplier('forsage') * cardMul('forsageThrust') * engineEff
     }
 
     if (appliedThrust > 0) {
@@ -540,27 +608,30 @@ function updateRocketPhysics(dt) {
     p.angVel += rotInput * ANG_ACC * dt
     p.angVel -= p.angVel * ANG_DAMP * dt
     p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel))
-    p.rotZ += p.angVel * dt // ← было rocket.rotation.z
+    p.rotZ += p.angVel * dt
 
     const ALIGN_RATE = CFG.GAME.aeroAlign
     const MIN_SPEED = CFG.GAME.aeroAlignMinSpeed
     const spd = p.vel.length()
     if (ALIGN_RATE > 0 && spd > MIN_SPEED) {
       const desired = Math.atan2(p.vel.y, Math.hypot(p.vel.x, p.vel.z))
-      let diff = desired - p.rotZ // ← было rocket.rotation.z
+      let diff = desired - p.rotZ
       while (diff > Math.PI) diff -= Math.PI * 2
       while (diff < -Math.PI) diff += Math.PI * 2
       const maxStep = ALIGN_RATE * dt
       const step = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
-      p.rotZ += step // ← было rocket.rotation.z
+      p.rotZ += step
     }
   }
 }
 
+const _lowAltFlameColor = new THREE.Color(CFG.ROCKET.flame.backMove) // красный
+const _workingFlame = new THREE.Color()
+
+/**визуал ракеты */
 function updateRocketVisuals(dt) {
   const p = rocketState
 
-  // Интерполированные позиция и угол — уже посчитаны в updateVisuals.
   rocket.position.copy(_ipos)
   rocket.rotation.z = _irotZ
 
@@ -574,9 +645,10 @@ function updateRocketVisuals(dt) {
   const forsageActive = Abilities.isActive('forsage')
   let intensityMul = 1
   let targetFlame = _baseFlameColor
+  let engineEff = 1
 
   if (G.phase === 'fly') {
-    let diff = rocket.rotation.z - Math.atan2(_ivel.y, _ivel.x) // ← _ivel, не p.vel
+    let diff = rocket.rotation.z - Math.atan2(_ivel.y, _ivel.x)
     while (diff > Math.PI) diff -= Math.PI * 2
     while (diff < -Math.PI) diff += Math.PI * 2
     const deg = (Math.abs(diff) * 180) / Math.PI
@@ -584,13 +656,16 @@ function updateRocketVisuals(dt) {
     UI.setAlignText(deg, angState)
     intensityMul = angState.flameIntensity
 
+    // Та же формула, что и в физике
+    engineEff = Math.max(0, 1 - Math.max(0, p.pos.y) / CFG.GAME.airEngineHeight)
+
     if (forsageActive) targetFlame = _forsageFlameColor
     else if (boosting) targetFlame = angState.flameColor
     else targetFlame = _baseFlameColor
   }
 
   const baseAmp = boosting || forsageActive ? 1 : G.phase === 'fly' ? 0.35 : 0
-  const boostAmt = baseAmp * intensityMul
+  const boostAmt = baseAmp * intensityMul * engineEff
   const flick = 0.85 + Math.random() * 0.3
   const flameScale = forsageActive ? CFG.ROCKET.forsageScale : 1.0
 
@@ -603,7 +678,9 @@ function updateRocketVisuals(dt) {
   flame.visible = boostAmt > 0.05
   flameInner.visible = flame.visible
 
-  flameMat.color.copy(targetFlame)
+  // Пламя краснеет по мере падения эффективности двигателя
+  _workingFlame.copy(targetFlame).lerp(_lowAltFlameColor, 1 - engineEff)
+  flameMat.color.copy(_workingFlame)
   flameMat.opacity = boosting || forsageActive ? 0.95 : 0.5
   exhaustLight.intensity = boostAmt * (boosting || forsageActive ? 45 : 8)
 }
@@ -769,7 +846,7 @@ function updateChestTracker(rx, rz) {
    DEBUG: открыть сундук по X (для теста без полёта на 15000 м).
    Возвращает сундук в исходное состояние — можно тестировать повторно.
 ================================================================ */
-/* export function debugOpenChestAt(x) {
+export function debugOpenChestAt(x) {
   const chest = chests.find((c) => c.x === x)
   if (!chest) {
     console.warn(`[DEBUG] Сундук на X=${x} не найден`)
@@ -780,7 +857,7 @@ function updateChestTracker(rx, rz) {
   G.openedChests.delete(x)
   openChest(chest)
   console.log(`[DEBUG] Открыт сундук X=${x}, type=${chest.type}`)
-}*/
+}
 
 /* ================================================================
    init — вызвать после scene.init() и entities.init().
