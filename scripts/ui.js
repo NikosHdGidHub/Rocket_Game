@@ -9,6 +9,7 @@ import { renderer } from './scene.js'
 import * as Settings from './settings.js'
 import * as Sounds from './sounds.js'
 import * as Abilities from './abilities.js'
+import * as CardsModal from './cardsModal.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')
@@ -230,6 +231,9 @@ function updateForsageButton() {
 let _currentCardCloseHandler = null
 
 export function showCardChoices(cards, onPick, opts = {}) {
+  // Если открыта модалка карточек — закроем, иначе она перекроет попап выбора
+  CardsModal.close()
+
   const $popup = document.getElementById('cardPopup')
   const $container = document.getElementById('cardChoices')
   if (!$popup || !$container) return

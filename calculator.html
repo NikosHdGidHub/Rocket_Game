@@ -382,6 +382,39 @@
           min-width: 54px;
         }
       }
+
+      /* ---------- Кнопка «Текущий билд» ---------- */
+      button.action.load-save {
+        background: linear-gradient(180deg, #7dffa0, #3fc86a);
+        box-shadow: 0 4px 0 #1f7a3d;
+        color: #0b2410;
+      }
+
+      /* ---------- Мини-кнопка в заголовках «Игрок A / B» ---------- */
+      .mini-btn {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        border: 1px solid rgba(125, 255, 160, 0.4);
+        background: rgba(125, 255, 160, 0.1);
+        color: #7dffa0;
+        font-family: inherit;
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        letter-spacing: 0.3px;
+        transition: 0.15s;
+        vertical-align: middle;
+        text-transform: none;
+      }
+      .mini-btn:hover {
+        background: rgba(125, 255, 160, 0.22);
+        border-color: #7dffa0;
+      }
+      .mini-btn:active {
+        transform: scale(0.95);
+      }
     </style>
   </head>
   <body>
@@ -408,6 +441,13 @@
       <div class="btn-row">
         <button class="action" id="sim-btn">🔮 Симулировать</button>
         <button class="action optimize" id="opt-btn">🎯 Найти оптимум</button>
+        <button
+          class="action load-save"
+          id="load-save-btn"
+          title="Взять апгрейды, карточки и форсаж из сохранения игры"
+        >
+          📥 Текущий билд
+        </button>
       </div>
 
       <div id="single-results"></div>
@@ -417,11 +457,17 @@
     <div id="compare" class="tab-content">
       <div class="two-col">
         <div>
-          <div class="section-title">Игрок A</div>
+          <div class="section-title">
+            Игрок A
+            <button class="mini-btn" data-load="A-" title="Взять из сохранения">📥 Текущий</button>
+          </div>
           <div id="upA"></div>
         </div>
         <div>
-          <div class="section-title">Игрок B</div>
+          <div class="section-title">
+            Игрок B
+            <button class="mini-btn" data-load="B-" title="Взять из сохранения">📥 Текущий</button>
+          </div>
           <div id="upB"></div>
         </div>
       </div>
@@ -933,7 +979,7 @@
           row.innerHTML = `
       <label>${card.icon} ${displayName}</label>
       <div style="display:flex;align-items:center;gap:12px">
-        <input type="number" class="input-num" id="${prefix}card-${card.id}" min="0" max="2" value="0">
+        <input type="number" class="input-num" id="${prefix}card-${card.id}" min="0" max="${CFG.CHESTS.cardTypeLimit}" value="0">
         <span class="hint">${card.desc_buff || ''}${card.desc_debuff ? ' / ' + card.desc_debuff : ''}</span>
       </div>`
           $c.appendChild(row)
@@ -1019,8 +1065,83 @@
       }
 
       /* ================================================================
-   RENDER
+   LOAD SAVE — берёт текущий билд из сохранения игры
+   и раскладывает по инпутам указанной панели (prefix: '' | 'A-' | 'B-').
+   Возвращает true при успехе.
 ================================================================ */
+      function loadSave(prefix = '') {
+        let raw
+        try {
+          raw = localStorage.getItem(CFG.SAVE.key)
+        } catch (e) {
+          alert('Не удалось прочитать localStorage')
+          return false
+        }
+        if (!raw) {
+          alert(
+            `Сохранение не найдено (ключ "${CFG.SAVE.key}").\n` +
+              'Запустите игру хотя бы раз, чтобы оно появилось.'
+          )
+          return false
+        }
+
+        let data
+        try {
+          data = JSON.parse(raw)
+        } catch (e) {
+          alert('Сохранение повреждено (не JSON)')
+          return false
+        }
+        if (!data || typeof data !== 'object') {
+          alert('Сохранение повреждено (пустой объект)')
+          return false
+        }
+
+        // ── Апгрейды ──
+        if (data.upgrades && typeof data.upgrades === 'object') {
+          for (const u of CFG.UPGRADES) {
+            const v = data.upgrades[u.key]
+            if (typeof v !== 'number' || !isFinite(v)) continue
+            const maxLvl = u.maxLevel ?? 12
+            const clamped = Math.max(1, Math.min(maxLvl, Math.floor(v)))
+            const input = document.getElementById(`${prefix}${u.key}`)
+            if (!input) continue
+            input.value = String(clamped)
+            // Триггерим update-обработчик — он пересчитает value, next-cost,
+            // spent и общий total.
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+          }
+        }
+
+        // ── Карточки (обычные) ──
+        const cardLimit = CFG.CHESTS.cardTypeLimit
+        const saveCards = data.cards && typeof data.cards === 'object' ? data.cards : {}
+        for (const card of CFG.CARDS) {
+          if (card.special) continue
+          const input = document.getElementById(`${prefix}card-${card.id}`)
+          if (!input) continue
+          const v = saveCards[card.id]
+          const clamped =
+            typeof v === 'number' && isFinite(v) && v > 0 ? Math.min(cardLimit, Math.floor(v)) : 0
+          input.value = String(clamped)
+        }
+
+        // ── Форсаж ──
+        const forsageSelect = document.getElementById(`${prefix}forsage-lvl`)
+        if (forsageSelect) {
+          const v = saveCards.forsage
+          const maxLvl = CFG.ABILITIES.forsage.levels.length
+          const clamped =
+            typeof v === 'number' && isFinite(v) && v > 0 ? Math.min(maxLvl, Math.floor(v)) : 0
+          forsageSelect.value = String(clamped)
+        }
+
+        return true
+      }
+
+      /* ================================================================
+        RENDER
+      ================================================================ */
       function renderSingleResult(result, upgrades, cards, opts) {
         const $out = document.getElementById('single-results')
 
@@ -1349,6 +1470,20 @@
         const resA = simulateAdaptive(stateA.upgrades, stateA.cards, stateA.opts)
         const resB = simulateAdaptive(stateB.upgrades, stateB.cards, stateB.opts)
         renderCompare(resA, resB)
+      })
+
+      /* ---------- Загрузка текущего билда ---------- */
+      document.getElementById('load-save-btn').addEventListener('click', () => {
+        if (loadSave('')) {
+          // Не запускаем симуляцию автоматом — пусть игрок сам нажмёт
+          // «Симулировать» / «Найти оптимум». Так проще сравнивать.
+        }
+      })
+
+      document.querySelectorAll('[data-load]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          loadSave(btn.dataset.load)
+        })
       })
     </script>
   </body>

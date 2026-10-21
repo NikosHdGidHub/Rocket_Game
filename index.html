@@ -6,6 +6,7 @@
     <title>🚀 Ракетный Пинок 3D</title>
     <link rel="stylesheet" href="./styles/main.css" />
     <link rel="stylesheet" href="./styles/achievements.css" />
+    <link rel="stylesheet" href="./styles/cards.css" />
   </head>
   <body>
     <button id="settingsBtn" class="settings-btn" title="Настройки">⚙️</button>
@@ -14,6 +15,7 @@
       <div class="stat">💲 <b id="coins">0</b></div>
       <div class="stat">🏆 <b id="best">0</b> м</div>
       <button id="achBtn" class="reset-btn ach-btn" title="Достижения">🏆</button>
+      <button id="cardsBtn" class="reset-btn cards-btn" title="Карточки">🎴</button>
     </div>
     <div id="chestProgress" class="chest-progress">
       <div class="chest-icon">📦</div>
@@ -124,6 +126,20 @@
         </div>
         <div class="ach-list" id="achList"></div>
         <button id="achievementsClose" class="settings-close">Закрыть</button>
+      </div>
+    </div>
+
+    <div id="cardsPanel" class="settings-panel">
+      <div class="settings-card cards-card">
+        <div class="settings-title">🎴 КАРТОЧКИ</div>
+        <div class="cards-summary" id="cardsSummary"></div>
+        <div class="cards-tabs">
+          <button class="cards-tab active" data-tab="all">Все</button>
+          <button class="cards-tab" data-tab="received">Полученные</button>
+          <button class="cards-tab" data-tab="available">Доступные</button>
+        </div>
+        <div class="cards-list" id="cardsList"></div>
+        <button id="cardsClose" class="settings-close">Закрыть</button>
       </div>
     </div>
 

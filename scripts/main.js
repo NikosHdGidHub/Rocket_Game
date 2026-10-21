@@ -11,6 +11,7 @@ import * as Game from './game.js'
 import * as UI from './ui.js'
 import * as Ach from './achievements.js'
 import * as AchModal from './achievementsModal.js'
+import * as CardsModal from './cardsModal.js'
 import * as DayNight from './daynight.js'
 import * as Space from './space.js'
 import { G, time } from './state.js'
@@ -27,6 +28,7 @@ Sounds.init() //звуки
 
 // Модалка: привязываем табы и кнопки (idempotent, можно вызвать до UI.init)
 AchModal.init()
+CardsModal.init()
 
 UI.init({
   onLaunch: Game.startKick,

@@ -1481,7 +1481,7 @@ export const CARDS = /** @type {const} */ ([
   },
   {
     id: 'fuel_oversized',
-    family: 'fuel',
+    family: 'fuel_2',
     icon: '⛽',
     name: 'Двойной бак',
     variant: 'Негабаритные баки',
@@ -1495,7 +1495,7 @@ export const CARDS = /** @type {const} */ ([
   },
   {
     id: 'fuel_solid',
-    family: 'fuel',
+    family: 'fuel_solid',
     icon: '⛽',
     name: 'Двойной бак',
     variant: 'Твёрдое топливо',
@@ -1512,7 +1512,7 @@ export const CARDS = /** @type {const} */ ([
     id: 'engine_light',
     family: 'engine',
     icon: '🔥',
-    name: 'Новый двигатель',
+    name: 'Улучшенный двигатель',
     variant: 'Лёгкая конструкция',
     desc_buff: 'Тяга ×2',
     desc_debuff: 'Топливо ×0.7',
@@ -1526,7 +1526,7 @@ export const CARDS = /** @type {const} */ ([
     id: 'engine_updated',
     family: 'engine',
     icon: '🔥',
-    name: 'Новый двигатель',
+    name: 'Улучшенный двигатель',
     variant: 'Обновлённые двигатели',
     desc_buff: 'Тяга ×1.4',
     effects: [{ stat: 'thrustAcc', mult: 1.4, isBuff: true }],
@@ -1534,7 +1534,7 @@ export const CARDS = /** @type {const} */ ([
   },
   {
     id: 'engine_external',
-    family: 'engine',
+    family: 'engine_external',
     icon: '🔥',
     name: 'Новый двигатель',
     variant: 'Внешние двигатели',
@@ -1548,7 +1548,7 @@ export const CARDS = /** @type {const} */ ([
   },
   {
     id: 'engine_forsage',
-    family: 'engine',
+    family: 'engine_forsage',
     icon: '🔥',
     name: 'Новый двигатель',
     variant: 'Форсажный двигатель',

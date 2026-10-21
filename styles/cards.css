@@ -1,0 +1,239 @@
+/* ================================================================
+   cards.css — кнопка 🎴 в HUD + модалка карточек
+   ================================================================ */
+
+/* ---------- Кнопка в HUD — фиолетовый hover ---------- */
+.reset-btn.cards-btn:hover {
+  border-color: #c38bff;
+  color: #c38bff;
+  transform: translateY(-2px);
+}
+
+/* ================================================================
+   Модалка
+   ================================================================ */
+.cards-card {
+  width: min(520px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  padding: 20px 18px 16px;
+}
+
+/* ---------- Сводка итоговых множителей ---------- */
+.cards-summary {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.cards-summary-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.cards-summary-empty {
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.6;
+  padding: 6px 0;
+}
+
+.cards-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 10px;
+}
+
+.cards-summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cards-summary-stat {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cards-summary-val {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.cards-summary-item.good .cards-summary-val {
+  color: #7dffa0;
+}
+.cards-summary-item.bad .cards-summary-val {
+  color: #ff7a7a;
+}
+.cards-summary-item.neutral .cards-summary-val {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ---------- Табы ---------- */
+.cards-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.cards-tab {
+  flex: 1;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #eaf2ff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.cards-tab.active {
+  background: rgba(195, 139, 255, 0.18);
+  color: #c38bff;
+}
+
+/* ---------- Список ---------- */
+.cards-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+  min-height: 220px;
+  max-height: 58vh;
+}
+
+.cards-list::-webkit-scrollbar {
+  width: 6px;
+}
+.cards-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.cards-empty {
+  text-align: center;
+  opacity: 0.5;
+  font-size: 13px;
+  padding: 40px 20px;
+}
+
+/* ---------- Строка карточки ---------- */
+.card-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  align-items: flex-start;
+  transition: 0.15s;
+}
+
+.card-row.received {
+  background: rgba(125, 255, 160, 0.04);
+  border-color: rgba(125, 255, 160, 0.2);
+}
+
+.card-row.not-received {
+  opacity: 0.55;
+}
+
+.card-row-icon {
+  font-size: 26px;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.card-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.card-row-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #eaf2ff;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card-row-count {
+  font-size: 13px;
+  font-weight: 900;
+  color: #c38bff;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-row.not-received .card-row-count {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.card-row-desc {
+  font-size: 11px;
+  opacity: 0.6;
+  line-height: 1.35;
+}
+
+.card-row-effect {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-row-effect.buff {
+  color: #7dffa0;
+}
+
+.card-row-effect.debuff {
+  color: #ff7a7a;
+}
+
+/* ---------- Мобильная адаптация ---------- */
+@media (max-width: 640px) {
+  .cards-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .cards-card {
+    padding: 16px 12px 12px;
+  }
+  .card-row-icon {
+    font-size: 22px;
+  }
+  .card-row-name {
+    font-size: 13px;
+  }
+}

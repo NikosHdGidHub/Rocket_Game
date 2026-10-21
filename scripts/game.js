@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import * as CFG from './config.js'
 import * as Achievements from './achievements.js'
+import * as CardsModal from './cardsModal.js'
 import * as DayNight from './daynight.js'
 import { camera } from './scene.js'
 import { terrainHeight } from './world/world.js'
@@ -370,6 +371,7 @@ function openChest(chest) {
         UI.showCardChoices([card], () => {}, { isUpgradeOverride: isUpgrade })
         Abilities.onCardObtained('forsage')
         saveProgress()
+        CardsModal.refresh()
         return
       }
     }
@@ -387,6 +389,7 @@ function openChest(chest) {
   UI.showCardChoices(options, (picked) => {
     G.cards[picked.id] = (G.cards[picked.id] || 0) + 1
     saveProgress()
+    CardsModal.refresh()
   })
   saveProgress() // ← сохраняем факт открытия сундука сразу
 }
