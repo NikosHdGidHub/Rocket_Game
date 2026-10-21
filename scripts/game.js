@@ -39,6 +39,10 @@ const ANG_MAX = CFG.GAME.angMax
 const _baseFlameColor = new THREE.Color(CFG.ROCKET.flame.outer)
 const _forsageFlameColor = new THREE.Color(CFG.ROCKET.flame.forsage)
 
+const _ipos = new THREE.Vector3()
+const _ivel = new THREE.Vector3()
+
+let _irotZ = 0
 let boosting = false
 
 /* ================================================================
@@ -191,11 +195,15 @@ export function startKick() {
 function resetRocket() {
   const gY = terrainHeight(0, 0)
   rocketState.pos.set(0, gY + REST_Y, 0)
+  rocketState.prevPos.copy(rocketState.pos)
+  rocketState.rotZ = 0
+  rocketState.prevRotZ = 0
   rocketState.vel.set(0, 0, 0)
-  rocket.rotation.z = 0
-  rocket.rotation.y = 0
+  rocketState.prevVel.set(0, 0, 0)
   rocketState.angVel = 0
   rocket.position.copy(rocketState.pos)
+  rocket.rotation.z = 0
+  rocket.rotation.y = 0
   G.fuel = maxFuel()
   input.boost = false
   Abilities.reset() // сброс способности
@@ -206,6 +214,10 @@ function launch() {
   const yaw = CFG.GAME.flightYaw || 0
   const horiz = Math.cos(LAUNCH_ANGLE) * speed
   rocketState.vel.set(Math.cos(yaw) * horiz, Math.sin(LAUNCH_ANGLE) * speed, Math.sin(yaw) * horiz)
+  rocketState.prevVel.set(rocketState.vel.x, rocketState.vel.y, rocketState.vel.z)
+  rocketState.rotZ = LAUNCH_ANGLE
+  rocketState.prevRotZ = LAUNCH_ANGLE
+  rocketState.prevPos.copy(rocketState.pos)
   rocket.rotation.z = LAUNCH_ANGLE
   rocket.rotation.y = -yaw
   rocketState.angVel = 0
@@ -346,7 +358,7 @@ function recordGhostSample() {
     rocketState.pos.x,
     rocketState.pos.y,
     rocketState.pos.z,
-    rocket.rotation.z,
+    rocketState.rotZ,
     boosting || Abilities.isActive('forsage') ? 1 : 0
   )
 }
@@ -411,16 +423,8 @@ export function loadGhostFlight() {
 /* ================================================================
    updateBoss — state-machine босса.
 ================================================================ */
-function updateBoss(dt) {
-  const idle = performance.now() * 0.0022
-
-  if (G.phase === 'ready' || G.phase === 'landed') {
-    legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 12)
-    boss.position.y = Math.sin(idle) * 0.08
-    torso.rotation.z = Math.sin(idle * 0.7) * 0.03
-    head.rotation.z = Math.sin(idle * 0.7) * 0.05
-    legBack.rotation.z = Math.sin(idle) * 0.03
-  } else if (G.phase === 'prekick') {
+function updateBossPhase(dt) {
+  if (G.phase === 'prekick') {
     const dist = camera.position.distanceTo(cam.target)
     if (dist <= CFG.GAME.prekickCamTolerance) {
       G.timer += dt
@@ -433,23 +437,37 @@ function updateBoss(dt) {
     }
   } else if (G.phase === 'windup') {
     G.timer += dt
-    const t = Math.min(1, G.timer / 0.3)
-    const e = 1 - Math.pow(1 - t, 3)
-    legKick.rotation.z = -0.85 * e
-    torso.rotation.z = 0.12 * e
-    boss.position.y = -0.12 * e
-    if (t >= 1) {
+    if (G.timer >= 0.3) {
       G.phase = 'strike'
       G.timer = 0
     }
   } else if (G.phase === 'strike') {
     G.timer += dt
+    if (G.timer >= 0.11 && G.phase === 'strike') launch()
+  }
+}
+
+function updateBossAnim(dt) {
+  const idle = performance.now() * 0.0022
+
+  if (G.phase === 'ready' || G.phase === 'landed') {
+    legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 12)
+    boss.position.y = Math.sin(idle) * 0.08
+    torso.rotation.z = Math.sin(idle * 0.7) * 0.03
+    head.rotation.z = Math.sin(idle * 0.7) * 0.05
+    legBack.rotation.z = Math.sin(idle) * 0.03
+  } else if (G.phase === 'windup') {
+    const t = Math.min(1, G.timer / 0.3)
+    const e = 1 - Math.pow(1 - t, 3)
+    legKick.rotation.z = -0.85 * e
+    torso.rotation.z = 0.12 * e
+    boss.position.y = -0.12 * e
+  } else if (G.phase === 'strike') {
     const t = Math.min(1, G.timer / 0.11)
     const e = t * t * (3 - 2 * t)
     legKick.rotation.z = -0.85 + (2.05 + 0.85) * e
     torso.rotation.z = 0.12 - 0.28 * e
     boss.position.y = -0.12 + 0.2 * e
-    if (t >= 1 && G.phase === 'strike') launch()
   } else if (G.phase === 'fly') {
     legKick.rotation.z += (0 - legKick.rotation.z) * Math.min(1, dt * 6)
     torso.rotation.z += (0 - torso.rotation.z) * Math.min(1, dt * 6)
@@ -460,19 +478,21 @@ function updateBoss(dt) {
 /* ================================================================
    updateRocket — физика полёта.
 ================================================================ */
-function updateRocket(dt) {
+function updateRocketPhysics(dt) {
   const p = rocketState
-  const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
 
-  // Форсаж проверяем каждый кадр — понадобится и в блоке пламени.
+  // ← Сохраняем состояние ПЕРЕД шагом
+  p.prevPos.copy(p.pos)
+  p.prevVel.copy(p.vel)
+  p.prevRotZ = p.rotZ
+
+  const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
   const forsageActive = Abilities.isActive('forsage')
 
   if (G.phase === 'fly') {
-    const ang = rocket.rotation.z
+    const ang = p.rotZ
     const yaw = CFG.GAME.flightYaw || 0
 
-    // Форсаж отключает обычный буст (Вариант Б):
-    // PUSH не действует и НЕ тратит топливо, чтобы не суммировать тяги.
     boosting = input.boost && G.fuel > 0 && !forsageActive
 
     let appliedThrust = 0
@@ -500,7 +520,6 @@ function updateRocket(dt) {
       const noseZ = Math.cos(ang) * Math.sin(yaw)
       const dot = (noseX * p.vel.x + noseY * p.vel.y + noseZ * p.vel.z) / speed
       const alpha = Math.acos(Math.max(-1, Math.min(1, dot)))
-
       const k = dragCoefAtAngle(alpha) * airDensity(p.pos.y)
       const aDrag = k * speed
       p.vel.x -= p.vel.x * aDrag * dt
@@ -514,75 +533,68 @@ function updateRocket(dt) {
       p.pos.y = restY
       land()
     }
-    recordGhostSample() // ← пишем сэмпл
-  } else if (G.phase === 'landed') {
-    p.pos.y += (restY - p.pos.y) * Math.min(1, dt * 8)
-    rocket.rotation.z += (0 - rocket.rotation.z) * Math.min(1, dt * 6)
-  }
+    recordGhostSample()
 
-  rocket.position.copy(p.pos)
-
-  if (G.phase === 'fly') {
     const rotInput =
       (input.keys.W || input.touch.W ? 1 : 0) - (input.keys.S || input.touch.S ? 1 : 0)
-
     p.angVel += rotInput * ANG_ACC * dt
     p.angVel -= p.angVel * ANG_DAMP * dt
     p.angVel = Math.max(-ANG_MAX, Math.min(ANG_MAX, p.angVel))
+    p.rotZ += p.angVel * dt // ← было rocket.rotation.z
 
-    rocket.rotation.z += p.angVel * dt
-
-    // Аэродинамическая стабилизация
     const ALIGN_RATE = CFG.GAME.aeroAlign
     const MIN_SPEED = CFG.GAME.aeroAlignMinSpeed
     const spd = p.vel.length()
     if (ALIGN_RATE > 0 && spd > MIN_SPEED) {
       const desired = Math.atan2(p.vel.y, Math.hypot(p.vel.x, p.vel.z))
-      let diff = desired - rocket.rotation.z
+      let diff = desired - p.rotZ // ← было rocket.rotation.z
       while (diff > Math.PI) diff -= Math.PI * 2
       while (diff < -Math.PI) diff += Math.PI * 2
       const maxStep = ALIGN_RATE * dt
       const step = Math.sign(diff) * Math.min(Math.abs(diff), maxStep)
-      rocket.rotation.z += step
+      p.rotZ += step // ← было rocket.rotation.z
     }
   }
+}
 
-  // ─── Угол, цвет пламени и HUD — с плавным «перетеканием» ───
+function updateRocketVisuals(dt) {
+  const p = rocketState
+
+  // Интерполированные позиция и угол — уже посчитаны в updateVisuals.
+  rocket.position.copy(_ipos)
+  rocket.rotation.z = _irotZ
+
+  // Плавное «успокоение» после посадки
+  if (G.phase === 'landed') {
+    p.rotZ += (0 - p.rotZ) * Math.min(1, dt * 6)
+    rocket.rotation.z = p.rotZ
+  }
+
+  // Пламя и HUD — используем интерполированную скорость
+  const forsageActive = Abilities.isActive('forsage')
   let intensityMul = 1
   let targetFlame = _baseFlameColor
 
   if (G.phase === 'fly') {
-    let diff = rocket.rotation.z - Math.atan2(p.vel.y, p.vel.x)
+    let diff = rocket.rotation.z - Math.atan2(_ivel.y, _ivel.x) // ← _ivel, не p.vel
     while (diff > Math.PI) diff -= Math.PI * 2
     while (diff < -Math.PI) diff += Math.PI * 2
     const deg = (Math.abs(diff) * 180) / Math.PI
-
-    const angState = Angles.update(deg, dt)
+    const angState = Angles.update(deg)
     UI.setAlignText(deg, angState)
-
     intensityMul = angState.flameIntensity
 
-    // Приоритет цвета: форсаж (фиолетовый) → буст (по углу) → базовый.
-    if (forsageActive) {
-      targetFlame = _forsageFlameColor
-    } else if (boosting) {
-      targetFlame = angState.flameColor
-    } else {
-      targetFlame = _baseFlameColor
-    }
+    if (forsageActive) targetFlame = _forsageFlameColor
+    else if (boosting) targetFlame = angState.flameColor
+    else targetFlame = _baseFlameColor
   }
 
-  // baseAmp: 1 при бусте/форсаже, 0.35 в полёте без буста, 0 в остальных фазах.
   const baseAmp = boosting || forsageActive ? 1 : G.phase === 'fly' ? 0.35 : 0
   const boostAmt = baseAmp * intensityMul
   const flick = 0.85 + Math.random() * 0.3
   const flameScale = forsageActive ? CFG.ROCKET.forsageScale : 1.0
 
-  flame.scale.set(
-    boostAmt * flick * flameScale,
-    boostAmt * flick * flameScale,
-    boostAmt * flick * flameScale
-  )
+  flame.scale.setScalar(boostAmt * flick * flameScale)
   flameInner.scale.set(
     boostAmt * flick * 1.1 * flameScale,
     boostAmt * flick * flameScale,
@@ -591,9 +603,7 @@ function updateRocket(dt) {
   flame.visible = boostAmt > 0.05
   flameInner.visible = flame.visible
 
-  // Градиент: цвет огня из angles.js (или фиолетовый при форсаже).
   flameMat.color.copy(targetFlame)
-
   flameMat.opacity = boosting || forsageActive ? 0.95 : 0.5
   exhaustLight.intensity = boostAmt * (boosting || forsageActive ? 45 : 8)
 }
@@ -601,10 +611,9 @@ function updateRocket(dt) {
 /* ================================================================
    updateCamera
 ================================================================ */
-function updateCamera(dt) {
-  const p = rocketState.pos
-  const gY = terrainHeight(p.x, 0)
-  const speed = rocketState.vel.length()
+function updateCamera(dt, ipos) {
+  const gY = terrainHeight(ipos.x, 0)
+  const speed = _ivel.length() // ← интерполированная скорость
 
   const wantBehind = G.phase === 'fly' ? 1 : 0
   const blendSpeed = wantBehind > cam.blend ? CFG.CAMERA.blendIn : CFG.CAMERA.blendOut
@@ -612,7 +621,7 @@ function updateCamera(dt) {
   if (cam.blend < 0.001) cam.blend = 0
   if (cam.blend > 0.999) cam.blend = 1
 
-  const alt = Math.max(0, p.y - gY)
+  const alt = Math.max(0, ipos.y - gY)
   const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
   const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
   const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
@@ -623,9 +632,9 @@ function updateCamera(dt) {
   const vDist = R * Math.sin(elev)
 
   const lead = CFG.CAMERA.leadTime
-  const px = p.x + rocketState.vel.x * lead
-  const py = p.y + rocketState.vel.y * lead
-  const pz = p.z + rocketState.vel.z * lead
+  const px = ipos.x + _ivel.x * lead
+  const py = ipos.y + _ivel.y * lead
+  const pz = ipos.z + _ivel.z * lead
 
   const camX = px - hDist * cam.blend
   const camY = py + vDist
@@ -662,29 +671,39 @@ function updateCamera(dt) {
 }
 
 /* ================================================================
-   Общий update.
+   ФИЗИКА — фиксированный шаг, только детерминированное состояние
 ================================================================ */
-export function update(dt) {
+export function updatePhysics(dt) {
   Abilities.update(dt)
-  updateChestsFX(dt, rocketState.pos.x, rocketState.pos.z)
-  updateBoss(dt)
-  updateRocket(dt)
-  updateCamera(dt)
+  updateBossPhase(dt)
+  updateRocketPhysics(dt)
+}
 
-  // Призрак — только в фазе полёта
+/* ================================================================
+   ВИЗУАЛ — раз в кадр, realDt. Меши, камера, HUD, ghost, FX
+================================================================ */
+export function updateVisuals(dt, alpha, visualTime = time.gameTime) {
+  _ipos.lerpVectors(rocketState.prevPos, rocketState.pos, alpha)
+  _ivel.lerpVectors(rocketState.prevVel, rocketState.vel, alpha)
+  _irotZ = rocketState.prevRotZ + (rocketState.rotZ - rocketState.prevRotZ) * alpha
+
+  updateBossAnim(dt)
+  updateRocketVisuals(dt)
+  updateCamera(dt, _ipos)
+  updateChestsFX(dt, _ipos.x, _ipos.z)
+
   if (G.phase === 'fly' && bestFlight.samples) {
-    const t = time.gameTime - ghostRecorder.startTime
+    const t = Math.max(0, visualTime - ghostRecorder.startTime) // ← visualTime, не gameTime
     updateGhostRocket(bestFlight.samples, t)
   } else {
-    updateGhostRocket(null, 0) // скрыть
+    updateGhostRocket(null, 0)
   }
 
   // HUD и прогрессбар до следующего сундука
-  updateChestTracker()
-
+  updateChestTracker(_ipos.x, _ipos.z)
   if (G.phase === 'fly') {
     UI.updateHUD()
-    UI.setHUDDist(rocketState.pos.x)
+    UI.setHUDDist(_ipos.x)
     UI.updateFuelBar(G.fuel, maxFuel())
   }
 }
@@ -693,10 +712,7 @@ export function update(dt) {
  * Прогрессбар «сколько метров до следующего сундука».
  * Шкала — от самого старта (x = 0) до следующего неоткрытого сундука.
  */
-function updateChestTracker() {
-  const rx = rocketState.pos.x
-  const rz = rocketState.pos.z
-
+function updateChestTracker(rx, rz) {
   // ближайший НЕоткрытый сундук по XZ
   let nearest = null
   let nearestD2 = Infinity

@@ -33,7 +33,11 @@ export const G = {
 /** Кинематика ракеты. */
 export const rocketState = {
   pos: new THREE.Vector3(0, CFG.GAME.restY, 0),
+  prevPos: new THREE.Vector3(0, CFG.GAME.restY, 0),
+  rotZ: 0, // (угол в физике)
+  prevRotZ: 0,
   vel: new THREE.Vector3(),
+  prevVel: new THREE.Vector3(),
   angVel: 0,
 }
 

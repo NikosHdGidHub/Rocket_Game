@@ -487,7 +487,9 @@ export function updateGhostRocket(samples, t) {
   ghostRocket.rotation.z = lerp(samples[i0 + 4], samples[i1 + 4], a)
   // rotation.y — константа, задана при build.
 
-  const boosting = samples[i0 + 5] > 0.5
+  const boostA = samples[i0 + 5]
+  const boostB = samples[i1 + 5]
+  const boosting = boostA + (boostB - boostA) * a > 0.5
   if (_ghostFlameOuter) _ghostFlameOuter.visible = boosting
   if (_ghostFlameInner) _ghostFlameInner.visible = boosting
 }
