@@ -235,4 +235,13 @@ window.dbgPersistent = () => {
 window.dbgDayNight = () => DayNight.debug()
 window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)
 window.dbgSpace = () => console.log(Space.debug())
+
+/*
 window.dbgOpenChestAt = Game.debugOpenChestAt
+window.dbgGiveCard = Game.giveCard
+window.dbgRemoveCard = Game.removeCard
+window.dbgListCards = Game.listCardsDebug
+window.dbgCanGive = (id) => {
+  const r = Game.canGiveCardReason(id)
+  console.log(r ? '⛔ ' + r : '✅ можно')
+}*/

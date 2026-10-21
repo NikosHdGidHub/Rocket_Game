@@ -395,6 +395,112 @@ function openChest(chest) {
 }
 
 /* ================================================================
+   DEBUG: выдача конкретной карточки
+================================================================ */
+
+/**
+ * Проверяет, можно ли выдать карточку с данным id прямо сейчас.
+ * Возвращает null, если можно, иначе — строку с причиной.
+ */
+export function canGiveCardReason(id) {
+  const card = CFG.CARDS.find((c) => c.id === id)
+  if (!card) return `Карточка "${id}" не найдена`
+  if (card.special) return `"${id}" — special, выдаётся только через фиолетовый сундук`
+  if (card.once && (G.cards[card.id] || 0) >= 1) return `"${id}" — once, уже получена`
+  if (card.condition && !isConditionMet(card.condition))
+    return `"${id}" — не выполнено условие "${card.condition}"`
+  if (getFamilyCount(card.family) >= CFG.CHESTS.cardTypeLimit)
+    return `Семейство "${card.family}" уже на лимите ${CFG.CHESTS.cardTypeLimit}`
+  return null
+}
+
+/**
+ * Выдаёт карточку по id (для отладки).
+ *   silent: true — не показывать попап, только записать в G.cards.
+ * Возвращает true, если выдано.
+ */
+export function giveCard(id, { silent = false } = {}) {
+  const reason = canGiveCardReason(id)
+  if (reason) {
+    console.warn('[dbgGiveCard] ⛔', reason)
+    return false
+  }
+  const card = CFG.CARDS.find((c) => c.id === id)
+  const isUpgrade = (G.cards[card.id] || 0) >= 1
+  G.cards[card.id] = (G.cards[card.id] || 0) + 1
+
+  if (!silent) {
+    UI.showCardChoices([card], () => {}, { isUpgradeOverride: isUpgrade })
+  }
+  CardsModal.refresh()
+  saveProgress()
+  console.log(`[dbgGiveCard] ✅ "${id}" выдан (теперь ×${G.cards[card.id]})`)
+  return true
+}
+
+/** Печатает таблицу всех карточек: сколько получено и можно ли выдать. */
+export function listCardsDebug() {
+  console.table(
+    CFG.CARDS.map((card) => {
+      const count = G.cards[card.id] || 0
+      const reason = canGiveCardReason(card.id)
+      return {
+        id: card.id,
+        family: card.family,
+        variant: card.variant || '',
+        получено: count,
+        статус: reason ? `⛔ ${reason}` : '✅ можно',
+      }
+    })
+  )
+}
+
+/**
+ * Убирает одну копию карточки по id (для отладки).
+ *   silent: true — не показывать toast, только записать в G.cards.
+ * Возвращает true, если убрано.
+ */
+export function removeCard(id, { silent = false } = {}) {
+  const card = CFG.CARDS.find((c) => c.id === id)
+  if (!card) {
+    console.warn(`[dbgRemoveCard] ⛔ Карточка "${id}" не найдена`)
+    return false
+  }
+
+  const cur = G.cards[card.id] || 0
+  if (cur <= 0) {
+    console.warn(`[dbgRemoveCard] ⛔ "${id}" уже 0 — нечего убирать`)
+    return false
+  }
+
+  G.cards[card.id] = cur - 1
+  if (G.cards[card.id] === 0) delete G.cards[card.id]
+
+  // Forsage — синхронизируем уровень способности и сбрасываем
+  // рантайм-состояние (active / cooldown), иначе кнопка «залипнет».
+  if (card.family === 'forsage') {
+    Abilities.syncFromCards()
+    const a = G.abilities.forsage
+    if (a) {
+      a.active = false
+      a.activeEnd = 0
+      a.cooldownEnd = 0
+    }
+  }
+
+  CardsModal.refresh()
+  saveProgress()
+
+  if (!silent) {
+    const label = card.variant ? `${card.name} · ${card.variant}` : card.name
+    UI.showToast(`🗑️ -1 ${card.icon} ${label}`, '#ff7a7a')
+  }
+
+  console.log(`[dbgRemoveCard] ✅ "${id}" убран (осталось ×${G.cards[card.id] || 0})`)
+  return true
+}
+
+/* ================================================================
    GHOST RECORDER — запись текущего полёта.
 ================================================================ */
 function startGhostRecording() {
