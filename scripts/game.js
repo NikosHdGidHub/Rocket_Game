@@ -230,6 +230,8 @@ function resetRocket() {
   G.fuel = maxFuel()
   input.boost = false
   Abilities.reset() // сброс способности
+
+  UI.setHUDDist(0)
 }
 
 function launch() {
@@ -294,6 +296,7 @@ function land() {
   }
   ghostRecorder.recording = false
 
+  UI.setHUDDist(dist)
   UI.updateHUD()
   UI.renderShop()
   saveProgress()

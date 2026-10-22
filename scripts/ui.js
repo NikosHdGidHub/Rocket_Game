@@ -53,11 +53,7 @@ let _lastInFlight = null
    Display-функции (вызываются из game.js)
 ================================================================ */
 export function updateHUD() {
-  const d = Math.max(0, Math.floor(window.__rocketPosX || 0))
-  if (d !== _lastDist) {
-    _lastDist = d
-    $dist.textContent = d
-  }
+  // Расстояние — только через setHUDDist (его контролирует game.js).
   if (G.coins !== _lastCoins) {
     _lastCoins = G.coins
     $coins.textContent = G.coins
