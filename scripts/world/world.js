@@ -5,6 +5,24 @@
 import * as THREE from 'three'
 import * as CFG from '../config.js'
 
+/* ---------- Debug-хук для terrainBase ---------- */
+let _dbgTerrain = null
+
+/**
+ * Печатает таблицу промежуточных значений terrainBase для набора X.
+ * Вызов из консоли: debugTerrainProfile()  — стандартный набор
+ *                   debugTerrainProfile([1000, 5000, 20000])
+ */
+export function debugTerrainProfile(
+  xs = [2000, 2800, 5000, 8000, 12000, 16000, 20000, 24000, 28000, 30000, 31000, 32000, 35000]
+) {
+  const rows = []
+  _dbgTerrain = (d) => rows.push(d)
+  for (const x of xs) terrainBase(x, 0)
+  _dbgTerrain = null
+  console.table(rows)
+}
+
 export const WORLD_SEED = CFG.WORLD_SEED
 
 export function terrainBrightnessNoise(x, z) {
@@ -168,14 +186,30 @@ export function terrainBase(x, z) {
     waveField = (fbm2(x * RW.freq, z * RW.freq, RW.octaves) - 0.5) * 2 // [-1, 1]
   }
 
-  // Масштаб формы по X: чем дальше — тем шире и мягче хребты.
-  // ratio = 1 при x ≤ refX, дальше плавно падает.
+  // Масштаб формы хребтов теперь — функция growth, а не X.
+  // На baseline (growth=1) — исходная форма. На пике (growth=peak) —
+  // максимально широкая и мягкая. При затухании гор «отматывается» назад.
   let freqScale = 1
   let sharpScale = 1
-  if (RG.enabled && x > RG.refX) {
-    const ratio = RG.refX / x
-    freqScale = Math.max(RG.minFreqScale, Math.pow(ratio, RG.freqExp))
-    sharpScale = Math.max(RG.minSharpScale, Math.pow(ratio, RG.sharpExp))
+  let gNorm = 0
+  let gFreqExp = 1
+  let gShaped = 1
+
+  if (RG.enabled) {
+    const peakG = gp > 0 ? 1 + (gp - gs) * gRate : 1
+    if (peakG > 1) {
+      gNorm = Math.min(1, Math.max(0, (growth - 1) / (peakG - 1)))
+    }
+
+    const gFreqExp = Math.pow(gNorm, RG.freqExp)
+    const gShaped = Math.pow(gNorm, RG.sharpExp)
+    freqScale = 1 - gFreqExp * (1 - RG.minFreqScale)
+    sharpScale = 1 - gShaped * (1 - RG.minSharpScale)
+    // Потолок: baseline (x=2000, x=30000) не должен быть острее/уже,
+    // чем «эталонный» вид на x=3000. Без этого при gNorm → 0
+    // масштабы уходят в 1.0 и горы становятся острыми при малой высоте.
+    freqScale = Math.min(RG.maxFreqScale, freqScale)
+    sharpScale = Math.min(RG.maxSharpScale, sharpScale)
   }
 
   const ridge = (u, v, freq, seed, sharp, soft) => {
@@ -217,6 +251,22 @@ export function terrainBase(x, z) {
     h += (big * n.bigAmp + small * n.smallAmp) * t
   }
 
+  //DEBUG--------
+  if (_dbgTerrain) {
+    _dbgTerrain({
+      x: x.toFixed(0),
+      growth: growth.toFixed(3),
+      gNorm: (typeof gNorm !== 'undefined' ? gNorm : 0).toFixed(3),
+      gFreqExp: (typeof gFreqExp !== 'undefined' ? gFreqExp : 1).toFixed(3),
+      gShaped: (typeof gShaped !== 'undefined' ? gShaped : 1).toFixed(3),
+      freqScale: freqScale.toFixed(3),
+      sharpScale: sharpScale.toFixed(3),
+      mt2: mt2.toFixed(3),
+      mt2Out: mt2Out.toFixed(3),
+      h: h.toFixed(1),
+    })
+  }
+  //------
   return h
 }
 

@@ -395,10 +395,15 @@ export const TERRAIN = /** @type {const} */ ({
   ridgeGrowth: {
     enabled: true,
     refX: 2000,
-    freqExp: 0.35,
-    sharpExp: 1.6,
-    minFreqScale: 0.76,
-    minSharpScale: 0.11,
+    freqExp: 0.035,
+    sharpExp: 0.06,
+    minFreqScale: 0.76, // пик (x=20000) — самое широкое
+    minSharpScale: 0.11, // пик (x=20000) — самое гладкое
+
+    // Новое: потолок. Baseline (x=2000, x=30000) не выше этих значений.
+    // Подобрано из «эталонного» вида на x=3000.
+    maxFreqScale: 0.78,
+    maxSharpScale: 0.25,
   },
 
   /** Модуляция высоты вдоль хребта.*/
