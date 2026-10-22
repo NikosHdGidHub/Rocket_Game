@@ -36,8 +36,14 @@ export function init() {
     vertexColors: true,
     roughness: 1,
     metalness: 0,
-    transparent: true,
-    opacity: 0,
+    // Opaque: тайлы закрывают пустоту за 3D-чанками.
+    // polygonOffset → там, где есть детальный чанк, depth-test
+    // фар-тайла проваливается (он чуть «глубже»), и чанк остаётся
+    // чистым. Там, где чанка нет — фар-тайл заполняет.
+    // Если увидишь z-файтинг на стыке — увеличь factor/units до 2–4.
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   })
   applySkyFog(farGroundMat)
 }
@@ -48,8 +54,11 @@ const pendingFarTiles = new Map()
 /** Текущие радиусы загрузки (учитывает farHighMode). */
 function getFarLoadBounds() {
   if (farHighMode) {
-    const r = CFG.FAR_TILES.loadRadiusHigh
-    return { fwd: r, back: r, side: r }
+    return {
+      fwd: CFG.FAR_TILES.loadFwdHigh,
+      back: CFG.FAR_TILES.loadBackHigh,
+      side: CFG.FAR_TILES.loadSideHigh,
+    }
   }
   return {
     fwd: CFG.FAR_TILES.loadFwd,
@@ -66,7 +75,12 @@ function getFarUnloadBounds() {
 }
 
 function createFarTileBuilder(fx, fz) {
-  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, farTileSeg, farTileSeg)
+  // ВАЖНО: захватываем seg локально. Если режим сменится, пока тайл
+  // ещё строится, глобальный farTileSeg «уедет», а геометрия останется
+  // с текущей сеткой — индексация в step() разъедется.
+  const seg = farTileSeg
+
+  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, seg, seg)
   geo.rotateX(-Math.PI / 2)
 
   const pos = geo.attributes.position
@@ -79,15 +93,16 @@ function createFarTileBuilder(fx, fz) {
   const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
   const col = new THREE.Color()
 
-  const vertsPerRow = farTileSeg + 1
-  const totalRows = farTileSeg + 1
-  const eps = FAR_TILE_SIZE / farTileSeg
+  const vertsPerRow = seg + 1
+  const totalRows = seg + 1
+  const eps = FAR_TILE_SIZE / seg
 
-  let phase = 0 // 0 = высоты; 1 = нормали
+  let phase = 0
   let row = 0
 
   return {
     geo,
+    seg, // ← отдаём наружу фактический seg
     step(budgetMs) {
       const t0 = performance.now()
 
@@ -117,11 +132,13 @@ function createFarTileBuilder(fx, fz) {
         }
       }
 
-      /* ---------- Фаза 1: нормали из готовых высот ---------- */
+      /* ---------- Фаза 1: нормали ---------- */
       if (phase === 1) {
-        while (row < farTileSeg && performance.now() - t0 < budgetMs) {
+        while (row < seg && performance.now() - t0 < budgetMs) {
+          // …тело без изменений, но теперь используется локальный `seg`,
+          // а не глобальный farTileSeg
           const iz = row
-          for (let ix = 0; ix < farTileSeg; ix++) {
+          for (let ix = 0; ix < seg; ix++) {
             const i00 = iz * vertsPerRow + ix
             const h = pos.getY(i00)
             const hx = pos.getY(i00 + 1)
@@ -133,11 +150,10 @@ function createFarTileBuilder(fx, fz) {
           }
           row++
         }
-        if (row >= farTileSeg) {
-          // Крайние ряды/столбцы — через terrainHeight (их мало)
-          // Нижняя строка (iz = farTileSeg)
-          for (let ix = 0; ix < farTileSeg; ix++) {
-            const i00 = farTileSeg * vertsPerRow + ix
+        if (row >= seg) {
+          // …крайние ряды/столбцы без изменений, тоже с локальным `seg`
+          for (let ix = 0; ix < seg; ix++) {
+            const i00 = seg * vertsPerRow + ix
             const wx = cxw + pos.getX(i00)
             const wz = czw + pos.getZ(i00)
             const h = pos.getY(i00)
@@ -148,9 +164,8 @@ function createFarTileBuilder(fx, fz) {
             const len = Math.hypot(nx, 1, nz)
             nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
           }
-          // Правый столбец (ix = farTileSeg), кроме нижнего угла
-          for (let iz = 0; iz < farTileSeg; iz++) {
-            const i00 = iz * vertsPerRow + farTileSeg
+          for (let iz = 0; iz < seg; iz++) {
+            const i00 = iz * vertsPerRow + seg
             const wx = cxw + pos.getX(i00)
             const wz = czw + pos.getZ(i00)
             const h = pos.getY(i00)
@@ -161,8 +176,7 @@ function createFarTileBuilder(fx, fz) {
             const len = Math.hypot(nx, 1, nz)
             nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
           }
-          // Правый-нижний угол
-          const iC = farTileSeg * vertsPerRow + farTileSeg
+          const iC = seg * vertsPerRow + seg
           const wxC = cxw + pos.getX(iC)
           const wzC = czw + pos.getZ(iC)
           const hC = pos.getY(iC)
@@ -244,8 +258,15 @@ export function refillFarTiles(camX, camZ) {
       const loaded = farTiles.get(key)
       const pending = pendingFarTiles.get(key)
 
-      // SEG устарел → пересборка
-      if (loaded && loaded.seg !== farTileSeg) {
+      // Нам нужна сетка farTileSeg. У уже загруженного тайла есть loaded.seg.
+      //
+      //   loaded.seg >= farTileSeg  → детализации хватает (или даже избыточно).
+      //                                Не пересобираем. При подъёме (170→50)
+      //                                все старые тайлы остаются как есть.
+      //
+      //   loaded.seg <  farTileSeg  → детализации НЕ хватает (спуск 50→170).
+      //                                Пересобираем с более мелкой сеткой.
+      if (loaded && loaded.seg < farTileSeg) {
         pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
         continue
       }
@@ -603,7 +624,7 @@ export function processLODWork() {
       const elapsed = performance.now() - t0
       if (elapsed >= BUDGET_TERRAIN_MS) break
       if (p.builder.step(BUDGET_TERRAIN_MS - elapsed)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, farTileSeg)
+        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, p.builder.seg)
         pendingFarTiles.delete(key)
       }
     }
@@ -858,7 +879,7 @@ export async function loadInitialFar(onStep) {
     const t0 = performance.now()
     for (const [key, p] of pendingFarTiles) {
       if (p.builder.step(4)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, farTileSeg)
+        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, p.builder.seg)
         pendingFarTiles.delete(key)
         done++
       }
