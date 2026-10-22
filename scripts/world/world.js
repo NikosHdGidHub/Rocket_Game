@@ -124,9 +124,38 @@ export function terrainBase(x, z) {
   const mt = Math.min(1, Math.max(0, (x - CFG.TERRAIN.mountainsStart) / CFG.TERRAIN.mountainsRamp))
   const mt2 = mt * mt
 
-  // Глобальный рост (высота)
-  const far = Math.max(0, (x - CFG.TERRAIN.growthStart) * CFG.TERRAIN.growthRate)
-  const growth = 1 + far
+  // ─── Глобальный рост высоты гор ───
+  // 1 → peak (линейно, от growthStart до growthPeak)
+  //   → 1 (smoothstep, от growthPeak до growthEnd)
+  //   → 1 (baseline, дальше)
+  // ВАЖНО: growth возвращается к 1, а не к 0 — горы «оседают», но не исчезают.
+  // Исчезновение — отдельный множитель mt2Out (ниже).
+  const gs = CFG.TERRAIN.growthStart
+  const gp = CFG.TERRAIN.growthPeak
+  const ge = CFG.TERRAIN.growthEnd
+  const gRate = CFG.TERRAIN.growthRate
+
+  let growth
+  if (gp <= 0 || x < gp) {
+    growth = x <= gs ? 1 : 1 + (x - gs) * gRate
+  } else if (ge > gp && x < ge) {
+    const peak = 1 + (gp - gs) * gRate
+    const t = (x - gp) / (ge - gp)
+    const s = t * t * (3 - 2 * t) // smoothstep 0..1
+    growth = peak + (1 - peak) * s // peak → 1
+  } else {
+    growth = 1
+  }
+
+  // ─── Финальное затухание гор: mt2Out 1 → 0 (smoothstep) ───
+  // Стартует с growthEnd, длится mountainsRampOut метров.
+  const gEndRamp = CFG.TERRAIN.mountainsRampOut ?? 0
+  let mt2Out = 1
+  if (ge > 0 && gEndRamp > 0 && x > ge) {
+    const t = Math.min(1, (x - ge) / gEndRamp)
+    const s = t * t * (3 - 2 * t)
+    mt2Out = 1 - s
+  }
 
   // ─── НОВОЕ: волнистость + утолщение/разрежение хребтов ───
   const RW = CFG.TERRAIN.ridgeWave
@@ -177,7 +206,7 @@ export function terrainBase(x, z) {
     r *= 1 + mod * RH.amp
   }
 
-  h += mt2 * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
+  h += mt2 * mt2Out * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
 
   // Шум поверх гор — без изменений
   const n = CFG.TERRAIN.noise
