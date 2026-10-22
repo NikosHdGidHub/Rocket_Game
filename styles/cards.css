@@ -3,7 +3,7 @@
    ================================================================ */
 
 /* ---------- Кнопка в HUD — фиолетовый hover ---------- */
-.reset-btn.cards-btn:hover {
+.side-btn.cards-btn:hover {
   border-color: #c38bff;
   color: #c38bff;
   transform: translateY(-2px);

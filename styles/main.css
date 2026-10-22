@@ -62,33 +62,6 @@ canvas {
   font-size: 18px;
 }
 
-.reset-btn {
-  pointer-events: auto;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(12, 18, 32, 0.62);
-  backdrop-filter: blur(8px);
-  color: #eaf2ff;
-  font-size: 20px;
-  font-family: inherit;
-  cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
-  transition: 0.15s;
-}
-
-.reset-btn:hover {
-  border-color: #ff7a7a;
-  color: #ff7a7a;
-  transform: translateY(-2px);
-}
-
-.reset-btn:active {
-  transform: translateY(0) scale(0.94);
-}
-
 /* ================================================================
    Boost bar — полоска топлива (видна в полёте)
    ================================================================ */
@@ -683,12 +656,6 @@ canvas {
     font-size: 16px;
   }
 
-  .reset-btn {
-    width: 38px;
-    height: 38px;
-    font-size: 17px;
-  }
-
   /* Магазин — 2 колонки одинаковой ширины */
   #shop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1058,16 +1025,22 @@ canvas {
 }
 
 /* ================================================================
-   Settings — кнопка в левом верхнем углу + модальная панель
+   Left-side controls — колонка ⚙️ 🏆 🎴 под левым верхним углом
    ================================================================ */
-.settings-btn {
+#leftControls {
   position: fixed;
   top: 14px;
   left: 14px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.side-btn {
   width: 44px;
   height: 44px;
   padding: 0;
-  z-index: 12;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(12, 18, 32, 0.62);
@@ -1078,13 +1051,16 @@ canvas {
   cursor: pointer;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
   transition: 0.15s;
+  pointer-events: auto;
 }
-.settings-btn:hover {
+
+.side-btn:hover {
   border-color: #ffd75e;
   color: #ffd75e;
   transform: translateY(-2px);
 }
-.settings-btn:active {
+
+.side-btn:active {
   transform: translateY(0) scale(0.94);
 }
 
@@ -1238,12 +1214,15 @@ canvas {
 }
 
 @media (max-width: 640px) {
-  .settings-btn {
+  #leftControls {
+    top: 10px;
+    left: 10px;
+    gap: 8px;
+  }
+  .side-btn {
     width: 38px;
     height: 38px;
     font-size: 17px;
-    top: 10px;
-    left: 10px;
   }
 }
 
