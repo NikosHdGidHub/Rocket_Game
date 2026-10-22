@@ -398,15 +398,15 @@ export function loadChunk(cx, cz) {
   if (chunks.has(key)) return
 
   const items = getProps(cx, cz)
-  const shadowItems = collectShadowItems(cx, cz)
+  // Persistent-чанки (старт) — с halo соседей, чтобы на старте
+  // тени были без «обрезков» на границах.
+  // Остальные — только свои items: ~4× быстрее по фазе теней,
+  // а обрезки на границах в полёте почти не видны.
+  const shadowItems = PERSISTENT_CHUNKS.has(key) ? collectShadowItems(cx, cz) : items
   const mesh = makeChunkMesh(cx, cz, shadowItems)
   const props = spawnChunkProps(cx, cz, items, mesh.userData.terrainSampler)
 
   scene.add(mesh)
-  // Явно задаём видимость — иначе новый чанк получит `visible = true`
-  // по умолчанию и будет мигать в 2D-режиме, пока loop showFine не сработает
-  // (с кэшем — сработает только при изменении lod.fade, а он может быть
-  //  стабилен = 1, и чанк останется видимым → проседание под overlay).
   mesh.visible = lod.fade < 0.95
   for (const p of props) p.visible = lod.showing3D
   chunks.set(key, { mesh, props })
@@ -470,16 +470,26 @@ export function refillChunkQueue(camX, camZ) {
     }
   }
 
-  // --- Очередь загрузки ---
-  chunkLoadQueue.length = 0
-  chunkQueueIdx = 0
+  // --- Очередь загрузки: приоритизация ---
+  // Меньший score = выше приоритет.
+  //   • текущий чанк (dx=0, dz=0) — грузим самым первым;
+  //   • вперёд (dx>0) — важнее, чем стороны/назад, вес dx = 2×;
+  //   • стороны и назад — в конце.
+  const candidates = []
   for (let dx = -LB; dx <= LF; dx++) {
     for (let dz = -LS; dz <= LS; dz++) {
-      const cx = cxi + dx,
-        cz = czi + dz
-      if (!chunks.has(cx + ',' + cz)) chunkLoadQueue.push([cx, cz])
+      const cx = cxi + dx
+      const cz = czi + dz
+      if (chunks.has(cx + ',' + cz)) continue
+      const score = dx === 0 && dz === 0 ? -1000 : -dx * 2 + Math.abs(dz)
+      candidates.push({ cx, cz, score })
     }
   }
+  candidates.sort((a, b) => a.score - b.score)
+
+  chunkLoadQueue.length = 0
+  chunkQueueIdx = 0
+  for (const c of candidates) chunkLoadQueue.push([c.cx, c.cz])
 }
 
 export function processChunkQueue() {

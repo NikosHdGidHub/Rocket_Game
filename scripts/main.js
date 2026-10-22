@@ -154,7 +154,7 @@ async function initialLoad() {
 ================================================================ */
 const FIXED_DT = 1 / 60 // фиксированный шаг физики
 const MAX_FRAME_DT = 0.1 // защита от «спирали смерти» при лагах
-const MAX_STEPS = 6 // не больше 6 шагов за кадр (~100 мс)
+const MAX_STEPS = 10 // до 10 шагов за кадр (~166 мс)
 
 let last = performance.now()
 let accumulator = 0
