@@ -769,12 +769,15 @@ function updateLOD(dt) {
   }
 
   const want3D = lod.fade < 0.15
-  if (want3D !== lod.showing3D) {
+  const farFromBoss = rocketState.pos.x > CFG.BOSS.hideDistance
+  const bossVisible = want3D && !farFromBoss
+
+  if (want3D !== lod.showing3D || boss.visible !== bossVisible) {
     for (const [key, c] of chunks) {
       if (PERSISTENT_CHUNKS.has(key)) continue
       for (const pr of c.props) pr.visible = want3D
     }
-    if (boss) boss.visible = want3D
+    if (boss) boss.visible = bossVisible
     lod.showing3D = want3D
   }
 

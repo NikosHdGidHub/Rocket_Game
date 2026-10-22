@@ -7,6 +7,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
+import { rocketState } from './state.js'
 import { makeGroundTexture, GROUND_TILE } from './world/world.js'
 
 /* ---------- Мутабельные экспорты (заполняются в init) ---------- */
@@ -264,6 +265,7 @@ export function init() {
   sc.near = CFG.LIGHTS.shadow.near
   sc.far = CFG.LIGHTS.shadow.far
   sun.shadow.bias = CFG.LIGHTS.shadow.bias
+  sun.shadow.normalBias = CFG.LIGHTS.shadow.normalBias
   scene.add(sun)
   scene.add(sun.target)
 
@@ -282,13 +284,13 @@ export function init() {
    updateScenery — солнце и купол следуют за камерой.
 ================================================================ */
 export function updateScenery() {
-  const camX = camera.position.x
+  const tx = rocketState.pos.x
+  const ty = rocketState.pos.y
+  const tz = rocketState.pos.z
   const R = 60
-  // Y-компоненту света зажимаем ≥ 0.2 — DirectionalLight не должен
-  // светить «снизу вверх», даже когда солнце ушло под горизонт.
   const yDir = Math.max(SUN_DIR.y, 0.2)
-  sun.position.set(camX + SUN_DIR.x * R, yDir * R, SUN_DIR.z * R)
-  sun.target.position.set(camX, 0, 0)
+  sun.position.set(tx + SUN_DIR.x * R, ty + yDir * R, tz + SUN_DIR.z * R)
+  sun.target.position.set(tx, ty, tz)
   sun.target.updateMatrixWorld()
   skyDome.position.copy(camera.position)
 }

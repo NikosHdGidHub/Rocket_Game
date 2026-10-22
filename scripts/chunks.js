@@ -301,7 +301,7 @@ function makeChunkMesh(cx, cz, items) {
 
   const mesh = new THREE.Mesh(geo, groundMat)
   mesh.position.set(cxw, 0, czw)
-  mesh.receiveShadow = false
+  mesh.receiveShadow = true
 
   /* ---------- Билинейный сэмплер высоты ---------- */
   const stepRecip = 1 / step

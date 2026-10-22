@@ -160,6 +160,7 @@ export const flame = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.4, 12), flame
 flame.name = 'rocketFlame'
 flame.rotation.z = Math.PI / 2
 flame.position.x = -2.1
+flame.castShadow = false
 rocket.add(flame)
 
 export const flameInner = new THREE.Mesh(
@@ -169,6 +170,7 @@ export const flameInner = new THREE.Mesh(
 flameInner.name = 'rocketFlameInner'
 flameInner.rotation.z = Math.PI / 2
 flameInner.position.x = -1.85
+flameInner.castShadow = false
 rocket.add(flameInner)
 
 export const exhaustLight = new THREE.PointLight(CFG.ROCKET.exhaustLight, 0, 14)
