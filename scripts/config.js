@@ -367,8 +367,8 @@ export const TERRAIN = /** @type {const} */ ({
     { amp: 6.5, freq: 0.016, phase: 0.4, axis: 'x', fn: 'sin' },
     { amp: 3.0, freq: 0.02, phase: 0.8, axis: 'z', fn: 'cos' },
     { amp: 2.4, freq: 0.041, phase: 1.9, axis: 'x', fn: 'sin' },
-    { amp: 0.9, freq: 0.085, phase: 3.1, axis: 'x', fn: 'sin' },
-    { amp: 0.7, freq: 0.1, phase: 1.4, axis: 'z', fn: 'cos' },
+    // { amp: 0.9, freq: 0.085, phase: 3.1, axis: 'x', fn: 'sin' },
+    //{ amp: 0.7, freq: 0.1, phase: 1.4, axis: 'z', fn: 'cos' },
   ],
 
   /** Волнистость хребтов боковая. */
@@ -461,6 +461,10 @@ export const TERRAIN = /** @type {const} */ ({
   noise: {
     /** Высота, на которой t = 1 (100% шума). */
     heightRef: 550,
+
+    /**  минимальная доля шума даже на высоте 0.
+     0 (шум только в горах) 0.05 — лёгкие холмики на равнине  0.15 — заметный рельеф на равнине*/
+    baseFactor: 0.02,
 
     /** Частота крупного шума (искривляет хребты). */
     bigFreq: 0.0013,

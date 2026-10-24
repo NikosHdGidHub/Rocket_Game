@@ -244,7 +244,7 @@ export function terrainBase(x, z) {
 
   // Шум поверх гор — без изменений
   const n = CFG.TERRAIN.noise
-  const t = Math.min(1, Math.max(0, h / n.heightRef))
+  const t = n.baseFactor + (1 - n.baseFactor) * Math.min(1, Math.max(0, h / n.heightRef))
   if (t > 0) {
     const big = (fbm2(x * n.bigFreq, z * n.bigFreq, n.bigOct) - 0.5) * 2
     const small = (fbm2(x * n.smallFreq, z * n.smallFreq, n.smallOct) - 0.5) * 2
