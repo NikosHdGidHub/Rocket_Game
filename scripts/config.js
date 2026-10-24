@@ -1851,7 +1851,7 @@ export const GPU_HINT = /** @type {const} */ ({
    Стоит на x=2000, лицом против движения ракеты. Статична.
 ================================================================ */
 export const SIGN = /** @type {const} */ ({
-  enabled: true,
+  enabled: false,
 
   /** Шрифт three.js typeface (JSON). */
   fontUrl: '../data/fonts/helvetiker_bold.typeface.json',
