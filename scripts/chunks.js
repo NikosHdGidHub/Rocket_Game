@@ -607,51 +607,35 @@ function updatePersistentVisibility(camX, camZ) {
 }
 const READY_BUDGET_MS = 4 // не больше 4 мс на добавление чанков за кадр
 /* ================================================================
-   processReadyChunks — добавляет не больше 1 чанка за кадр.
-   Сортирует очередь по расстоянию до камеры: ближние — первыми.
+   processReadyChunks — добавляет чанки в сцену, соблюдая лимит из конфига.
 ================================================================ */
 function processReadyChunks() {
-  const t0 = performance.now()
-  // Обрабатываем по 1 за итерацию, пока есть время
-  while (readyChunks.length > 0 && performance.now() - t0 < READY_BUDGET_MS) {
-    if (readyChunks.length === 0) return
+  if (readyChunks.length === 0) return
 
-    const camX = camera.position.x
-    const camZ = camera.position.z
-    const cxi = Math.floor(camX / CHUNK_SIZE)
-    const czi = Math.floor(camZ / CHUNK_SIZE)
+  const camX = camera.position.x
+  const camZ = camera.position.z
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
 
-    // Радиусы текущего режима — для проверки актуальности
-    let LF, LB, LS
-    if (_preloading) {
-      LF = CFG.CHUNKS.loadForwardFar
-      LB = CFG.CHUNKS.loadBackFar
-      LS = CFG.CHUNKS.loadSideFar
-    } else {
-      LF = LOAD_FWD_CHUNKS
-      LB = LOAD_BACK_CHUNKS
-      LS = LOAD_SIDE_CHUNKS
-    }
+  // Радиусы текущего режима — для проверки актуальности
+  let LF, LB, LS
+  if (_preloading) {
+    LF = CFG.CHUNKS.loadForwardFar
+    LB = CFG.CHUNKS.loadBackFar
+    LS = CFG.CHUNKS.loadSideFar
+  } else {
+    LF = LOAD_FWD_CHUNKS
+    LB = LOAD_BACK_CHUNKS
+    LS = LOAD_SIDE_CHUNKS
+  }
 
-    // Периодически чистим очередь от «устаревших» (камера улетела)
-    if (readyChunks.length > 8) {
-      for (let i = readyChunks.length - 1; i >= 0; i--) {
-        const r = readyChunks[i]
-        const dx = r.cx - cxi
-        const dz = r.cz - czi
-        if (
-          dx < -(LB + UNLOAD_MARGIN) ||
-          dx > LF + UNLOAD_MARGIN ||
-          Math.abs(dz) > LS + UNLOAD_MARGIN
-        ) {
-          readyChunks.splice(i, 1)
-        }
-      }
-    }
+  // Читаем лимит из конфига
+  const maxPerFrame = CFG.RENDERER.maxChunksPerFrame ?? 1
+  let processed = 0
 
-    if (readyChunks.length === 0) return
-
-    // Ищем ближайший чанк к камере
+  // Крутимся, пока не исчерпаем лимит за этот кадр
+  while (readyChunks.length > 0 && processed < maxPerFrame) {
+    // 1. Ищем самый ближний чанк к камере в очереди
     let bestIdx = 0
     let bestD2 = Infinity
     for (let i = 0; i < readyChunks.length; i++) {
@@ -668,9 +652,9 @@ function processReadyChunks() {
     }
 
     const { key, cx, cz, data } = readyChunks[bestIdx]
-    readyChunks.splice(bestIdx, 1)
+    readyChunks.splice(bestIdx, 1) // забираем из очереди
 
-    // Ещё раз проверяем актуальность (мог устареть между рендерами)
+    // 2. Проверяем, не устарел ли он (вдруг камера улетела, пока он ждал)
     const dx = cx - cxi
     const dz = cz - czi
     if (
@@ -678,10 +662,11 @@ function processReadyChunks() {
       dx > LF + UNLOAD_MARGIN ||
       Math.abs(dz) > LS + UNLOAD_MARGIN
     ) {
-      continue // пропускаем — не тратим время
+      // Чанк устарел — просто выбрасываем, не тратя время на сборку
+      continue
     }
 
-    // Собираем и добавляем — ОДИН чанк за кадр
+    // 3. Собираем и добавляем в сцену
     const mesh = buildMeshFromWorker(cx, cz, data)
     const props = spawnPropsFromWorker(data.propMatrices)
 
@@ -689,6 +674,8 @@ function processReadyChunks() {
     mesh.visible = lod.fade < 0.95
     for (const p of props) p.visible = lod.showing3D
     chunks.set(key, { mesh, props })
+
+    processed++
   }
 }
 
