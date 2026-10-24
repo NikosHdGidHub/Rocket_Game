@@ -1,13 +1,152 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>rocket-game</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>🚀 Ракетный Пинок 3D</title>
+    <link rel="stylesheet" href="./styles/main.css" />
+    <link rel="stylesheet" href="./styles/achievements.css" />
+    <link rel="stylesheet" href="./styles/cards.css" />
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="leftControls">
+      <button id="settingsBtn" class="side-btn" title="Настройки">⚙️</button>
+      <button id="achBtn" class="side-btn ach-btn" title="Достижения">🏆</button>
+      <button id="cardsBtn" class="side-btn cards-btn" title="Карточки">🎴</button>
+    </div>
+    <div id="hud">
+      <div class="stat">📏 <b id="dist">0</b> м</div>
+      <div class="stat">💲 <b id="coins">0</b></div>
+      <div class="stat">🏆 <b id="best">0</b> м</div>
+    </div>
+    <div id="chestProgress" class="chest-progress">
+      <div class="chest-icon">📦</div>
+      <div class="chest-track">
+        <div class="chest-fill" id="chestFill"></div>
+      </div>
+      <div class="chest-dist" id="chestDist">—</div>
+    </div>
+
+    <div id="boostUI">
+      <div id="fuelTrack"><div id="fuelFill"></div></div>
+      <div id="boostHint">🔥 <span id="fuelText">0.0</span> с · <span id="alignText">—</span></div>
+    </div>
+
+    <div id="touchControls" class="hidden">
+      <div id="rotBtns">
+        <button id="rotUp" class="tbtn" aria-label="Поворот вверх">▲</button>
+        <button id="rotDown" class="tbtn" aria-label="Поворот вниз">▼</button>
+      </div>
+      <div id="actionBtns">
+        <button id="forsageBtn" class="forsage-btn blocked" aria-label="Форсаж">
+          <span class="forsage-lock">🔒</span>
+          <span class="forsage-letter">F</span>
+        </button>
+        <button id="pushBtn" class="push-btn" aria-label="Тяга">
+          <span class="push-icon">🔥</span>
+          <span class="push-text">PUSH</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="helpText">
+      <span class="key">W</span><span class="key">S</span> — ПОВОРОТ ·
+      <span class="key">ПРОБЕЛ</span> — ТЯГА
+    </div>
+
+    <div id="panel">
+      <div id="shop"></div>
+      <button id="launch">Пнуть! 🦵</button>
+    </div>
+
+    <div id="loading">
+      <div class="loading-title">🚀 ЗАГРУЗКА</div>
+      <div class="loading-bar-wrap">
+        <div id="loadingBar"></div>
+      </div>
+      <div class="loading-text" id="loadingText">Загрузка мира…</div>
+    </div>
+
+    <div id="cardPopup">
+      <div class="card-choices" id="cardChoices"></div>
+    </div>
+    <div id="settingsPanel" class="settings-panel">
+      <div class="settings-card">
+        <div class="settings-title">⚙️ НАСТРОЙКИ</div>
+        <a
+          id="supportBtn"
+          class="settings-support"
+          href="https://t.tb.ru/pm_short/9xIgAKTAmWf"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          💚 Поддержать автора
+        </a>
+        <div class="settings-gpu-hint" id="gpuHint" hidden>
+          <div class="settings-gpu-hint-warn" id="gpuHintStatus"></div>
+          <button type="button" class="settings-gpu-hint-toggle" id="gpuHintToggle">
+            Как исправить <span id="gpuHintArrow">▸</span>
+          </button>
+          <div class="settings-gpu-hint-body" id="gpuHintBody" hidden>
+            <b>Windows:</b> Параметры → Система → Дисплей → Графика → Google Chrome →
+            <b>Высокая производительность</b>. Полностью закройте Chrome и откройте заново.
+          </div>
+        </div>
+        <label class="settings-row">
+          <input type="checkbox" id="lowSpecToggle" />
+          <span>Режим слабого устройства</span>
+        </label>
+        <div class="settings-hint">
+          Уменьшает количество растительности ×2.<br />
+          Игра перезагрузится автоматически.
+        </div>
+        <div class="settings-divider"></div>
+        <label class="settings-row settings-volume-row">
+          <span>🔊 Громкость</span>
+          <input type="range" id="soundVolume" min="0" max="100" step="1" value="80" />
+        </label>
+
+        <label class="settings-row">
+          <input type="checkbox" id="soundEnabledToggle" />
+          <span>Звуки включены</span>
+        </label>
+        <button id="resetBtn" class="settings-danger">🗑️ Удалить весь прогресс</button>
+        <button id="settingsClose" class="settings-close">Закрыть</button>
+      </div>
+    </div>
+
+    <div id="achToast"></div>
+
+    <div id="achievementsPanel" class="settings-panel">
+      <div class="settings-card achievements-card">
+        <div class="settings-title">🏆 ДОСТИЖЕНИЯ</div>
+        <div class="ach-session-timer" id="achSessionTimer">В игре: 0:00</div>
+        <div class="ach-tabs">
+          <button class="ach-tab active" data-tab="all">Все</button>
+          <button class="ach-tab" data-tab="progress">В процессе</button>
+          <button class="ach-tab" data-tab="done">Выполнено</button>
+        </div>
+        <div class="ach-list" id="achList"></div>
+        <button id="achievementsClose" class="settings-close">Закрыть</button>
+      </div>
+    </div>
+
+    <div id="cardsPanel" class="settings-panel">
+      <div class="settings-card cards-card">
+        <div class="settings-title">🎴 КАРТОЧКИ</div>
+        <div class="cards-summary" id="cardsSummary"></div>
+        <div class="cards-tabs">
+          <button class="cards-tab active" data-tab="all">Все</button>
+          <button class="cards-tab" data-tab="received">Полученные</button>
+          <button class="cards-tab" data-tab="available">Доступные</button>
+        </div>
+        <div class="cards-list" id="cardsList"></div>
+        <button id="cardsClose" class="settings-close">Закрыть</button>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module" src="./scripts/main.js"></script>
   </body>
 </html>

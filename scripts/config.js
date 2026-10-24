@@ -1854,7 +1854,7 @@ export const SIGN = /** @type {const} */ ({
   enabled: false,
 
   /** Шрифт three.js typeface (JSON). */
-  fontUrl: '../data/fonts/helvetiker_bold.typeface.json',
+  fontUrl: './data/fonts/helvetiker_bold.typeface.json',
 
   /** Две строки текста. */
   text: {
