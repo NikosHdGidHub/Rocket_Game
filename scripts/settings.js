@@ -57,10 +57,8 @@ export function save() {
 export function applyToConfig() {
   if (settings.lowSpecMode) {
     CFG.PROPS.density = Math.floor(CFG.PROPS.densityLow)
-
-    // В режиме слабого устройства добавляем только по 1 чанку
-    // (даже если на мощном ПК мы поставим 2 или 3 в конфиге)
     CFG.RENDERER.maxChunksPerFrame = 1
+    CFG.PROPS.maxRenderDistance = CFG.PROPS.maxRenderDistanceFast
   }
 }
 

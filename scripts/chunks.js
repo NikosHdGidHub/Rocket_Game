@@ -41,6 +41,7 @@ const POOL_SIZE = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) -
 const workerPool = []
 const pendingChunks = new Map()
 const readyChunks = [] // ←  готовые данные от воркеров, ждут добавления в сцену
+const readyChunksKeys = new Set()
 let _workersReady = false
 
 function initWorkerPool() {
@@ -398,17 +399,15 @@ function onWorkerMessage(workerIdx, e) {
 
   const wasPending = pendingChunks.delete(key)
 
-  // Чанк отменили или уже загружен — отбрасываем
-  if (!wasPending || chunks.has(key)) {
+  // Чанк отменили, уже загружен или уже ждёт в readyChunks — отбрасываем
+  if (!wasPending || chunks.has(key) || readyChunksKeys.has(key)) {
     processChunkQueue()
     return
   }
 
-  // НЕ строим здесь! Просто кладём в очередь.
-  // Main thread построит и добавит в сцену в update() — по 1 за кадр.
   readyChunks.push({ key, cx, cz, data })
-
-  processChunkQueue() // воркер свободен — дадим ему следующий чанк
+  readyChunksKeys.add(key)
+  processChunkQueue()
 }
 
 function dispatchChunk(cx, cz) {
@@ -460,6 +459,7 @@ export function unloadChunk(key) {
   const readyIdx = readyChunks.findIndex((r) => r.key === key)
   if (readyIdx !== -1) {
     readyChunks.splice(readyIdx, 1)
+    readyChunksKeys.delete(key)
     return
   }
 
@@ -529,7 +529,8 @@ export function refillChunkQueue(camX, camZ) {
     for (let dz = -LS; dz <= LS; dz++) {
       const cx = cxi + dx
       const cz = czi + dz
-      if (chunks.has(cx + ',' + cz)) continue
+      const key = cx + ',' + cz
+      if (chunks.has(key) || pendingChunks.has(key) || readyChunksKeys.has(key)) continue
       const score = dx === 0 && dz === 0 ? -1000 : -dx * 2 + Math.abs(dz)
       candidates.push({ cx, cz, score })
     }
@@ -565,11 +566,11 @@ export function processChunkQueue() {
     const [cx, cz] = chunkLoadQueue[chunkQueueIdx]
     const key = cx + ',' + cz
 
-    if (chunks.has(key) || pendingChunks.has(key)) {
+    if (chunks.has(key) || pendingChunks.has(key) || readyChunksKeys.has(key)) {
       chunkQueueIdx++
       continue
     }
-    if (!dispatchChunk(cx, cz)) break // нет свободного воркера — ждём onmessage
+    if (!dispatchChunk(cx, cz)) break
     chunkQueueIdx++
   }
 
@@ -653,10 +654,10 @@ function processReadyChunks() {
 
     const { key, cx, cz, data } = readyChunks[bestIdx]
     readyChunks.splice(bestIdx, 1) // забираем из очереди
-
+    readyChunksKeys.delete(key)
     // NEW: пропускаем дубликат — чанк уже загружен
     if (chunks.has(key)) {
-      console.warn('[dup chunk]', key)
+      console.debug('[dup chunk]', key)
       continue
     }
 
