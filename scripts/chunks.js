@@ -8,16 +8,9 @@ import './settings.js' // side effect: применяет lowSpecMode к CFG.PRO
 import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './scene.js'
 import { lod } from './state.js'
 import { TEMPLATES } from './world/props.js'
-import {
-  WORLD_SEED,
-  hash2i,
-  mulberry32,
-  terrainHeight,
-  heightToTerrainColor,
-  terrainBrightnessNoise,
-  collectForestSpheres,
-  forestDensityFromSpheres,
-} from './world/world.js'
+import { computeChunkProps } from './world/chunkProps.js'
+import { terrainHeight, heightToTerrainColor, terrainBrightnessNoise } from './world/world.js'
+import ChunkWorker from './workers/chunkWorker.js?worker'
 
 /* ---------- Константы из конфига ---------- */
 export const CHUNK_SIZE = CFG.CHUNKS.size
@@ -43,6 +36,30 @@ export const PERSISTENT_CHUNKS = new Set()
 const propsCache = new Map()
 const _dummyObj = new THREE.Object3D()
 
+/* ---------- Worker pool ---------- */
+const POOL_SIZE = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 1))
+const workerPool = []
+const pendingChunks = new Map()
+let _workersReady = false
+
+function initWorkerPool() {
+  if (_workersReady) return
+  _workersReady = true
+  try {
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const w = new ChunkWorker()
+      const idx = i
+      w.onmessage = (e) => onWorkerMessage(idx, e)
+      w.onerror = (err) => console.error('[chunks] worker error:', err)
+      w.postMessage({ type: 'init', density: CFG.PROPS.density })
+      workerPool.push({ worker: w, busy: false })
+    }
+    console.log(`[chunks] worker pool: ${workerPool.length}`)
+  } catch (err) {
+    console.warn('[chunks] Web Workers недоступны, fallback на sync:', err)
+  }
+}
+
 /* ================================================================
    Материал пропсов — один на всех, с vertex colors.
    applySkyFog подключаем в init().
@@ -61,7 +78,7 @@ export function getProps(cx, cz) {
   const key = cx + ',' + cz
   let items = propsCache.get(key)
   if (!items) {
-    items = computeChunkProps(cx, cz)
+    items = computeChunkProps(cx, cz) // из world/chunkProps.js
     propsCache.set(key, items)
   }
   return items
@@ -84,74 +101,6 @@ function collectShadowItems(cx, cz) {
     ...getProps(cx + 1, cz),
     ...getProps(cx + 1, cz + 1),
   ]
-}
-
-/* ================================================================
-   computeChunkProps — детерминированный список «что где растёт».
-================================================================ */
-export function computeChunkProps(cx, cz) {
-  const seed = hash2i(cx + 0x9e37, cz + 0x79b9) ^ WORLD_SEED
-  const rng = mulberry32(seed)
-
-  const baseX = cx * CHUNK_SIZE
-  const baseZ = cz * CHUNK_SIZE
-
-  const items = []
-  const TH = CFG.PROPS.thresholds
-  const SC = CFG.PROPS.scales
-  const VEG_MAX_H = CFG.PROPS.vegMaxHeight
-  const VEG_MIN_H = CFG.PROPS.vegMinHeight
-
-  const SAFE_R = CFG.PROPS.safeRadius
-  const SAFE_R2 = SAFE_R * SAFE_R
-  const SAFE_TREES_FWD = CFG.PROPS.safeRadiusTrees
-  const SAFE_TREES_BACK = SAFE_R
-  const SAFE_TREES_SIDE = SAFE_R
-
-  const spheres = collectForestSpheres(cx, cz)
-
-  for (let i = 0; i < COUNT; i++) {
-    const wx = baseX + rng() * CHUNK_SIZE
-    const wz = baseZ + rng() * CHUNK_SIZE
-
-    const relX = wx + 2.6
-    const relZ = wz
-
-    if (relX * relX + relZ * relZ < SAFE_R2) continue
-
-    const r = rng()
-    let kind
-    if (r < TH.pine) kind = 'pine'
-    else if (r < TH.oak) kind = 'oak'
-    else if (r < TH.bush) kind = 'bush'
-    else kind = 'rock'
-
-    if (kind === 'pine' || kind === 'oak' || kind === 'bush') {
-      const aX = relX >= 0 ? SAFE_TREES_FWD : SAFE_TREES_BACK
-      const ex = relX / aX
-      const ez = relZ / SAFE_TREES_SIDE
-      if (ex * ex + ez * ez < 1) continue
-    }
-
-    const h = terrainHeight(wx, wz)
-    if (kind !== 'rock') {
-      const density = forestDensityFromSpheres(wx, wz, spheres)
-      if (density <= 0) continue
-      if (rng() > density) continue
-      if (h > VEG_MAX_H || h < VEG_MIN_H) continue
-    } else {
-      if (h <= VEG_MAX_H && rng() > CFG.PROPS.rockLowlandFrequency) continue
-    }
-
-    const scale =
-      kind === 'rock'
-        ? SC.rock[0] + (SC.rock[1] - SC.rock[0]) * Math.pow(rng(), CFG.PROPS.rockScaleBias)
-        : SC.tree[0] + rng() * (SC.tree[1] - SC.tree[0])
-    const rotY = rng() * 6.28
-
-    items.push({ x: wx, z: wz, kind, scale, rotY })
-  }
-  return items
 }
 
 /* ================================================================
@@ -391,17 +340,110 @@ function spawnChunkProps(cx, cz, items, sampleH) {
 }
 
 /* ================================================================
+   ASYNC PATH — сборка чанка из данных worker'а
+================================================================ */
+function buildMeshFromWorker(cx, cz, data) {
+  const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEG, CHUNK_SEG)
+  geo.rotateX(-Math.PI / 2)
+
+  const pos = geo.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, data.heights[i])
+  }
+  pos.needsUpdate = true
+
+  geo.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(data.colors, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2))
+
+  const cxw = cx * CHUNK_SIZE + CHUNK_SIZE / 2
+  const czw = cz * CHUNK_SIZE + CHUNK_SIZE / 2
+  const mesh = new THREE.Mesh(geo, groundMat)
+  mesh.position.set(cxw, 0, czw)
+  mesh.receiveShadow = true
+  return mesh
+}
+
+function spawnPropsFromWorker(propMatrices) {
+  const meshes = []
+  for (const kind of ['pine', 'oak', 'bush', 'rock']) {
+    const data = propMatrices[kind]
+    if (data.length === 0) continue
+    const count = data.length / 16
+
+    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, count)
+    inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    inst.castShadow = false
+    inst.receiveShadow = false
+    inst.frustumCulled = true
+
+    // instanceMatrix.array — Float32Array того же размера; копируем .set()
+    inst.instanceMatrix.array.set(data)
+    inst.instanceMatrix.needsUpdate = true
+
+    scene.add(inst)
+    meshes.push(inst)
+  }
+  return meshes
+}
+
+function onWorkerMessage(workerIdx, e) {
+  const data = e.data
+  const { cx, cz } = data
+  const key = cx + ',' + cz
+
+  const slot = workerPool[workerIdx]
+  if (slot) slot.busy = false
+
+  const wasPending = pendingChunks.delete(key)
+
+  // Если чанк отменили, пока worker его считал — отбрасываем результат
+  if (!wasPending) {
+    processChunkQueue()
+    return
+  }
+  if (chunks.has(key)) {
+    processChunkQueue()
+    return
+  }
+
+  const mesh = buildMeshFromWorker(cx, cz, data)
+  const props = spawnPropsFromWorker(data.propMatrices)
+
+  scene.add(mesh)
+  mesh.visible = lod.fade < 0.95
+  for (const p of props) p.visible = lod.showing3D
+  chunks.set(key, { mesh, props })
+
+  processChunkQueue()
+}
+
+function dispatchChunk(cx, cz) {
+  // Найти свободный worker
+  let slot = null
+  for (const s of workerPool) {
+    if (!s.busy) {
+      slot = s
+      break
+    }
+  }
+  if (!slot) return false
+
+  const key = cx + ',' + cz
+  slot.busy = true
+  slot.worker.postMessage({ cx, cz })
+  pendingChunks.set(key, true)
+  return true
+}
+
+/* ================================================================
    loadChunk / unloadChunk
 ================================================================ */
 export function loadChunk(cx, cz) {
   const key = cx + ',' + cz
-  if (chunks.has(key)) return
+  if (chunks.has(key) || pendingChunks.has(key)) return
 
   const items = getProps(cx, cz)
-  // Persistent-чанки (старт) — с halo соседей, чтобы на старте
-  // тени были без «обрезков» на границах.
-  // Остальные — только свои items: ~4× быстрее по фазе теней,
-  // а обрезки на границах в полёте почти не видны.
   const shadowItems = PERSISTENT_CHUNKS.has(key) ? collectShadowItems(cx, cz) : items
   const mesh = makeChunkMesh(cx, cz, shadowItems)
   const props = spawnChunkProps(cx, cz, items, mesh.userData.terrainSampler)
@@ -414,6 +456,13 @@ export function loadChunk(cx, cz) {
 
 export function unloadChunk(key) {
   if (PERSISTENT_CHUNKS.has(key)) return
+
+  // Отменяем, если чанк ещё в работе у worker'а
+  if (pendingChunks.has(key)) {
+    pendingChunks.delete(key)
+    return
+  }
+
   const c = chunks.get(key)
   if (!c) return
   scene.remove(c.mesh)
@@ -493,16 +542,35 @@ export function refillChunkQueue(camX, camZ) {
 }
 
 export function processChunkQueue() {
-  // В чистом 2D (без префетча) — не тратим CPU.
   if (lod.fade > 0.5 && !_preloading) return
-  if (chunkQueueIdx >= chunkLoadQueue.length) return
+  if (chunkQueueIdx >= chunkLoadQueue.length) {
+    chunkLoadQueue.length = 0
+    chunkQueueIdx = 0
+    return
+  }
 
-  // В префетче до земли долетаем быстро — дадим чуть больше бюджета.
-  const BUDGET_MS = _preloading ? 6 : 4
-  const t0 = performance.now()
-  while (chunkQueueIdx < chunkLoadQueue.length && performance.now() - t0 < BUDGET_MS) {
-    const [cx, cz] = chunkLoadQueue[chunkQueueIdx++]
-    if (!chunks.has(cx + ',' + cz)) loadChunk(cx, cz)
+  // Fallback: sync, если worker pool пустой
+  if (workerPool.length === 0) {
+    const BUDGET_MS = _preloading ? 6 : 4
+    const t0 = performance.now()
+    while (chunkQueueIdx < chunkLoadQueue.length && performance.now() - t0 < BUDGET_MS) {
+      const [cx, cz] = chunkLoadQueue[chunkQueueIdx++]
+      if (!chunks.has(cx + ',' + cz)) loadChunk(cx, cz)
+    }
+    return
+  }
+
+  // Worker dispatch: раздаём по свободным воркерам
+  while (chunkQueueIdx < chunkLoadQueue.length) {
+    const [cx, cz] = chunkLoadQueue[chunkQueueIdx]
+    const key = cx + ',' + cz
+
+    if (chunks.has(key) || pendingChunks.has(key)) {
+      chunkQueueIdx++
+      continue
+    }
+    if (!dispatchChunk(cx, cz)) break // нет свободного воркера — ждём onmessage
+    chunkQueueIdx++
   }
 
   if (chunkQueueIdx >= chunkLoadQueue.length) {
@@ -670,6 +738,7 @@ export function init() {
   // applySkyFog — импортируем лениво, чтобы не тянуть scene-циклы раньше времени.
   // На практике scene.js уже загружен в момент вызова init(), так что просто:
   import('./scene.js').then((m) => m.applySkyFog(propMat))
+  initWorkerPool()
 }
 
 /* ---------- Debug ---------- */
@@ -681,6 +750,9 @@ export function getStats() {
     persistentLoaded,
     persistentTotal: PERSISTENT_CHUNKS.size,
     propsCache: propsCache.size,
+    pending: pendingChunks.size,
+    poolSize: workerPool.length,
+    poolBusy: workerPool.filter((s) => s.busy).length,
   }
 }
 

@@ -145,11 +145,11 @@ export const FOG = /** @type {const} */ ({
   farGround: 350,
 
   /** Высота (м), на которой туман становится БАЗОВЫМ — т.е. равен near3D / far3D.  */
-  altRef3D: 250,
+  altRef3D: 650,
 
   // 3D-режим (низко над землёй)
   near3D: 100,
-  far3D: 1800,
+  far3D: 2500,
 
   /** Туман НА УРОВНЕ переключения (alt = 600).  */
   nearGround2D: 200,
@@ -583,13 +583,13 @@ export const CHUNKS = /** @type {const} */ ({
   segments: 53,
 
   /** Сколько чанков грузить ВПЕРЁД (в +X).*/
-  loadForward: 9,
+  loadForward: 12,
 
   /**Сколько чанков грузить НАЗАД (в -X).*/
   loadBack: 1,
 
   /** Сколько чанков грузить В СТОРОНЫ (±Z).*/
-  loadSide: 4,
+  loadSide: 7,
 
   /**Высота на которой подгружаются компрессные чанки */
   preloadAltitude: 1100,
@@ -1244,7 +1244,7 @@ export const GAME = /** @type {const} */ ({
   initialBest: 0,
 
   /** Начальные уровни апгрейдов. Каждый начинается с 1. */
-  initialUpgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
+  initialUpgrades: { power: 1, aero: 1, fuel: 100, thrust: 100 },
 })
 
 /* ================================================================
