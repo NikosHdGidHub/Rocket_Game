@@ -678,7 +678,7 @@ function processReadyChunks() {
       dx > LF + UNLOAD_MARGIN ||
       Math.abs(dz) > LS + UNLOAD_MARGIN
     ) {
-      return // пропускаем — не тратим время
+      continue // пропускаем — не тратим время
     }
 
     // Собираем и добавляем — ОДИН чанк за кадр
