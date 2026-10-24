@@ -1261,7 +1261,7 @@ export const GAME = /** @type {const} */ ({
   initialBest: 0,
 
   /** Начальные уровни апгрейдов. Каждый начинается с 1. */
-  initialUpgrades: { power: 1, aero: 10, fuel: 15, thrust: 13 },
+  initialUpgrades: { power: 7, aero: 7, fuel: 8, thrust: 7 },
 })
 
 /* ================================================================
@@ -1493,10 +1493,10 @@ export const CARDS = /** @type {const} */ ([
     name: 'Двойной бак',
     variant: 'Негабаритные баки',
     desc_buff: 'Топливо ×2',
-    desc_debuff: 'Сопротивление воздуха ×1.65',
+    desc_debuff: 'Сопротивление воздуха ×1.6',
     effects: [
       { stat: 'maxFuel', mult: 2.0, isBuff: true },
-      { stat: 'drag', mult: 1.65, isBuff: false },
+      { stat: 'drag', mult: 1.6, isBuff: false },
     ],
     color: 0xff631a, // #ff631a
   },
@@ -1588,8 +1588,8 @@ export const CARDS = /** @type {const} */ ([
     icon: '✈',
     name: 'Обтекаемость',
     variant: 'Гладкий фюзеляж',
-    desc_buff: 'Сопротивление ×0.65',
-    effects: [{ stat: 'drag', mult: 0.65, isBuff: true }],
+    desc_buff: 'Сопротивление ×0.7',
+    effects: [{ stat: 'drag', mult: 0.7, isBuff: true }],
     color: 0xb3ecea,
   },
   {
@@ -1599,10 +1599,10 @@ export const CARDS = /** @type {const} */ ([
     name: 'Обтекаемость',
     variant: 'Дополнительный фюзеляж',
     desc_buff: 'Сопротивление ×0.5',
-    desc_debuff: 'Тяга ×0.85',
+    desc_debuff: 'Тяга ×0.8',
     effects: [
-      { stat: 'drag', mult: 0.45, isBuff: true },
-      { stat: 'thrustAcc', mult: 0.85, isBuff: false },
+      { stat: 'drag', mult: 0.5, isBuff: true },
+      { stat: 'thrustAcc', mult: 0.8, isBuff: false },
     ],
     color: 0xb3ecea,
   },

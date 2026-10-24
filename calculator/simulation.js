@@ -1,11 +1,43 @@
 /* ================================================================
-   simulation.js — физика полёта: симуляция, адаптивные тайминги,
-   поиск оптимального угла.
-   Не зависит от DOM. Чистая математика + CFG.
+   simulation.js — физика полёта + поиск оптимального управления.
+
+   Ключевые изменения:
+   • Прерывистый boost — паттерны 1/1, 2/1, 4/1, 1/2, 1/4 (плюс always/never).
+   • Forsage работает по циклу: старт → duration → cooldown → повтор.
+   • findOptimumAsync перебирает углы × все стратегии (двухфазный поиск).
 ================================================================ */
 import * as CFG from '../scripts/config.js'
 import { terrainHeight } from '../scripts/world/world.js'
 
+/* ---------- Boost-стратегии ---------- */
+
+/**
+ * Паттерны PUSH. `on` и `off` — секунды.
+ * always и never — крайние случаи (не периодические).
+ */
+export const BOOST_PATTERNS = {
+  always: { on: Infinity, off: 0 },
+  '1/1': { on: 5, off: 5 },
+  '2/1': { on: 10, off: 5 },
+  '4/1': { on: 20, off: 5 },
+  '1/2': { on: 5, off: 10 },
+  '1/4': { on: 5, off: 20 },
+  never: { on: 0, off: Infinity },
+}
+
+export const BOOST_STRATEGIES = Object.keys(BOOST_PATTERNS)
+
+export const BOOST_LABELS = {
+  always: 'Всегда',
+  '1/1': '1/1 — 5с вкл / 5с выкл',
+  '2/1': '2/1 — 10с вкл / 5с выкл',
+  '4/1': '4/1 — 20с вкл / 5с выкл',
+  '1/2': '1/2 — 5с вкл / 10с выкл',
+  '1/4': '1/4 — 5с вкл / 20с выкл',
+  never: 'Никогда (только форсаж)',
+}
+
+/* ---------- Основная симуляция ---------- */
 export function simulate(upgrades, cards, opts = {}) {
   const {
     boostThrottle = 'always',
@@ -47,14 +79,30 @@ export function simulate(upgrades, cards, opts = {}) {
   const dragCoefAtAngle = (alpha) => CFG.RULES.dragCoefAtAngle(upgrades, alpha) * dragMul
   const alwaysOn = hasFlag('engineAlwaysOn')
 
+  // ─── Forsage: параметры одного уровня ───
   let forsageMult = 1
-  let forsageDurationLeft = 0
+  let forsageDuration = 0
+  let forsageCooldown = 0
   if (forsageLevel > 0) {
     const idx = Math.min(forsageLevel, CFG.ABILITIES.forsage.levels.length) - 1
     const lv = CFG.ABILITIES.forsage.levels[idx]
     forsageMult = lv.multiplier
-    forsageDurationLeft = lv.duration
+    forsageDuration = lv.duration
+    forsageCooldown = lv.cooldown
   }
+  const forsageCycleLen = forsageDuration + forsageCooldown
+  const hasForsage =
+    forsageLevel > 0 && forsageDuration > 0 && isFinite(forsageCycleLen) && forsageCycleLen > 0
+
+  // ─── Boost: параметры паттерна ───
+  const pat = BOOST_PATTERNS[boostThrottle] || BOOST_PATTERNS.always
+  const boostPeriod = pat.on + pat.off
+  const isPeriodicBoost =
+    boostThrottle !== 'always' &&
+    boostThrottle !== 'never' &&
+    isFinite(boostPeriod) &&
+    pat.on > 0 &&
+    pat.off > 0
 
   const ANG_ACC = CFG.GAME.angAcc
   const ANG_DAMP = CFG.GAME.angDamp
@@ -74,7 +122,9 @@ export function simulate(upgrades, cards, opts = {}) {
   let vx = Math.cos(yaw) * horiz
   let vy = Math.sin(LAUNCH_ANGLE) * launchSpeed
   let vz = Math.sin(yaw) * horiz
-  let x = 0, y = REST_Y, z = 0
+  let x = 0
+  let y = REST_Y
+  let z = 0
   let angZ = LAUNCH_ANGLE
   let angVel = 0
   let fuel = maxFuelVal
@@ -83,6 +133,14 @@ export function simulate(upgrades, cards, opts = {}) {
   let maxSpeed = launchSpeed
   let boostEndAngle = null
   let maxTimeReached = false
+
+  // ─── Циклы: текущая фаза ───
+  let forsageCycleTime = 0
+  let boostCycleTime = 0
+  let lastThrustActive = false
+  let thrustUsed = false
+  let forsageActiveSeconds = 0
+  let boostActiveSeconds = 0
 
   const trajectory = [[0, REST_Y]]
   let nextSampleT = 0.1
@@ -93,24 +151,54 @@ export function simulate(upgrades, cards, opts = {}) {
   for (let step = 0; step < maxSteps; step++) {
     const terrainY = terrainHeight(x, z)
     const restY = terrainY + REST_Y
-    const forsageActive = forsageDurationLeft > 0
+
+    // ─── Forsage: фаза цикла ───
+    let forsageActive = false
+    if (hasForsage) {
+      forsageCycleTime += dt
+      if (forsageCycleTime >= forsageCycleLen) {
+        forsageCycleTime -= forsageCycleLen * Math.floor(forsageCycleTime / forsageCycleLen)
+      }
+      forsageActive = forsageCycleTime < forsageDuration
+    }
+
+    // ─── Boost: фаза паттерна ───
+    let boostActive = false
+    if (boostThrottle === 'always') {
+      boostActive = true
+    } else if (boostThrottle === 'never') {
+      boostActive = false
+    } else if (isPeriodicBoost) {
+      boostCycleTime += dt
+      if (boostCycleTime >= boostPeriod) {
+        boostCycleTime -= boostPeriod * Math.floor(boostCycleTime / boostPeriod)
+      }
+      boostActive = boostCycleTime < pat.on
+    }
 
     const engineEff = Math.max(0, 1 - Math.max(0, y) / CFG.GAME.airEngineHeight)
-    const boosting = (alwaysOn || boostThrottle === 'always') && !forsageActive && fuel > 0
+    // alwaysOn — override: двигатель всегда включён независимо от паттерна.
+    const boosting = (boostActive || alwaysOn) && !forsageActive && fuel > 0
     const thrustActive = boosting || forsageActive
 
-    if (boostEndAngle === null && !thrustActive && t > 0.01) {
+    // boostEndAngle — угол в момент последнего отключения тяги
+    if (thrustActive) {
+      thrustUsed = true
+      lastThrustActive = true
+    } else if (lastThrustActive && t > 0.01) {
       boostEndAngle = (angZ * 180) / Math.PI
+      lastThrustActive = false
     }
 
     let appliedThrust = 0
     if (boosting) {
       appliedThrust += thrustAccBase * engineEff
       fuel = Math.max(0, fuel - dt)
+      boostActiveSeconds += dt
     }
     if (forsageActive) {
       appliedThrust += thrustAccBase * forsageMult * forsageThrustMul * engineEff
-      forsageDurationLeft -= dt
+      forsageActiveSeconds += dt
     }
 
     if (appliedThrust > 0) {
@@ -191,7 +279,16 @@ export function simulate(upgrades, cards, opts = {}) {
     maxSpeed,
     fuelUsed: maxFuelVal - fuel,
     landingTerrain: terrainHeight(x, z),
-    boostEndAngle,
+    // Если тяга ни разу не отключалась (thrustUsed && boostEndAngle === null),
+    // возвращаем текущий угол как «финальный».
+    boostEndAngle: thrustUsed
+      ? boostEndAngle !== null
+        ? boostEndAngle
+        : (angZ * 180) / Math.PI
+      : null,
+    thrustUsed,
+    forsageActiveSeconds,
+    boostActiveSeconds,
     trajectory: downsampleTrajectory(trajectory, 2000),
     maxTimeReached,
   }
@@ -216,28 +313,180 @@ export function simulateAdaptive(upgrades, cards, opts) {
   return r
 }
 
-export async function findOptimumAsync(upgrades, cards, baseOpts, onProgress) {
-  const results = []
-  let best = null
+/* ================================================================
+   ПОИСК ОПТИМУМА — двухфазный
+   1. Грубо: 7 углов × N стратегий (все стратегии участвуют).
+   2. Точно: вокруг лучшего угла ±15° с шагом 1° для победившей стратегии.
+   3. Бонус: noLift для сравнения.
+================================================================ */
 
-  for (let angle = 0; angle <= 90; angle += 1) {
+const COARSE_ANGLES = [0, 15, 30, 45, 60, 75, 90]
+
+function pickBetter(a, b) {
+  if (!b) return a
+  if (!a) return b
+  // Не обрезанный полёт всегда лучше обрезанного.
+  if (!a.result.maxTimeReached && b.result.maxTimeReached) return a
+  if (a.result.maxTimeReached && !b.result.maxTimeReached) return b
+  return a.distance >= b.distance ? a : b
+}
+
+export async function findOptimumAsync(upgrades, cards, baseOpts, onProgress) {
+  const strategies = BOOST_STRATEGIES
+  const totalCoarse = COARSE_ANGLES.length * strategies.length
+
+  // Кэш — чтобы не считать один и тот же угол дважды на этапах coarse/fine.
+  const cache = new Map()
+  const simCached = (strategy, angle, noseLift) => {
+    const key = `${strategy}|${angle}|${noseLift}`
+    if (cache.has(key)) return cache.get(key)
     const r = simulateAdaptive(upgrades, cards, {
       ...baseOpts,
-      noseLiftEnabled: true,
+      boostThrottle: strategy,
+      noseLiftEnabled: noseLift,
       noseLiftAngle: angle,
     })
-    results.push({ angle, distance: r.distance, truncated: r.maxTimeReached })
-    const better =
-      !best ||
-      (!r.maxTimeReached && (best.result.maxTimeReached || r.distance > best.distance)) ||
-      (r.maxTimeReached === best.result.maxTimeReached && r.distance > best.distance)
-    if (better) best = { angle, distance: r.distance, result: r }
-    if (angle % 10 === 9) {
-      onProgress?.(angle + 1)
-      await new Promise((r) => setTimeout(r, 0))
+    cache.set(key, r)
+    return r
+  }
+
+  // ─── Фаза 1: грубый перебор по всем стратегиям ───
+  const coarseResults = []
+  let best = null
+  let done = 0
+
+  for (const strategy of strategies) {
+    for (const angle of COARSE_ANGLES) {
+      const r = simCached(strategy, angle, true)
+      const item = {
+        strategy,
+        angle,
+        distance: r.distance,
+        truncated: r.maxTimeReached,
+        result: r,
+      }
+      coarseResults.push(item)
+      best = pickBetter(best, item)
+      done++
+      if (done % 5 === 0 || done === totalCoarse) {
+        onProgress?.(done, totalCoarse, `Стратегия ${BOOST_LABELS[strategy]} · угол ${angle}°`)
+        await new Promise((r) => setTimeout(r, 0))
+      }
     }
   }
 
-  const noLift = simulateAdaptive(upgrades, cards, { ...baseOpts, noseLiftEnabled: false })
-  return { results, best, noLift }
+  // ─── Фаза 2: уточнение вокруг лучшего угла ───
+  const fineCenter = best.angle
+  const fineAngles = []
+  for (let a = Math.max(0, fineCenter - 15); a <= Math.min(90, fineCenter + 15); a++) {
+    fineAngles.push(a)
+  }
+  const winnerStrategy = best.strategy
+  const totalFine = fineAngles.length + 1 // +1 — финальный noLift
+
+  const fineResults = []
+  for (const angle of fineAngles) {
+    const r = simCached(winnerStrategy, angle, true)
+    const item = {
+      strategy: winnerStrategy,
+      angle,
+      distance: r.distance,
+      truncated: r.maxTimeReached,
+      result: r,
+    }
+    fineResults.push(item)
+    const candidate = { ...item, result: r }
+    // pickBetter ожидает {result, distance}; пересобираем аккуратно:
+    const asCandidate = {
+      angle,
+      strategy: winnerStrategy,
+      distance: r.distance,
+      result: r,
+    }
+    best = pickBetter(best, asCandidate)
+    done++
+    onProgress?.(
+      done,
+      totalCoarse + totalFine,
+      `Уточнение · ${BOOST_LABELS[winnerStrategy]} · угол ${angle}°`
+    )
+    await new Promise((r) => setTimeout(r, 0))
+  }
+
+  // ─── Финальный noLift (без авто-подъёма носа, для сравнения) ───
+  const noLift = simCached(winnerStrategy, 45, false) // угол не используется, когда lift=off
+  onProgress?.(done + 1, totalCoarse + totalFine, 'Сравнение без подъёма носа…')
+
+  return {
+    best, // { strategy, angle, distance, result }
+    coarseResults, // [{ strategy, angle, distance, truncated }]
+    fineResults, // [{ strategy, angle, distance, truncated }]
+    noLift,
+    strategies,
+  }
+}
+
+/* ================================================================
+   ПОЛНЫЙ ПЕРЕБОР — «Долгий расчёт».
+   0..90 × все стратегии = 637 симуляций + 1 noLift.
+   Точный глобальный оптимум, но 30-90 секунд.
+
+   Возвращает ту же структуру, что и findOptimumAsync — renderOptimum
+   работает без изменений. Все результаты лежат в coarseResults,
+   fineResults = [] (уточняющая фаза не нужна — перебрано всё).
+================================================================ */
+export async function findOptimumExactAsync(upgrades, cards, baseOpts, onProgress) {
+  const strategies = BOOST_STRATEGIES
+  const totalAngles = 91 // 0..90
+  const total = strategies.length * totalAngles + 1 // +1 = noLift
+
+  const allResults = []
+  let best = null
+  let done = 0
+  let lastYield = performance.now()
+
+  for (const strategy of strategies) {
+    for (let angle = 0; angle <= 90; angle++) {
+      const r = simulateAdaptive(upgrades, cards, {
+        ...baseOpts,
+        boostThrottle: strategy,
+        noseLiftEnabled: true,
+        noseLiftAngle: angle,
+      })
+      const item = {
+        strategy,
+        angle,
+        distance: r.distance,
+        truncated: r.maxTimeReached,
+        result: r,
+      }
+      allResults.push(item)
+      best = pickBetter(best, item)
+      done++
+
+      // Yield по времени: если симуляция медленная — отдадим кадр после неё;
+      // если быстрая — копим до ~50 мс и отдаём разом.
+      if (performance.now() - lastYield > 50 || done === total - 1) {
+        onProgress?.(done, total, `${BOOST_LABELS[strategy] || strategy} · ${angle}°`)
+        await new Promise((r) => setTimeout(r, 0))
+        lastYield = performance.now()
+      }
+    }
+  }
+
+  // noLift — тот же билд, но без авто-подъёма носа (для сравнения)
+  const noLift = simulateAdaptive(upgrades, cards, {
+    ...baseOpts,
+    boostThrottle: best.strategy,
+    noseLiftEnabled: false,
+  })
+  onProgress?.(total, total, 'Готово')
+
+  return {
+    best,
+    coarseResults: allResults, // все 637 точек — рендер сам найдёт лучших
+    fineResults: [], // уточнение не требуется
+    noLift,
+    strategies,
+  }
 }

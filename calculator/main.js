@@ -1,8 +1,11 @@
 /* ================================================================
-   main.js — точка входа калькулятора. Инициализация форм и
-   подписка на кнопки/табы.
+   main.js — точка входа калькулятора.
 ================================================================ */
-import { simulateAdaptive, findOptimumAsync } from './simulation.js'
+import {
+  simulateAdaptive,
+  findOptimumAsync,
+  findOptimumExactAsync,
+} from './simulation.js'
 import * as UI from './ui.js'
 
 /* ---------- Табы ---------- */
@@ -29,25 +32,41 @@ document.getElementById('sim-btn').addEventListener('click', () => {
   UI.renderSingleResult(result, upgrades, cards, opts)
 })
 
-/* ---------- Найти оптимум ---------- */
-document.getElementById('opt-btn').addEventListener('click', async () => {
-  const btn = document.getElementById('opt-btn')
+/* ---------- Оптимизация (общий обработчик для обеих кнопок) ---------- */
+async function runOptimization(fn, activeBtnId, otherBtnId) {
+  const btn = document.getElementById(activeBtnId)
+  const btnOther = document.getElementById(otherBtnId)
   const origText = btn.textContent
-  btn.textContent = '⏳ 0/91…'
+
+  btn.textContent = '⏳ 0…'
   btn.disabled = true
+  btnOther.disabled = true
   await new Promise((r) => setTimeout(r, 20))
 
   try {
     const { upgrades, cards, opts } = UI.readState('')
-    const optData = await findOptimumAsync(upgrades, cards, opts, (done) => {
-      btn.textContent = `⏳ ${done}/91…`
+    const t0 = performance.now()
+    const optData = await fn(upgrades, cards, opts, (done, total, msg) => {
+      const sec = Math.round((performance.now() - t0) / 1000)
+      btn.textContent = `⏳ ${done}/${total} · ${sec}с`
+      if (msg) btn.title = msg
     })
     UI.renderOptimum(optData)
   } finally {
     btn.textContent = origText
     btn.disabled = false
+    btnOther.disabled = false
+    btn.title = ''
   }
-})
+}
+
+document.getElementById('opt-btn').addEventListener('click', () =>
+  runOptimization(findOptimumAsync, 'opt-btn', 'opt-exact-btn')
+)
+
+document.getElementById('opt-exact-btn').addEventListener('click', () =>
+  runOptimization(findOptimumExactAsync, 'opt-exact-btn', 'opt-btn')
+)
 
 /* ---------- Сравнить ---------- */
 document.getElementById('cmp-btn').addEventListener('click', () => {

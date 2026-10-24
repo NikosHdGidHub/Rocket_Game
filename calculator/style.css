@@ -289,9 +289,9 @@ td.num {
 }
 
 select {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #eaf2ff;
+  background: rgba(255, 255, 255);
+  border: 1px solid rgba(255, 255, 255);
+  color: #1f1f20;
   padding: 6px 10px;
   border-radius: 6px;
   font-family: inherit;
@@ -408,4 +408,22 @@ button.action.load-save {
 }
 .mini-btn:active {
   transform: scale(0.95);
+}
+
+/* ---------- Подсветка строки победителя в таблице стратегий ---------- */
+table tbody tr.winner {
+  background: rgba(125, 255, 160, 0.08);
+}
+table tbody tr.winner td {
+  font-weight: 700;
+}
+
+/* ---------- Кнопка «Долгий расчёт» (полный перебор 0–90) ---------- */
+button.action.exact {
+  background: linear-gradient(180deg, #8fa4d4, #5a6ba8);
+  box-shadow: 0 4px 0 #2a3456;
+  color: #fff;
+}
+button.action.exact:active {
+  box-shadow: 0 1px 0 #2a3456;
 }

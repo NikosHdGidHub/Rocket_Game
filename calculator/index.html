@@ -8,7 +8,7 @@
   <body>
     <div class="notice">
       Открывай через Vite: <code>npm run dev</code> → <code>localhost:5173/calculator/</code>
-      <br>Или после build: <code>npm run build</code> → <code>dist/calculator/index.html</code>
+      <br />Или после build: <code>npm run build</code> → <code>dist/calculator/index.html</code>
     </div>
 
     <h1>🚀 Rocket Game — Calculator</h1>
@@ -29,8 +29,18 @@
       <div class="btn-row">
         <button class="action" id="sim-btn">🔮 Симулировать</button>
         <button class="action optimize" id="opt-btn">🎯 Найти оптимум</button>
-        <button class="action load-save" id="load-save-btn"
-                title="Взять апгрейды, карточки и форсаж из сохранения игры">
+        <button
+          class="action exact"
+          id="opt-exact-btn"
+          title="Полный перебор: 7 стратегий × 91 угол = 637 симуляций. Займёт 30–90 секунд."
+        >
+          🐢 Долгий расчёт
+        </button>
+        <button
+          class="action load-save"
+          id="load-save-btn"
+          title="Взять апгрейды, карточки и форсаж из сохранения игры"
+        >
           📥 Текущий билд
         </button>
       </div>

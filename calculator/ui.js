@@ -3,7 +3,7 @@
    и загрузка текущего билда из сохранения игры.
 ================================================================ */
 import * as CFG from '../scripts/config.js'
-import { simulateAdaptive } from './simulation.js'
+import { simulateAdaptive, BOOST_LABELS, BOOST_STRATEGIES } from './simulation.js'
 import { renderTrajectoryChart, renderAngleChart } from './charts.js'
 
 /* ---------- Хелперы ---------- */
@@ -125,6 +125,7 @@ export function buildOptsInputs(containerId, prefix = '') {
   const $c = document.getElementById(containerId)
   $c.innerHTML = ''
 
+  // Форсаж
   const r1 = document.createElement('div')
   r1.className = 'row'
   r1.innerHTML = `
@@ -136,16 +137,19 @@ export function buildOptsInputs(containerId, prefix = '') {
     </select>`
   $c.appendChild(r1)
 
+  // Стратегия PUSH — селект со всеми режимами
   const r2 = document.createElement('div')
   r2.className = 'row'
+  const optionsHtml = BOOST_STRATEGIES.map(
+    (key) =>
+      `<option value="${key}">${BOOST_LABELS[key] || key}</option>`
+  ).join('')
   r2.innerHTML = `
     <label>Стратегия PUSH</label>
-    <div class="radio-group">
-      <label><input type="radio" name="${prefix}throttle" value="always" checked> Всегда</label>
-      <label><input type="radio" name="${prefix}throttle" value="never"> Никогда</label>
-    </div>`
+    <select id="${prefix}throttle-select">${optionsHtml}</select>`
   $c.appendChild(r2)
 
+  // Авто-подъём носа
   const r3 = document.createElement('div')
   r3.className = 'row'
   r3.innerHTML = `
@@ -156,6 +160,7 @@ export function buildOptsInputs(containerId, prefix = '') {
     </label>`
   $c.appendChild(r3)
 
+  // Угол
   const r4 = document.createElement('div')
   r4.className = 'row'
   r4.innerHTML = `
@@ -188,7 +193,7 @@ export function readState(prefix = '') {
     cards[card.id] = el ? +el.value : 0
   }
   const forsageLevel = +document.getElementById(`${prefix}forsage-lvl`).value
-  const throttle = document.querySelector(`input[name="${prefix}throttle"]:checked`).value
+  const throttle = document.getElementById(`${prefix}throttle-select`).value
   const noseLiftEnabled = document.getElementById(`${prefix}nose-lift-enabled`).checked
   const noseLiftAngle = +document.getElementById(`${prefix}nose-angle`).value
   return {
@@ -264,16 +269,24 @@ export function loadSave(prefix = '') {
 }
 
 /* ---------- Рендер результатов ---------- */
+
+function boostEndLabel(result) {
+  if (!result.thrustUsed) return 'Тяга не использовалась'
+  if (result.boostEndAngle === null) return 'Тяга не отключалась'
+  return `Угол в конце тяги: <b>${result.boostEndAngle.toFixed(0)}°</b>`
+}
+
 export function renderSingleResult(result, upgrades, cards, opts) {
   const $out = document.getElementById('single-results')
 
-  const angleInfo =
-    result.boostEndAngle !== null
-      ? `Угол в конце тяги: <b>${result.boostEndAngle.toFixed(0)}°</b>`
-      : `Тяга не использовалась`
+  const angleInfo = boostEndLabel(result)
   const timeWarn = result.maxTimeReached
-    ? `<br><span style="color:#ffb84d">⚠️ Полёт не завершился за ${result.time.toFixed(0)} с — результат обрезан</span>`
+    ? `<br><span style="color:#ffb84d">⚠️ Полёт не завершился за ${result.time.toFixed(
+        0
+      )} с — результат обрезан</span>`
     : ''
+
+  const strategyLabel = BOOST_LABELS[opts.boostThrottle] || opts.boostThrottle
 
   $out.innerHTML = `
     <div class="result-box">
@@ -291,10 +304,10 @@ export function renderSingleResult(result, upgrades, cards, opts) {
       </div>
     </div>
     <div style="opacity:0.6;font-size:12px;margin-top:8px;text-align:center;line-height:1.6">
+      PUSH: <b>${strategyLabel}</b> ·
       Монет: <b style="color:#ffd75e">${Math.floor(result.distance)}</b> ·
       Макс. скорость: <b>${Math.round(result.maxSpeed)} м/с</b> ·
-      Топливо сожжено: <b>${result.fuelUsed.toFixed(1)} с</b> ·
-      Посадка на высоте: <b>${Math.round(result.landingTerrain)} м</b><br>
+      Топливо сожжено: <b>${result.fuelUsed.toFixed(1)} с</b><br>
       ${angleInfo}${timeWarn}
     </div>`
 
@@ -430,20 +443,56 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
 }
 
 export function renderOptimum(optData) {
-  const { results, best, noLift } = optData
+  const { best, coarseResults, fineResults, noLift } = optData
   const $out = document.getElementById('single-results')
+
   const gain = best.distance - noLift.distance
   const gainPct = noLift.distance > 0 ? (gain / noLift.distance) * 100 : 0
 
-  const truncCount = results.filter((r) => r.truncated).length
+  // Лучшее по каждой стратегии (coarse + уточнённый для winner)
+  const bestByStrategy = {}
+  for (const r of coarseResults) {
+    if (!bestByStrategy[r.strategy] || r.distance > bestByStrategy[r.strategy].distance) {
+      bestByStrategy[r.strategy] = r
+    }
+  }
+  // Уточнение победителя: если fineResult лучше — заменяем
+  for (const r of fineResults) {
+    if (!bestByStrategy[r.strategy] || r.distance > bestByStrategy[r.strategy].distance) {
+      bestByStrategy[r.strategy] = r
+    }
+  }
+
+  const strategyRows = Object.entries(bestByStrategy)
+    .map(([s, r]) => ({ strategy: s, ...r }))
+    .sort((a, b) => b.distance - a.distance)
+
+  const strategyRowsHtml = strategyRows
+    .map((r, idx) => {
+      const isWinner = r.strategy === best.strategy
+      return `<tr class="${isWinner ? 'winner' : ''}">
+        <td>${isWinner ? '🥇' : ''} ${BOOST_LABELS[r.strategy] || r.strategy}</td>
+        <td class="num">${r.angle}°</td>
+        <td class="num ${isWinner ? 'good' : ''}">${fmtM(r.distance)}</td>
+      </tr>`
+    })
+    .join('')
+
+  const truncCount = [...coarseResults, ...fineResults].filter((r) => r.truncated).length
   const timeWarn =
     truncCount > 0
-      ? `<div style="color:#ffb84d;font-size:11px;margin-top:6px">⚠️ ${truncCount} угл. обрезаны по времени</div>`
+      ? `<div style="color:#ffb84d;font-size:11px;margin-top:6px">⚠️ ${truncCount} симуляций обрезаны по времени</div>`
       : ''
+
+  const bestStrategyLabel = BOOST_LABELS[best.strategy] || best.strategy
 
   $out.innerHTML = `
     <div class="opt-summary">
       <div class="big">🎯 Оптимум: ${best.angle}°</div>
+      <div class="sub">
+        Самое эффективное управление:
+        <b style="color:#ffd75e">${bestStrategyLabel}</b>
+      </div>
       <div class="sub">Дальность: <b style="color:#c38bff">${fmtM(best.distance)}</b></div>
       <div class="sub">
         Без подъёма: ${fmtM(noLift.distance)}
@@ -470,20 +519,39 @@ export function renderOptimum(optData) {
     <div style="opacity:0.6;font-size:12px;margin-top:8px;text-align:center;line-height:1.6">
       Монет: <b style="color:#ffd75e">${Math.floor(best.distance)}</b> ·
       Макс. скорость: <b>${Math.round(best.result.maxSpeed)} м/с</b> ·
-      Топливо сожжено: <b>${best.result.fuelUsed.toFixed(1)} с</b> ·
-      Угол в конце тяги: <b>${best.result.boostEndAngle !== null ? best.result.boostEndAngle.toFixed(0) + '°' : '—'}</b>
-    </div>`
+      Топливо сожжено: <b>${best.result.fuelUsed.toFixed(1)} с</b><br>
+      ${boostEndLabel(best.result)}
+    </div>
+
+    <div class="section-title">Сравнение стратегий (лучший угол для каждой)</div>
+    <table>
+      <thead><tr>
+        <th>Стратегия</th>
+        <th style="text-align:right">Лучший угол</th>
+        <th style="text-align:right">Дальность</th>
+      </tr></thead>
+      <tbody>${strategyRowsHtml}</tbody>
+    </table>`
+
+  // ── Графики ──
+  // Траектория оптимума + кривая «дальность vs угол» для победившей стратегии.
+  const chartPoints = [
+    ...coarseResults.filter((r) => r.strategy === best.strategy),
+    ...fineResults,
+  ]
+    .sort((a, b) => a.angle - b.angle)
+    .map((r) => ({ angle: r.angle, distance: r.distance }))
 
   const $charts = document.getElementById('charts-row')
   $charts.style.display = 'grid'
   $charts.innerHTML = `
     <div class="chart-container">
-      <div class="chart-title">✈️ Траектория (оптимум ${best.angle}°)</div>
+      <div class="chart-title">✈️ Траектория (оптимум ${best.angle}°, ${bestStrategyLabel})</div>
       ${renderTrajectoryChart(best.result.trajectory)}
     </div>
     <div class="chart-container">
-      <div class="chart-title">📈 Дальность vs угол подъёма</div>
-      ${renderAngleChart(results, best)}
+      <div class="chart-title">📈 Дальность vs угол (${bestStrategyLabel})</div>
+      ${renderAngleChart(chartPoints, best)}
     </div>`
 }
 
