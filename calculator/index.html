@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>🚀 Rocket Game — Calculator</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="notice">
+      Открывай через Vite: <code>npm run dev</code> → <code>localhost:5173/calculator/</code>
+      <br>Или после build: <code>npm run build</code> → <code>dist/calculator/index.html</code>
+    </div>
+
+    <h1>🚀 Rocket Game — Calculator</h1>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="single">Один билд</button>
+      <button class="tab" data-tab="compare">Сравнить два</button>
+    </div>
+
+    <div id="single" class="tab-content active">
+      <div class="section-title">Апгрейды</div>
+      <div id="upgrades-inputs"></div>
+      <div class="section-title">Карточки (0–2 копии)</div>
+      <div id="cards-inputs"></div>
+      <div class="section-title">Стратегия полёта</div>
+      <div id="opts-inputs"></div>
+
+      <div class="btn-row">
+        <button class="action" id="sim-btn">🔮 Симулировать</button>
+        <button class="action optimize" id="opt-btn">🎯 Найти оптимум</button>
+        <button class="action load-save" id="load-save-btn"
+                title="Взять апгрейды, карточки и форсаж из сохранения игры">
+          📥 Текущий билд
+        </button>
+      </div>
+
+      <div id="single-results"></div>
+      <div id="charts-row" class="charts-row" style="display: none"></div>
+    </div>
+
+    <div id="compare" class="tab-content">
+      <div class="two-col">
+        <div>
+          <div class="section-title">
+            Игрок A
+            <button class="mini-btn" data-load="A-" title="Взять из сохранения">📥 Текущий</button>
+          </div>
+          <div id="upA"></div>
+        </div>
+        <div>
+          <div class="section-title">
+            Игрок B
+            <button class="mini-btn" data-load="B-" title="Взять из сохранения">📥 Текущий</button>
+          </div>
+          <div id="upB"></div>
+        </div>
+      </div>
+      <button class="action" id="cmp-btn">⚖️ Сравнить</button>
+      <div id="cmp-results"></div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
