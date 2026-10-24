@@ -17,12 +17,14 @@ import * as Space from './space.js'
 import { G, time } from './state.js'
 import * as Abilities from './abilities.js'
 import * as Sounds from './sounds.js'
+import * as Sign from './sign.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
 ================================================================ */
 Scene.init() // renderer / camera / sky / lights / ground
 DayNight.init() // грузим сохранённое время суток и сразу применяем
+Sign.init() // асинхронно грузит шрифт и добавляет надпись
 Entities.init() // boss + rocket + chests
 Sounds.init() //звуки
 
