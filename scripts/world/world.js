@@ -5,7 +5,38 @@
 import * as THREE from 'three'
 import * as CFG from '../config.js'
 
-export const WORLD_SEED = CFG.WORLD_SEED
+/* ---------- Debug-хук для terrainBase ---------- */
+let _dbgTerrain = null
+
+/**
+ * Печатает таблицу промежуточных значений terrainBase для набора X.
+ * Вызов из консоли: debugTerrainProfile()  — стандартный набор
+ *                   debugTerrainProfile([1000, 5000, 20000])
+ */
+export function debugTerrainProfile(
+  xs = [2000, 2800, 5000, 8000, 12000, 16000, 20000, 24000, 28000, 30000, 31000, 32000, 35000]
+) {
+  const rows = []
+  _dbgTerrain = (d) => rows.push(d)
+  for (const x of xs) terrainBase(x, 0)
+  _dbgTerrain = null
+  console.table(rows)
+}
+
+/* Лавинная функция: любой изменение seed'а → совершенно другой хэш.
+   Тот же finalizer, что в MurmurHash3 / SplitMix32.
+   Гарантирует: seed+1 даёт ~50% отличающихся бит → другой мир. */
+function avalanche(seed) {
+  let h = seed >>> 0
+  h ^= h >>> 16
+  h = Math.imul(h, 0x7feb352d)
+  h ^= h >>> 15
+  h = Math.imul(h, 0x846ca68b)
+  h ^= h >>> 16
+  return h >>> 0
+}
+
+export const WORLD_SEED = avalanche(CFG.WORLD_SEED)
 
 export function terrainBrightnessNoise(x, z) {
   const C = CFG.TERRAIN_COLOR_NOISE
@@ -124,9 +155,38 @@ export function terrainBase(x, z) {
   const mt = Math.min(1, Math.max(0, (x - CFG.TERRAIN.mountainsStart) / CFG.TERRAIN.mountainsRamp))
   const mt2 = mt * mt
 
-  // Глобальный рост (высота)
-  const far = Math.max(0, (x - CFG.TERRAIN.growthStart) * CFG.TERRAIN.growthRate)
-  const growth = 1 + far
+  // ─── Глобальный рост высоты гор ───
+  // 1 → peak (линейно, от growthStart до growthPeak)
+  //   → 1 (smoothstep, от growthPeak до growthEnd)
+  //   → 1 (baseline, дальше)
+  // ВАЖНО: growth возвращается к 1, а не к 0 — горы «оседают», но не исчезают.
+  // Исчезновение — отдельный множитель mt2Out (ниже).
+  const gs = CFG.TERRAIN.growthStart
+  const gp = CFG.TERRAIN.growthPeak
+  const ge = CFG.TERRAIN.growthEnd
+  const gRate = CFG.TERRAIN.growthRate
+
+  let growth
+  if (gp <= 0 || x < gp) {
+    growth = x <= gs ? 1 : 1 + (x - gs) * gRate
+  } else if (ge > gp && x < ge) {
+    const peak = 1 + (gp - gs) * gRate
+    const t = (x - gp) / (ge - gp)
+    const s = t * t * (3 - 2 * t) // smoothstep 0..1
+    growth = peak + (1 - peak) * s // peak → 1
+  } else {
+    growth = 1
+  }
+
+  // ─── Финальное затухание гор: mt2Out 1 → 0 (smoothstep) ───
+  // Стартует с growthEnd, длится mountainsRampOut метров.
+  const gEndRamp = CFG.TERRAIN.mountainsRampOut ?? 0
+  let mt2Out = 1
+  if (ge > 0 && gEndRamp > 0 && x > ge) {
+    const t = Math.min(1, (x - ge) / gEndRamp)
+    const s = t * t * (3 - 2 * t)
+    mt2Out = 1 - s
+  }
 
   // ─── НОВОЕ: волнистость + утолщение/разрежение хребтов ───
   const RW = CFG.TERRAIN.ridgeWave
@@ -139,14 +199,30 @@ export function terrainBase(x, z) {
     waveField = (fbm2(x * RW.freq, z * RW.freq, RW.octaves) - 0.5) * 2 // [-1, 1]
   }
 
-  // Масштаб формы по X: чем дальше — тем шире и мягче хребты.
-  // ratio = 1 при x ≤ refX, дальше плавно падает.
+  // Масштаб формы хребтов теперь — функция growth, а не X.
+  // На baseline (growth=1) — исходная форма. На пике (growth=peak) —
+  // максимально широкая и мягкая. При затухании гор «отматывается» назад.
   let freqScale = 1
   let sharpScale = 1
-  if (RG.enabled && x > RG.refX) {
-    const ratio = RG.refX / x
-    freqScale = Math.max(RG.minFreqScale, Math.pow(ratio, RG.freqExp))
-    sharpScale = Math.max(RG.minSharpScale, Math.pow(ratio, RG.sharpExp))
+  let gNorm = 0
+  let gFreqExp = 1
+  let gShaped = 1
+
+  if (RG.enabled) {
+    const peakG = gp > 0 ? 1 + (gp - gs) * gRate : 1
+    if (peakG > 1) {
+      gNorm = Math.min(1, Math.max(0, (growth - 1) / (peakG - 1)))
+    }
+
+    const gFreqExp = Math.pow(gNorm, RG.freqExp)
+    const gShaped = Math.pow(gNorm, RG.sharpExp)
+    freqScale = 1 - gFreqExp * (1 - RG.minFreqScale)
+    sharpScale = 1 - gShaped * (1 - RG.minSharpScale)
+    // Потолок: baseline (x=2000, x=30000) не должен быть острее/уже,
+    // чем «эталонный» вид на x=3000. Без этого при gNorm → 0
+    // масштабы уходят в 1.0 и горы становятся острыми при малой высоте.
+    freqScale = Math.min(RG.maxFreqScale, freqScale)
+    sharpScale = Math.min(RG.maxSharpScale, sharpScale)
   }
 
   const ridge = (u, v, freq, seed, sharp, soft) => {
@@ -177,17 +253,33 @@ export function terrainBase(x, z) {
     r *= 1 + mod * RH.amp
   }
 
-  h += mt2 * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
+  h += mt2 * mt2Out * (CFG.TERRAIN.mountainFloor + r * CFG.TERRAIN.mountainScale) * growth
 
   // Шум поверх гор — без изменений
   const n = CFG.TERRAIN.noise
-  const t = Math.min(1, Math.max(0, h / n.heightRef))
+  const t = n.baseFactor + (1 - n.baseFactor) * Math.min(1, Math.max(0, h / n.heightRef))
   if (t > 0) {
     const big = (fbm2(x * n.bigFreq, z * n.bigFreq, n.bigOct) - 0.5) * 2
     const small = (fbm2(x * n.smallFreq, z * n.smallFreq, n.smallOct) - 0.5) * 2
     h += (big * n.bigAmp + small * n.smallAmp) * t
   }
 
+  //DEBUG--------
+  if (_dbgTerrain) {
+    _dbgTerrain({
+      x: x.toFixed(0),
+      growth: growth.toFixed(3),
+      gNorm: (typeof gNorm !== 'undefined' ? gNorm : 0).toFixed(3),
+      gFreqExp: (typeof gFreqExp !== 'undefined' ? gFreqExp : 1).toFixed(3),
+      gShaped: (typeof gShaped !== 'undefined' ? gShaped : 1).toFixed(3),
+      freqScale: freqScale.toFixed(3),
+      sharpScale: sharpScale.toFixed(3),
+      mt2: mt2.toFixed(3),
+      mt2Out: mt2Out.toFixed(3),
+      h: h.toFixed(1),
+    })
+  }
+  //------
   return h
 }
 
