@@ -40,6 +40,7 @@ const _dummyObj = new THREE.Object3D()
 const POOL_SIZE = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 1))
 const workerPool = []
 const pendingChunks = new Map()
+const readyChunks = [] // ←  готовые данные от воркеров, ждут добавления в сцену
 let _workersReady = false
 
 function initWorkerPool() {
@@ -397,25 +398,17 @@ function onWorkerMessage(workerIdx, e) {
 
   const wasPending = pendingChunks.delete(key)
 
-  // Если чанк отменили, пока worker его считал — отбрасываем результат
-  if (!wasPending) {
-    processChunkQueue()
-    return
-  }
-  if (chunks.has(key)) {
+  // Чанк отменили или уже загружен — отбрасываем
+  if (!wasPending || chunks.has(key)) {
     processChunkQueue()
     return
   }
 
-  const mesh = buildMeshFromWorker(cx, cz, data)
-  const props = spawnPropsFromWorker(data.propMatrices)
+  // НЕ строим здесь! Просто кладём в очередь.
+  // Main thread построит и добавит в сцену в update() — по 1 за кадр.
+  readyChunks.push({ key, cx, cz, data })
 
-  scene.add(mesh)
-  mesh.visible = lod.fade < 0.95
-  for (const p of props) p.visible = lod.showing3D
-  chunks.set(key, { mesh, props })
-
-  processChunkQueue()
+  processChunkQueue() // воркер свободен — дадим ему следующий чанк
 }
 
 function dispatchChunk(cx, cz) {
@@ -460,6 +453,13 @@ export function unloadChunk(key) {
   // Отменяем, если чанк ещё в работе у worker'а
   if (pendingChunks.has(key)) {
     pendingChunks.delete(key)
+    return
+  }
+
+  // NEW: убираем из очереди готовых, если ещё не добавлен в сцену
+  const readyIdx = readyChunks.findIndex((r) => r.key === key)
+  if (readyIdx !== -1) {
+    readyChunks.splice(readyIdx, 1)
     return
   }
 
@@ -605,6 +605,92 @@ function updatePersistentVisibility(camX, camZ) {
     for (const p of c.props) p.visible = pv
   }
 }
+const READY_BUDGET_MS = 4 // не больше 4 мс на добавление чанков за кадр
+/* ================================================================
+   processReadyChunks — добавляет не больше 1 чанка за кадр.
+   Сортирует очередь по расстоянию до камеры: ближние — первыми.
+================================================================ */
+function processReadyChunks() {
+  const t0 = performance.now()
+  // Обрабатываем по 1 за итерацию, пока есть время
+  while (readyChunks.length > 0 && performance.now() - t0 < READY_BUDGET_MS) {
+    if (readyChunks.length === 0) return
+
+    const camX = camera.position.x
+    const camZ = camera.position.z
+    const cxi = Math.floor(camX / CHUNK_SIZE)
+    const czi = Math.floor(camZ / CHUNK_SIZE)
+
+    // Радиусы текущего режима — для проверки актуальности
+    let LF, LB, LS
+    if (_preloading) {
+      LF = CFG.CHUNKS.loadForwardFar
+      LB = CFG.CHUNKS.loadBackFar
+      LS = CFG.CHUNKS.loadSideFar
+    } else {
+      LF = LOAD_FWD_CHUNKS
+      LB = LOAD_BACK_CHUNKS
+      LS = LOAD_SIDE_CHUNKS
+    }
+
+    // Периодически чистим очередь от «устаревших» (камера улетела)
+    if (readyChunks.length > 8) {
+      for (let i = readyChunks.length - 1; i >= 0; i--) {
+        const r = readyChunks[i]
+        const dx = r.cx - cxi
+        const dz = r.cz - czi
+        if (
+          dx < -(LB + UNLOAD_MARGIN) ||
+          dx > LF + UNLOAD_MARGIN ||
+          Math.abs(dz) > LS + UNLOAD_MARGIN
+        ) {
+          readyChunks.splice(i, 1)
+        }
+      }
+    }
+
+    if (readyChunks.length === 0) return
+
+    // Ищем ближайший чанк к камере
+    let bestIdx = 0
+    let bestD2 = Infinity
+    for (let i = 0; i < readyChunks.length; i++) {
+      const r = readyChunks[i]
+      const wx = r.cx * CHUNK_SIZE + CHUNK_SIZE / 2
+      const wz = r.cz * CHUNK_SIZE + CHUNK_SIZE / 2
+      const dx = wx - camX
+      const dz = wz - camZ
+      const d2 = dx * dx + dz * dz
+      if (d2 < bestD2) {
+        bestD2 = d2
+        bestIdx = i
+      }
+    }
+
+    const { key, cx, cz, data } = readyChunks[bestIdx]
+    readyChunks.splice(bestIdx, 1)
+
+    // Ещё раз проверяем актуальность (мог устареть между рендерами)
+    const dx = cx - cxi
+    const dz = cz - czi
+    if (
+      dx < -(LB + UNLOAD_MARGIN) ||
+      dx > LF + UNLOAD_MARGIN ||
+      Math.abs(dz) > LS + UNLOAD_MARGIN
+    ) {
+      return // пропускаем — не тратим время
+    }
+
+    // Собираем и добавляем — ОДИН чанк за кадр
+    const mesh = buildMeshFromWorker(cx, cz, data)
+    const props = spawnPropsFromWorker(data.propMatrices)
+
+    scene.add(mesh)
+    mesh.visible = lod.fade < 0.95
+    for (const p of props) p.visible = lod.showing3D
+    chunks.set(key, { mesh, props })
+  }
+}
 
 /* ================================================================
    update — обновление per-frame (кэш ячейки + очередь + persistent).
@@ -641,7 +727,8 @@ export function update() {
     _lastCell.z = czi
   }
 
-  processChunkQueue()
+  processReadyChunks() //  добавить максимум 1 чанк в сцену
+  processChunkQueue() // отправить задачи свободным воркерам
 
   const showFine = lod.fade < 0.95
   const showProps = lod.showing3D
@@ -751,11 +838,11 @@ export function getStats() {
     persistentTotal: PERSISTENT_CHUNKS.size,
     propsCache: propsCache.size,
     pending: pendingChunks.size,
+    ready: readyChunks.length,
     poolSize: workerPool.length,
     poolBusy: workerPool.filter((s) => s.busy).length,
   }
 }
-
 export function debugPersistent() {
   const list = []
   for (const key of PERSISTENT_CHUNKS) {

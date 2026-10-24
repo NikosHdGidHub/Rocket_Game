@@ -583,13 +583,13 @@ export const CHUNKS = /** @type {const} */ ({
   segments: 53,
 
   /** Сколько чанков грузить ВПЕРЁД (в +X).*/
-  loadForward: 12,
+  loadForward: 9,
 
   /**Сколько чанков грузить НАЗАД (в -X).*/
   loadBack: 1,
 
   /** Сколько чанков грузить В СТОРОНЫ (±Z).*/
-  loadSide: 7,
+  loadSide: 4,
 
   /**Высота на которой подгружаются компрессные чанки */
   preloadAltitude: 1100,
