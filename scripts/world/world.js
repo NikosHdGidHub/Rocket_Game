@@ -23,7 +23,20 @@ export function debugTerrainProfile(
   console.table(rows)
 }
 
-export const WORLD_SEED = CFG.WORLD_SEED
+/* Лавинная функция: любой изменение seed'а → совершенно другой хэш.
+   Тот же finalizer, что в MurmurHash3 / SplitMix32.
+   Гарантирует: seed+1 даёт ~50% отличающихся бит → другой мир. */
+function avalanche(seed) {
+  let h = seed >>> 0
+  h ^= h >>> 16
+  h = Math.imul(h, 0x7feb352d)
+  h ^= h >>> 15
+  h = Math.imul(h, 0x846ca68b)
+  h ^= h >>> 16
+  return h >>> 0
+}
+
+export const WORLD_SEED = avalanche(CFG.WORLD_SEED)
 
 export function terrainBrightnessNoise(x, z) {
   const C = CFG.TERRAIN_COLOR_NOISE

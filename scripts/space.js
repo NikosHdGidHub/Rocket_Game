@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import * as CFG from './config.js'
 import { scene, camera, sun, hemiLight, SKY_ZENITH, SKY_HORIZON, HAZE_COLOR } from './scene.js'
 import { rocketState, time } from './state.js'
-import { hash2i, mulberry32 } from './world/world.js'
+import { WORLD_SEED, hash2i, mulberry32 } from './world/world.js'
 
 const SPC = CFG.SPACE
 
@@ -41,7 +41,7 @@ function makeStarGeometry() {
   const brights = new Float32Array(N)
   const sizes = new Float32Array(N)
 
-  const rng = mulberry32((CFG.WORLD_SEED ^ 0x5747a3c1) >>> 0)
+  const rng = mulberry32((WORLD_SEED ^ 0x5747a3c1) >>> 0)
 
   for (let i = 0; i < N; i++) {
     // Равномерно по сфере
@@ -133,8 +133,7 @@ function getSphereCell(cx, cy, cz) {
   const cached = _sphereCells.get(key)
   if (cached) return cached
 
-  const seed =
-    (hash2i(cx + 0x51ab, cy + 0x8c3d) ^ hash2i(cz + 0x3e91, 0x4f3d) ^ CFG.WORLD_SEED) >>> 0
+  const seed = (hash2i(cx + 0x51ab, cy + 0x8c3d) ^ hash2i(cz + 0x3e91, 0x4f3d) ^ WORLD_SEED) >>> 0
   const rng = mulberry32(seed)
 
   const CS = SPC.spheres.cellSize
