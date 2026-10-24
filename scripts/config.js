@@ -451,9 +451,9 @@ export const TERRAIN = /** @type {const} */ ({
   ridges: [
     { freq: 0.00085, seed: 0.4, sharp: 5.2, amp: 350, swap: false }, // главные пики
     { freq: 0.0022, seed: 1.1, sharp: 4.0, amp: 130, swap: false }, // средни
-    { freq: 0.0055, seed: 2.9, sharp: 2.4, amp: 15, swap: false, soft: true }, // мелкие скалы
+    { freq: 0.0055, seed: 2.9, sharp: 2.4, amp: 15, swap: false, soft: false }, // мелкие скалы
     //{ freq: 0.0135, seed: 3.6, sharp: 1.3, amp: 15, swap: false, soft: true }, // микрорельеф
-    { freq: 0.0013, seed: 5.2, sharp: 2.5, amp: 180, swap: true, soft: true }, // поперечный хребет
+    { freq: 0.0013, seed: 5.2, sharp: 2.5, amp: 180, swap: true, soft: false }, // поперечный хребет
     { freq: 0.0041, seed: 6.8, sharp: 1.4, amp: 60, swap: true, soft: true }, // поперечный мелкий
   ],
 
