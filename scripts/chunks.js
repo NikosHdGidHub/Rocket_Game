@@ -680,6 +680,53 @@ function processReadyChunks() {
 }
 
 /* ================================================================
+   updateChunkVisibility — умное скрытие чанков вне зоны видимости
+================================================================ */
+let _lastVisPos = { cxi: NaN, czi: NaN, camY: NaN, showing3D: null } // <-- добавили showing3D
+
+function updateChunkVisibility(camX, camY, camZ) {
+  const cxi = Math.floor(camX / CHUNK_SIZE)
+  const czi = Math.floor(camZ / CHUNK_SIZE)
+
+  // Если камера не двигалась, высота та же И режим (3D/2D) не менялся — выходим
+  if (
+    cxi === _lastVisPos.cxi &&
+    czi === _lastVisPos.czi &&
+    Math.abs(camY - _lastVisPos.camY) < 50 &&
+    lod.showing3D === _lastVisPos.showing3D // <-- ВАЖНОЕ ДОПОЛНЕНИЕ
+  ) {
+    return
+  }
+
+  _lastVisPos = { cxi, czi, camY, showing3D: lod.showing3D }
+
+  const maxGroundDist = scene.fog.far * 1.2
+  const maxPropDist = CFG.PROPS.maxRenderDistance ?? 500
+
+  for (const [key, c] of chunks) {
+    if (PERSISTENT_CHUNKS.has(key)) continue
+
+    const [cs, czs] = key.split(',')
+    const cx = +cs
+    const cz = +czs
+
+    const isBehind = cx < cxi - 1
+    const dx = cx * CHUNK_SIZE + CHUNK_SIZE / 2 - camX
+    const dz = cz * CHUNK_SIZE + CHUNK_SIZE / 2 - camZ
+    const dist = Math.sqrt(dx * dx + dz * dz)
+
+    const isGroundVisible = !isBehind && dist < maxGroundDist && lod.fade < 0.95
+    c.mesh.visible = isGroundVisible
+
+    // Жесткая проверка на lod.showing3D (если мы в 2D, деревья скрываются)
+    const isPropVisible = isGroundVisible && lod.showing3D && dist < maxPropDist
+    for (const p of c.props) {
+      p.visible = isPropVisible
+    }
+  }
+}
+
+/* ================================================================
    update — обновление per-frame (кэш ячейки + очередь + persistent).
 ================================================================ */
 let _lastCell = { x: NaN, z: NaN }
@@ -693,6 +740,7 @@ export function update() {
   }
 
   const camX = camera.position.x
+  const camY = camera.position.y
   const camZ = camera.position.z
 
   const cxi = Math.floor(camX / CHUNK_SIZE)
@@ -728,6 +776,8 @@ export function update() {
     updatePersistentVisibility(camX, camZ)
     _lastPersist = { cxi, czi, showFine, showProps }
   }
+  //Обновляем видимость всех остальных чанков
+  updateChunkVisibility(camX, camY, camZ)
 }
 
 /* ================================================================
