@@ -156,15 +156,15 @@ export const FOG = /** @type {const} */ ({
   farGround: 350,
 
   /** Высота (м), на которой туман становится БАЗОВЫМ — т.е. равен near3D / far3D.  */
-  altRef3D: 650,
+  altRef3D: 450,
 
   // 3D-режим (низко над землёй)
   near3D: 100,
-  far3D: 1800,
+  far3D: 2000,
 
   /** Туман НА УРОВНЕ переключения (alt = 600).  */
   nearGround2D: 200,
-  farGround2D: 2000,
+  farGround2D: 2200,
 
   /** Высота (м), на которой туман становится БАЗОВЫМ = равен near2D / far2D. Высота altitudeHigh: +-2400,*/
   altRef2D: 3000,
@@ -594,7 +594,7 @@ export const CHUNKS = /** @type {const} */ ({
   segments: 53,
 
   /** Сколько чанков грузить ВПЕРЁД (в +X).*/
-  loadForward: 9,
+  loadForward: 10,
 
   /**Сколько чанков грузить НАЗАД (в -X).*/
   loadBack: 1,
@@ -606,7 +606,7 @@ export const CHUNKS = /** @type {const} */ ({
   preloadAltitude: 1100,
 
   //компромисс подгрузки  чанков в режиме far при alt < altitudeLow
-  loadForwardFar: 5,
+  loadForwardFar: 6,
   loadBackFar: 0,
   loadSideFar: 2,
 
@@ -728,10 +728,10 @@ export const OVERLAY = /** @type {const} */ ({
   canvasSize: 1024,
 
   /** Радиус прогрузки (в overlay-чанках). */
-  loadRadius: 1,
+  loadRadius: 2,
 
   /** Радиус выгрузки. */
-  unloadRadius: 2,
+  unloadRadius: 3,
 
   /**
    * Диаметр точки в пикселях canvas.

@@ -10,25 +10,28 @@ import * as CFG from './config.js'
 import { scene, camera, groundTex, applySkyFog, fogU } from './scene.js'
 import { lod, rocketState } from './state.js'
 import { boss } from './entities.js'
-import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS, getProps } from './chunks.js'
-import { terrainHeight, heightToTerrainColor, hash2i } from './world/world.js'
+import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS } from './chunks.js'
+import LodWorker from './workers/lodWorker.js?worker'
 
 /* ================================================================
-   FAR TILES — динамические границы загрузки.
-
-   Есть два режима:
-     low  — у земли: асимметрично (fwd 3, back 1, side 2), SEG=180
-     high — высоко:  симметрично (6×6×6), SEG=40, оверлай выключен
-
-   Переключение по altSmooth с гистерезисом (altitudeHigh/altitudeLow).
+   FAR TILES & OVERLAY — асинхронная загрузка через Web Worker
 ================================================================ */
 const FAR_TILE_SIZE = CFG.FAR_TILES.size
-const TILE = CFG.GROUND_TEX.tile
+const OVERLAY_SIZE = CFG.OVERLAY.size
+const OVERLAY_SEG = CFG.OVERLAY.segments
+const OVERLAY_CANVAS = CFG.OVERLAY.canvasSize
+const OVERLAY_LOAD_R = CFG.OVERLAY.loadRadius
+const OVERLAY_UNLOAD_R = CFG.OVERLAY.unloadRadius
 
-let farTileSeg = CFG.FAR_TILES.segments // мутабельно
+let farTileSeg = CFG.FAR_TILES.segments // мутабельно (low/high режимы)
 let farHighMode = false // true → высокий режим
-
 let farGroundMat = null
+let lodWorker = null
+
+const farTiles = new Map()
+const pendingFarTiles = new Set()
+const overlayChunks = new Map()
+const pendingOverlays = new Set()
 
 export function init() {
   farGroundMat = new THREE.MeshStandardMaterial({
@@ -36,168 +39,81 @@ export function init() {
     vertexColors: true,
     roughness: 1,
     metalness: 0,
-    // Opaque: тайлы закрывают пустоту за 3D-чанками.
-    // polygonOffset → там, где есть детальный чанк, depth-test
-    // фар-тайла проваливается (он чуть «глубже»), и чанк остаётся
-    // чистым. Там, где чанка нет — фар-тайл заполняет.
-    // Если увидишь z-файтинг на стыке — увеличь factor/units до 2–4.
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
   })
   applySkyFog(farGroundMat)
+
+  // Создаём воркер для LOD
+  lodWorker = new LodWorker()
+  lodWorker.onmessage = onWorkerMessage
+  lodWorker.onerror = (err) => console.error('[lodWorker] error:', err)
 }
 
-const farTiles = new Map()
-const pendingFarTiles = new Map()
+/* ---------- Обработка ответов от воркера ---------- */
+function onWorkerMessage(e) {
+  const data = e.data
 
-/** Текущие радиусы загрузки (учитывает farHighMode). */
-function getFarLoadBounds() {
-  if (farHighMode) {
-    return {
-      fwd: CFG.FAR_TILES.loadFwdHigh,
-      back: CFG.FAR_TILES.loadBackHigh,
-      side: CFG.FAR_TILES.loadSideHigh,
-    }
-  }
-  return {
-    fwd: CFG.FAR_TILES.loadFwd,
-    back: CFG.FAR_TILES.loadBack,
-    side: CFG.FAR_TILES.loadSide,
-  }
-}
+  if (data.type === 'far') {
+    const { fx, fz, seg, posArr, uvArr, nrmArr, colArr } = data
+    const key = fx + ',' + fz
 
-/** Текущие радиусы выгрузки (load + margin, чтобы не мигало). */
-function getFarUnloadBounds() {
-  const m = CFG.FAR_TILES.unloadMargin
-  const L = getFarLoadBounds()
-  return { fwd: L.fwd + m, back: L.back + m, side: L.side + m }
-}
+    // Если мы отменили этот запрос (улетели) — просто выбрасываем результат
+    if (!pendingFarTiles.has(key)) return
+    pendingFarTiles.delete(key)
 
-function createFarTileBuilder(fx, fz) {
-  // ВАЖНО: захватываем seg локально. Если режим сменится, пока тайл
-  // ещё строится, глобальный farTileSeg «уедет», а геометрия останется
-  // с текущей сеткой — индексация в step() разъедется.
-  const seg = farTileSeg
+    // Если разрешение не совпадает с текущим режимом (устарело), тоже выбрасываем
+    if (seg !== farTileSeg) return
 
-  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, seg, seg)
-  geo.rotateX(-Math.PI / 2)
+    const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, seg, seg)
+    geo.rotateX(-Math.PI / 2)
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2))
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrmArr, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
 
-  const pos = geo.attributes.position
-  const uv = geo.attributes.uv
-  const nrm = geo.attributes.normal
-  const colArr = new Float32Array(pos.count * 3)
-  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3))
+    finalizeFarTile(key, fx, fz, geo, seg)
+  } else if (data.type === 'overlay') {
+    const { ox, oz, posArr, nrmArr, pix } = data
+    const key = ox + ',' + oz
 
-  const cxw = fx * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
-  const czw = fz * FAR_TILE_SIZE + FAR_TILE_SIZE / 2
-  const col = new THREE.Color()
+    if (!pendingOverlays.has(key)) return
+    pendingOverlays.delete(key)
 
-  const vertsPerRow = seg + 1
-  const totalRows = seg + 1
-  const eps = FAR_TILE_SIZE / seg
+    if (farHighMode || !CFG.OVERLAY.enabled) return
 
-  let phase = 0
-  let row = 0
+    const geo = new THREE.PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE, OVERLAY_SEG, OVERLAY_SEG)
+    geo.rotateX(-Math.PI / 2)
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrmArr, 3))
 
-  return {
-    geo,
-    seg, // ← отдаём наружу фактический seg
-    step(budgetMs) {
-      const t0 = performance.now()
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = OVERLAY_CANVAS
+    const ctx = canvas.getContext('2d')
+    const imgData = new ImageData(new Uint8ClampedArray(pix), OVERLAY_CANVAS, OVERLAY_CANVAS)
+    ctx.putImageData(imgData, 0, 0)
 
-      /* ---------- Фаза 0: высоты, UV, цвета ---------- */
-      if (phase === 0) {
-        while (row < totalRows && performance.now() - t0 < budgetMs) {
-          const start = row * vertsPerRow
-          const end = start + vertsPerRow
-          for (let i = start; i < end; i++) {
-            const wx = cxw + pos.getX(i)
-            const wz = czw + pos.getZ(i)
-            const h = terrainHeight(wx, wz)
-            pos.setY(i, h)
-            uv.setXY(i, wx / TILE, wz / TILE)
-            heightToTerrainColor(h, col)
-            colArr[i * 3] = col.r
-            colArr[i * 3 + 1] = col.g
-            colArr[i * 3 + 2] = col.b
-          }
-          row++
-        }
-        if (row >= totalRows) {
-          pos.needsUpdate = true
-          uv.needsUpdate = true
-          phase = 1
-          row = 0
-        }
-      }
-
-      /* ---------- Фаза 1: нормали ---------- */
-      if (phase === 1) {
-        while (row < seg && performance.now() - t0 < budgetMs) {
-          // …тело без изменений, но теперь используется локальный `seg`,
-          // а не глобальный farTileSeg
-          const iz = row
-          for (let ix = 0; ix < seg; ix++) {
-            const i00 = iz * vertsPerRow + ix
-            const h = pos.getY(i00)
-            const hx = pos.getY(i00 + 1)
-            const hz = pos.getY(i00 + vertsPerRow)
-            const nx = -(hx - h) / eps
-            const nz = -(hz - h) / eps
-            const len = Math.hypot(nx, 1, nz)
-            nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
-          }
-          row++
-        }
-        if (row >= seg) {
-          // …крайние ряды/столбцы без изменений, тоже с локальным `seg`
-          for (let ix = 0; ix < seg; ix++) {
-            const i00 = seg * vertsPerRow + ix
-            const wx = cxw + pos.getX(i00)
-            const wz = czw + pos.getZ(i00)
-            const h = pos.getY(i00)
-            const hx = pos.getY(i00 + 1)
-            const hz = terrainHeight(wx, wz + eps)
-            const nx = -(hx - h) / eps
-            const nz = -(hz - h) / eps
-            const len = Math.hypot(nx, 1, nz)
-            nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
-          }
-          for (let iz = 0; iz < seg; iz++) {
-            const i00 = iz * vertsPerRow + seg
-            const wx = cxw + pos.getX(i00)
-            const wz = czw + pos.getZ(i00)
-            const h = pos.getY(i00)
-            const hx = terrainHeight(wx + eps, wz)
-            const hz = pos.getY(i00 + vertsPerRow)
-            const nx = -(hx - h) / eps
-            const nz = -(hz - h) / eps
-            const len = Math.hypot(nx, 1, nz)
-            nrm.setXYZ(i00, nx / len, 1 / len, nz / len)
-          }
-          const iC = seg * vertsPerRow + seg
-          const wxC = cxw + pos.getX(iC)
-          const wzC = czw + pos.getZ(iC)
-          const hC = pos.getY(iC)
-          const hxC = terrainHeight(wxC + eps, wzC)
-          const hzC = terrainHeight(wxC, wzC + eps)
-          const nxC = -(hxC - hC) / eps
-          const nzC = -(hzC - hC) / eps
-          const lenC = Math.hypot(nxC, 1, nzC)
-          nrm.setXYZ(iC, nxC / lenC, 1 / lenC, nzC / lenC)
-
-          nrm.needsUpdate = true
-          geo.attributes.color.needsUpdate = true
-          return true
-        }
-      }
-
-      return false
-    },
+    finalizeOverlayChunk(key, ox, oz, geo, canvas)
   }
 }
 
+/* ---------- Запросы к воркеру ---------- */
+function requestFarTile(fx, fz) {
+  const key = fx + ',' + fz
+  if (farTiles.has(key) || pendingFarTiles.has(key)) return
+  pendingFarTiles.add(key)
+  lodWorker.postMessage({ type: 'far', fx, fz, seg: farTileSeg })
+}
+
+function requestOverlay(ox, oz) {
+  const key = ox + ',' + oz
+  if (overlayChunks.has(key) || pendingOverlays.has(key)) return
+  pendingOverlays.add(key)
+  lodWorker.postMessage({ type: 'overlay', ox, oz })
+}
+
+/* ---------- Финализация (добавление в сцену) ---------- */
 function finalizeFarTile(key, fx, fz, geo, seg) {
   const old = farTiles.get(key)
   if (old) {
@@ -216,302 +132,16 @@ function finalizeFarTile(key, fx, fz, geo, seg) {
   farTiles.set(key, { mesh, geo, seg })
 }
 
-function unloadFarTile(key) {
-  const c = farTiles.get(key)
-  if (!c) return
-  scene.remove(c.mesh)
-  c.geo.dispose()
-  farTiles.delete(key)
-}
-
-/**
- * Решение о переключении far-режима (high/low) с гистерезисом.
- * Возвращает true, если режим изменился — нужно перезапустить refill.
- */
-function updateFarMode(altSmooth) {
-  const F = CFG.FAR_TILES
-  let next = farHighMode
-
-  if (!farHighMode && altSmooth > F.altitudeHigh) next = true
-  else if (farHighMode && altSmooth < F.altitudeLow) next = false
-
-  if (next === farHighMode) return false
-
-  farHighMode = next
-  farTileSeg = farHighMode ? F.segmentsHigh : F.segments
-  return true
-}
-
-export function refillFarTiles(camX, camZ) {
-  const fxi = Math.floor(camX / FAR_TILE_SIZE)
-  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-  const L = getFarLoadBounds()
-  const U = getFarUnloadBounds()
-
-  // --- Пополняем очередь (в границах текущего режима) ---
-  for (let dx = -L.back; dx <= L.fwd; dx++) {
-    for (let dz = -L.side; dz <= L.side; dz++) {
-      const fx = fxi + dx
-      const fz = fzi + dz
-      const key = fx + ',' + fz
-
-      const loaded = farTiles.get(key)
-      const pending = pendingFarTiles.get(key)
-
-      // Нам нужна сетка farTileSeg. У уже загруженного тайла есть loaded.seg.
-      //
-      //   loaded.seg >= farTileSeg  → детализации хватает (или даже избыточно).
-      //                                Не пересобираем. При подъёме (170→50)
-      //                                все старые тайлы остаются как есть.
-      //
-      //   loaded.seg <  farTileSeg  → детализации НЕ хватает (спуск 50→170).
-      //                                Пересобираем с более мелкой сеткой.
-      if (loaded && loaded.seg < farTileSeg) {
-        pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
-        continue
-      }
-      if (loaded || pending) continue
-
-      pendingFarTiles.set(key, { fx, fz, builder: createFarTileBuilder(fx, fz) })
-    }
+function finalizeOverlayChunk(key, ox, oz, geo, canvas) {
+  const old = overlayChunks.get(key)
+  if (old) {
+    scene.remove(old.mesh)
+    old.geo.dispose()
+    old.tex.dispose()
+    old.mat.dispose()
   }
 
-  // --- Отменяем «уехавшие» pending (с учётом margin) ---
-  for (const [key, p] of pendingFarTiles) {
-    if (p.fx - fxi > U.fwd || fxi - p.fx > U.back || Math.abs(p.fz - fzi) > U.side) {
-      p.builder.geo.dispose()
-      pendingFarTiles.delete(key)
-    }
-  }
-
-  // --- Выгрузка (с учётом margin) ---
-  const toUnload = []
-  for (const key of farTiles.keys()) {
-    const [fxs, fzs] = key.split(',')
-    const fx = +fxs
-    const fz = +fzs
-    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
-      toUnload.push(key)
-    }
-  }
-  for (const k of toUnload) unloadFarTile(k)
-}
-
-/* ================================================================
-   OVERLAY CHUNKS — точечные деревья
-================================================================ */
-const OVERLAY_SIZE = CFG.OVERLAY.size
-const OVERLAY_SEG = CFG.OVERLAY.segments
-const OVERLAY_CANVAS = CFG.OVERLAY.canvasSize
-const OVERLAY_LOAD_R = CFG.OVERLAY.loadRadius
-const OVERLAY_UNLOAD_R = CFG.OVERLAY.unloadRadius
-
-const overlayChunks = new Map()
-const pendingOverlays = new Map()
-
-/* ---------- Кэш prop-items для overlay ----------
-   getProps() из chunks.js прунится по радиусу loadForward/Back/Side (~50 cells),
-   а overlay требует 40×40 cells. Без своего кэша большинство cells пересчитываются
-   заново → 224k итераций computeChunkProps на каждый overlay-чанк.
-   Этот кэш держит ссылки на уже посчитанные items и переживает прунинг глобального. */
-const overlayPropsCache = new Map()
-
-function getOverlayProps(cx, cz) {
-  const key = cx + ',' + cz
-  let items = overlayPropsCache.get(key)
-  if (items === undefined) {
-    items = getProps(cx, cz) // заполняет и глобальный кэш — не мешает
-    overlayPropsCache.set(key, items)
-  }
-  return items
-}
-
-function pruneOverlayPropsCache(camX, camZ) {
-  const cxi = Math.floor(camX / CHUNK_SIZE)
-  const czi = Math.floor(camZ / CHUNK_SIZE)
-  // Радиус в chunk-cells: overlay-radius (2) × 8 cells + запас 4
-  const R = OVERLAY_LOAD_R * Math.round(OVERLAY_SIZE / CHUNK_SIZE) + 4 // ≈20
-  for (const key of overlayPropsCache.keys()) {
-    const [cs, czs] = key.split(',')
-    if (Math.abs(+cs - cxi) > R || Math.abs(+czs - czi) > R) {
-      overlayPropsCache.delete(key)
-    }
-  }
-}
-
-/* ---------- Хелперы рисования точек ---------- */
-function hexToRgb(hex) {
-  return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]
-}
-
-function makeDiscOffsets(sizePx) {
-  const R = (sizePx - 1) / 2
-  const offsets = []
-  const R2 = R * R + 0.25
-  const Ri = Math.ceil(R)
-  for (let dy = -Ri; dy <= Ri; dy++) {
-    for (let dx = -Ri; dx <= Ri; dx++) {
-      if (dx * dx + dy * dy <= R2) offsets.push([dx, dy])
-    }
-  }
-  return offsets
-}
-
-function plotPoint(pix, W, H, cx, cy, offsets, r, g, b, a, merge) {
-  const sa = a / 255
-  if (sa <= 0) return
-
-  for (let i = 0; i < offsets.length; i++) {
-    const x = cx + offsets[i][0]
-    const y = cy + offsets[i][1]
-    if (x < 0 || x >= W || y < 0 || y >= H) continue
-
-    const i4 = (y * W + x) * 4
-
-    if (merge) {
-      const da = pix[i4 + 3] / 255
-      const inv = 1 - sa
-      const outA = sa + da * inv
-      if (outA <= 0) continue
-      const k = 1 / outA
-
-      pix[i4] = (r * sa + pix[i4] * da * inv) * k
-      pix[i4 + 1] = (g * sa + pix[i4 + 1] * da * inv) * k
-      pix[i4 + 2] = (b * sa + pix[i4 + 2] * da * inv) * k
-      pix[i4 + 3] = outA * 255
-    } else {
-      const curA = pix[i4 + 3]
-      if (a > curA) {
-        pix[i4] = r
-        pix[i4 + 1] = g
-        pix[i4 + 2] = b
-        pix[i4 + 3] = a
-      }
-    }
-  }
-}
-
-function createOverlayBuilder(ox, oz) {
-  const geo = new THREE.PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE, OVERLAY_SEG, OVERLAY_SEG)
-  geo.rotateX(-Math.PI / 2)
-  const pos = geo.attributes.position
-
-  const cxw = ox * OVERLAY_SIZE + OVERLAY_SIZE / 2
-  const czw = oz * OVERLAY_SIZE + OVERLAY_SIZE / 2
-  const vertsPerRow = OVERLAY_SEG + 1
-  const totalGeoRows = OVERLAY_SEG + 1
-
-  const W = OVERLAY_CANVAS
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = W
-  const ctx = canvas.getContext('2d')
-  ctx.clearRect(0, 0, W, W)
-
-  const imgData = ctx.createImageData(W, W)
-  const pix = imgData.data
-
-  const pxPerM = W / OVERLAY_SIZE
-  const chunksPerSide = Math.round(OVERLAY_SIZE / CHUNK_SIZE)
-  const totalChunkCells = chunksPerSide * chunksPerSide
-
-  const baseX = ox * OVERLAY_SIZE
-  const baseZ = oz * OVERLAY_SIZE
-
-  const O = CFG.OVERLAY
-  const PINE_RGB = hexToRgb(O.colors.pine)
-  const OAK_RGB = hexToRgb(O.colors.oak)
-  const DISC = makeDiscOffsets(O.pointSize)
-  const JIT = O.colorJitter
-  const MERGE = O.mergeAlpha
-  const BASE_ALPHA = O.pointAlpha * 255
-  const ALPHA_JIT = O.alphaJitter
-
-  const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v)
-
-  let phase = 0
-  let row = 0
-
-  return {
-    geo,
-    canvas,
-    step(budgetMs) {
-      const t0 = performance.now()
-
-      if (phase === 0) {
-        while (row < totalGeoRows && performance.now() - t0 < budgetMs) {
-          const start = row * vertsPerRow
-          const end = start + vertsPerRow
-          for (let i = start; i < end; i++) {
-            const wx = cxw + pos.getX(i)
-            const wz = czw + pos.getZ(i)
-            pos.setY(i, terrainHeight(wx, wz))
-          }
-          row++
-        }
-        if (row >= totalGeoRows) {
-          pos.needsUpdate = true
-          geo.computeVertexNormals()
-          phase = 1
-          row = 0
-        }
-      }
-
-      if (phase === 1) {
-        const c0x = Math.floor(baseX / CHUNK_SIZE)
-        const c0z = Math.floor(baseZ / CHUNK_SIZE)
-
-        while (row < totalChunkCells && performance.now() - t0 < budgetMs) {
-          const cx = c0x + (row % chunksPerSide)
-          const cz = c0z + Math.floor(row / chunksPerSide)
-          const items = getOverlayProps(cx, cz)
-
-          for (let k = 0; k < items.length; k++) {
-            const it = items[k]
-            if (it.kind !== 'pine' && it.kind !== 'oak') continue
-
-            const px = ((it.x - baseX) * pxPerM) | 0
-            const py = ((it.z - baseZ) * pxPerM) | 0
-            if (px < -3 || px >= W + 3 || py < -3 || py >= H_WRAP) continue
-
-            const h = hash2i((it.x * 10) | 0, (it.z * 10) | 0)
-            const rnd01 = (h & 1023) / 1023
-            const factor = 1 + (rnd01 * 2 - 1) * JIT
-
-            const base = it.kind === 'pine' ? PINE_RGB : OAK_RGB
-            const cr = clamp255(base[0] * factor) | 0
-            const cg = clamp255(base[1] * factor) | 0
-            const cb = clamp255(base[2] * factor) | 0
-
-            const rnd02 = ((h >>> 10) & 1023) / 1023
-            const aFactor = 1 + (rnd02 * 2 - 1) * ALPHA_JIT
-            const ca = clamp255(BASE_ALPHA * aFactor) | 0
-
-            plotPoint(pix, W, W, px, py, DISC, cr, cg, cb, ca, MERGE)
-          }
-          row++
-        }
-
-        if (row >= totalChunkCells) {
-          ctx.putImageData(imgData, 0, 0)
-          return true
-        }
-      }
-
-      return false
-    },
-  }
-}
-// локальный алиас — W из builder не виден в замыкании выше
-const H_WRAP = OVERLAY_CANVAS
-
-function getOverlayOpacity() {
-  const groundFade =
-    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
-  return farHighMode ? 0 : lod.fade * groundFade
-}
-function finalizeOverlayChunk(key, ox, oz, builder) {
-  const tex = new THREE.CanvasTexture(builder.canvas)
+  const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.minFilter = THREE.LinearFilter
   tex.magFilter = THREE.LinearFilter
@@ -529,21 +159,27 @@ function finalizeOverlayChunk(key, ox, oz, builder) {
   })
   applySkyFog(mat)
 
-  const mesh = new THREE.Mesh(builder.geo, mat)
+  const mesh = new THREE.Mesh(geo, mat)
   mesh.position.set(ox * OVERLAY_SIZE + OVERLAY_SIZE / 2, 0, oz * OVERLAY_SIZE + OVERLAY_SIZE / 2)
   mesh.renderOrder = 2
-  // Правильная текущая прозрачность (учитывает groundFade и farHighMode).
-  // Иначе новый чанк «вспыхивает» на 1+ кадров, пока кэш _lastOverlayOpacity
-  // не пересчитается — именно это и выглядит как «глюк оверлея».
+
   const op = getOverlayOpacity()
   mesh.material.opacity = op
   mesh.visible = op > 0.005
-  // Инвалидируем кэш — на всякий случай, чтобы следующий кадр гарантированно
-  // переустановил opacity для всех чанков (включая этот новый).
+
+  // Инвалидируем кэш, чтобы следующий кадр точно применил прозрачность
   _lastOverlayOpacity = NaN
   scene.add(mesh)
+  overlayChunks.set(key, { mesh, mat, tex, geo })
+}
 
-  overlayChunks.set(key, { mesh, mat, tex, geo: builder.geo })
+function unloadFarTile(key) {
+  pendingFarTiles.delete(key) // Отменяем запрос, если он еще висел
+  const c = farTiles.get(key)
+  if (!c) return
+  scene.remove(c.mesh)
+  c.geo.dispose()
+  farTiles.delete(key)
 }
 
 function unloadOverlayChunk(key) {
@@ -556,15 +192,100 @@ function unloadOverlayChunk(key) {
   overlayChunks.delete(key)
 }
 
+/* ---------- Границы и режимы ---------- */
+function getFarLoadBounds() {
+  if (farHighMode) {
+    return {
+      fwd: CFG.FAR_TILES.loadFwdHigh,
+      back: CFG.FAR_TILES.loadBackHigh,
+      side: CFG.FAR_TILES.loadSideHigh,
+    }
+  }
+  return {
+    fwd: CFG.FAR_TILES.loadFwd,
+    back: CFG.FAR_TILES.loadBack,
+    side: CFG.FAR_TILES.loadSide,
+  }
+}
+
+function getFarUnloadBounds() {
+  const m = CFG.FAR_TILES.unloadMargin
+  const L = getFarLoadBounds()
+  return { fwd: L.fwd + m, back: L.back + m, side: L.side + m }
+}
+
+function updateFarMode(altSmooth) {
+  const F = CFG.FAR_TILES
+  let next = farHighMode
+  if (!farHighMode && altSmooth > F.altitudeHigh) next = true
+  else if (farHighMode && altSmooth < F.altitudeLow) next = false
+
+  if (next === farHighMode) return false
+  farHighMode = next
+  farTileSeg = farHighMode ? F.segmentsHigh : F.segments
+  return true
+}
+
+export function refillFarTiles(camX, camZ) {
+  const fxi = Math.floor(camX / FAR_TILE_SIZE)
+  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
+  const L = getFarLoadBounds()
+  const U = getFarUnloadBounds()
+
+  // Запрос новых тайлов (или обновление старых)
+  for (let dx = -L.back; dx <= L.fwd; dx++) {
+    for (let dz = -L.side; dz <= L.side; dz++) {
+      const fx = fxi + dx
+      const fz = fzi + dz
+      const key = fx + ',' + fz
+      const loaded = farTiles.get(key)
+      const pending = pendingFarTiles.has(key)
+
+      // Если тайл загружен, но с меньшим seg (нужно обновить при спуске) —
+      // НЕ удаляем его! Просто запрашиваем новый. Старый останется на экране.
+      if (loaded && loaded.seg < farTileSeg) {
+        if (!pending) {
+          pendingFarTiles.add(key)
+          lodWorker.postMessage({ type: 'far', fx, fz, seg: farTileSeg })
+        }
+        continue
+      }
+
+      // Если тайла нет вообще — запрашиваем
+      if (!loaded && !pending) {
+        pendingFarTiles.add(key)
+        lodWorker.postMessage({ type: 'far', fx, fz, seg: farTileSeg })
+      }
+    }
+  }
+
+  // Очищаем "улетевшие" pending-запросы (чтобы воркер не тратил на них время)
+  for (const key of pendingFarTiles) {
+    const [fxs, fzs] = key.split(',')
+    const fx = +fxs
+    const fz = +fzs
+    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
+      pendingFarTiles.delete(key)
+    }
+  }
+
+  // Выгрузка только тех тайлов, которые реально далеко ушли за границы
+  const toUnload = []
+  for (const key of farTiles.keys()) {
+    const [fxs, fzs] = key.split(',')
+    const fx = +fxs
+    const fz = +fzs
+    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
+      toUnload.push(key)
+    }
+  }
+  for (const k of toUnload) unloadFarTile(k)
+}
+
 export function refillOverlayChunks(camX, camZ) {
-  if (!CFG.OVERLAY.enabled) {
-    if (overlayChunks.size > 0) {
-      for (const key of [...overlayChunks.keys()]) unloadOverlayChunk(key)
-    }
-    if (pendingOverlays.size > 0) {
-      for (const [, p] of pendingOverlays) p.builder.geo.dispose()
-      pendingOverlays.clear()
-    }
+  if (!CFG.OVERLAY.enabled || farHighMode) {
+    for (const key of [...overlayChunks.keys()]) unloadOverlayChunk(key)
+    pendingOverlays.clear() // Отменяем все запросы, если ушли в 2D
     return
   }
 
@@ -573,21 +294,26 @@ export function refillOverlayChunks(camX, camZ) {
 
   for (let dx = -OVERLAY_LOAD_R; dx <= OVERLAY_LOAD_R; dx++) {
     for (let dz = -OVERLAY_LOAD_R; dz <= OVERLAY_LOAD_R; dz++) {
-      const ox = oxi + dx,
-        oz = ozi + dz
+      const ox = oxi + dx
+      const oz = ozi + dz
       const key = ox + ',' + oz
-      if (overlayChunks.has(key) || pendingOverlays.has(key)) continue
-      pendingOverlays.set(key, { ox, oz, builder: createOverlayBuilder(ox, oz) })
+
+      if (!overlayChunks.has(key) && !pendingOverlays.has(key)) {
+        pendingOverlays.add(key)
+        lodWorker.postMessage({ type: 'overlay', ox, oz })
+      }
     }
   }
 
-  for (const [key, p] of pendingOverlays) {
-    if (Math.abs(p.ox - oxi) > OVERLAY_UNLOAD_R || Math.abs(p.oz - ozi) > OVERLAY_UNLOAD_R) {
-      p.builder.geo.dispose()
+  // Отменяем улетевшие pending-запросы
+  for (const key of pendingOverlays) {
+    const [oxs, ozs] = key.split(',')
+    if (Math.abs(+oxs - oxi) > OVERLAY_UNLOAD_R || Math.abs(+ozs - ozi) > OVERLAY_UNLOAD_R) {
       pendingOverlays.delete(key)
     }
   }
 
+  // Выгрузка
   const toUnload = []
   for (const key of overlayChunks.keys()) {
     const [oxs, ozs] = key.split(',')
@@ -596,87 +322,28 @@ export function refillOverlayChunks(camX, camZ) {
     }
   }
   for (const k of toUnload) unloadOverlayChunk(k)
-  pruneOverlayPropsCache(camX, camZ)
 }
 
 /* ================================================================
-   processLODWork — единый планировщик дальнего плана.
-
-   Приоритет:
-     1) FAR_TILES (ландшафт) — идёт ВСЕГДА первым.
-     2) OVERLAY (деревья)   — берёт только остатки времени,
-                               либо свой полный бюджет, если
-                               ландшафт уже пуст.
-
-   Пока terrain не догнал — overlay фактически «на паузе».
-   Это критично при быстром полёте: визуально дырка в земле
-   намного хуже, чем отсутствие точек деревьев.
-================================================================ */
-const BUDGET_TERRAIN_MS = 5
-const BUDGET_OVERLAY_MS = 3
-
-export function processLODWork() {
-  const t0 = performance.now()
-
-  // --- 1) Ландшафт — всегда в приоритете ---
-  if (pendingFarTiles.size > 0) {
-    for (const [key, p] of pendingFarTiles) {
-      const elapsed = performance.now() - t0
-      if (elapsed >= BUDGET_TERRAIN_MS) break
-      if (p.builder.step(BUDGET_TERRAIN_MS - elapsed)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, p.builder.seg)
-        pendingFarTiles.delete(key)
-      }
-    }
-  }
-
-  // --- 2) Overlay: на высокой высоте вообще не строим ---
-  if (farHighMode) return
-  if (pendingOverlays.size === 0) return
-
-  const terrainElapsed = performance.now() - t0
-  const terrainDone = pendingFarTiles.size === 0
-  const overlayBudget = terrainDone
-    ? BUDGET_OVERLAY_MS
-    : Math.max(0, BUDGET_TERRAIN_MS - terrainElapsed)
-
-  if (overlayBudget < 1) return
-
-  const t1 = performance.now()
-  for (const [key, p] of pendingOverlays) {
-    const elapsed = performance.now() - t1
-    if (elapsed >= overlayBudget) break
-    if (p.builder.step(overlayBudget - elapsed)) {
-      finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
-      pendingOverlays.delete(key)
-    }
-  }
-}
-
-/* ================================================================
-   updateFogEllipse — центр и направление эллипса тумана.
+   FOG & LOD UPDATE
 ================================================================ */
 export function updateFogEllipse(dt) {
   fogU.center.value.set(rocketState.pos.x, rocketState.pos.z)
-
   const v = rocketState.vel
   const speed = Math.hypot(v.x, v.z)
 
   if (speed >= CFG.FOG.dirMinSpeed) {
     const tx = v.x / speed
     const tz = v.z / speed
-
     const k = 1 - Math.exp(-CFG.FOG.dirSmoothing * dt)
     fogU.dir.value.x += (tx - fogU.dir.value.x) * k
     fogU.dir.value.y += (tz - fogU.dir.value.y) * k
-
     const l = Math.hypot(fogU.dir.value.x, fogU.dir.value.y) || 1
     fogU.dir.value.x /= l
     fogU.dir.value.y /= l
   }
 }
 
-// Плавное гашение земли у дальней плоскости (используем CFG.SPACE).
 function smoothstep(a, b, x) {
   if (x <= a) return 0
   if (x >= b) return 1
@@ -684,10 +351,12 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t)
 }
 
-/* ================================================================
-   updateLOD — определение 2D/3D режима, fade, видимости,
-   динамический туман по высоте.
-================================================================ */
+function getOverlayOpacity() {
+  const groundFade =
+    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
+  return farHighMode ? 0 : lod.fade * groundFade
+}
+
 const FOG_3D_NEAR = CFG.FOG.near3D
 const FOG_3D_FAR = CFG.FOG.far3D
 const FOG_2D_NEAR = CFG.FOG.near2D
@@ -722,22 +391,17 @@ function updateLOD(dt) {
     lod.fogDelay = 0
     lod.altInit = true
   } else {
-    // altSmooth — как раньше (его используют чанки, far tiles, in2D)
     const k = 1 - Math.exp(-4.0 * dt)
     lod.altSmooth += (alt - lod.altSmooth) * k
 
-    // fogAlt — асимметрично, только для тумана
     const fogDiff = alt - lod.fogAlt
     if (fogDiff >= 0) {
-      // Летим вверх — туман рассеивается быстро, сбрасываем паузу
       lod.fogDelay = CFG.FOG.altDescendDelay
       const kUp = 1 - Math.exp(-CFG.FOG.altRiseSpeed * dt)
       lod.fogAlt += fogDiff * kUp
     } else {
-      // Летим вниз — сначала пауза, потом плавное сгущение
       if (lod.fogDelay > 0) {
         lod.fogDelay -= dt
-        // fogAlt держим на месте — туман ещё не сгущается
       } else {
         const kDn = 1 - Math.exp(-CFG.FOG.altFallSpeed * dt)
         lod.fogAlt += fogDiff * kDn
@@ -761,8 +425,6 @@ function updateLOD(dt) {
   const groundFade =
     1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
   const farOpacity = lod.fade * groundFade
-
-  // Overlay виден только в 2D-режиме И в низком far-режиме.
   const overlayOpacity = getOverlayOpacity()
 
   if (overlayOpacity !== _lastOverlayOpacity) {
@@ -802,7 +464,7 @@ function updateLOD(dt) {
     lod.showing3D = want3D
   }
 
-  // ─── 3D-туман (только до 2D-режима) ───
+  // ─── 3D-туман ───
   let dNear3D = FOG_3D_NEAR
   let dFar3D = FOG_3D_FAR
   if (CFG.FOG.dynamicByAltitude) {
@@ -812,9 +474,7 @@ function updateLOD(dt) {
     dFar3D = F.farGround + (FOG_3D_FAR - F.farGround) * t
   }
 
-  // ─── 2D-туман: от (nearGround2D, farGround2D) на высоте
-  //     переключения (LOD.changeAltitude) → до (near2D, far2D)
-  //     на высоте altRef2D. ───
+  // ─── 2D-туман ───
   let dNear2D = FOG_2D_NEAR
   let dFar2D = FOG_2D_FAR
   if (CFG.FOG.dynamicByAltitude) {
@@ -825,7 +485,6 @@ function updateLOD(dt) {
     dFar2D = F.farGround2D + (FOG_2D_FAR - F.farGround2D) * t
   }
 
-  // ─── Смешение по fade: 0 = чистый 3D, 1 = чистый 2D ───
   scene.fog.near = dNear3D + (dNear2D - dNear3D) * lod.fade
   scene.fog.far = dFar3D + (dFar2D - dFar3D) * lod.fade
 }
@@ -836,6 +495,9 @@ export function setPhaseGetter(fn) {
   _getPhase = fn
 }
 const G_PHASE = () => _getPhase()
+
+// Временный импорт для updateLOD (чтобы не тянуть game.js)
+import { terrainHeight } from './world/world.js'
 
 /* ================================================================
    update — точка входа per-frame.
@@ -851,17 +513,7 @@ export function update(dt) {
   updateLOD(dt)
 
   // ─── Полный космос: нижний мир уже погашен (groundFade=0). ───
-  // Ничего не грузим, а pending-очереди чистим, если что-то висело.
   if (rocketState.pos.y >= CFG.SPACE.groundFadeEnd) {
-    if (pendingFarTiles.size > 0) {
-      for (const [, p] of pendingFarTiles) p.builder.geo.dispose()
-      pendingFarTiles.clear()
-    }
-    if (pendingOverlays.size > 0) {
-      for (const [, p] of pendingOverlays) p.builder.geo.dispose()
-      pendingOverlays.clear()
-    }
-    // Сбрасываем кэш клетки — при спуске refill отработает заново
     _lastFar.x = NaN
     _lastFar.z = NaN
     _lastOverlay.x = NaN
@@ -870,9 +522,9 @@ export function update(dt) {
   }
 
   const modeChanged = updateFarMode(lod.altSmooth)
-
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
+
   if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
     refillFarTiles(camX, camZ)
     _lastFar.x = fxi
@@ -886,72 +538,35 @@ export function update(dt) {
     _lastOverlay.x = oxi
     _lastOverlay.z = ozi
   }
-
-  processLODWork()
 }
 
 /* ================================================================
-   loadInitialFar / loadInitialOverlays — порционная загрузка.
+   loadInitialFar — ждём, пока воркеры сгенерируют стартовые тайлы
 ================================================================ */
 export async function loadInitialFar(onStep) {
   refillFarTiles(camera.position.x, camera.position.z)
   let done = 0
-  onStep(done)
+  onStep(0)
 
-  const BUDGET_MS = 12
-  while (pendingFarTiles.size > 0) {
-    const t0 = performance.now()
-    for (const [key, p] of pendingFarTiles) {
-      if (p.builder.step(4)) {
-        finalizeFarTile(key, p.fx, p.fz, p.builder.geo, p.builder.seg)
-        pendingFarTiles.delete(key)
-        done++
-      }
-      if (performance.now() - t0 >= BUDGET_MS) break
-    }
+  while (pendingFarTiles.size > 0 || farTiles.size === 0) {
+    await new Promise((r) => setTimeout(r, 50))
+    done = farTiles.size
     onStep(done)
-    await new Promise((r) => requestAnimationFrame(r))
-  }
-  return done
-}
-
-export async function loadInitialOverlays(onStep) {
-  refillOverlayChunks(camera.position.x, camera.position.z)
-  let done = 0
-  onStep(done)
-
-  const BUDGET_MS = 12
-  while (pendingOverlays.size > 0) {
-    const t0 = performance.now()
-    for (const [key, p] of pendingOverlays) {
-      if (p.builder.step(4)) {
-        finalizeOverlayChunk(key, p.ox, p.oz, p.builder)
-        pendingOverlays.delete(key)
-        done++
-      }
-      if (performance.now() - t0 >= BUDGET_MS) break
-    }
-    onStep(done)
-    await new Promise((r) => requestAnimationFrame(r))
   }
   return done
 }
 
 /* ================================================================
-   countInitialFar / countInitialOverlays — общий объём для прогресс-бара.
-   Заодно наполняет pending-очереди (refill идемпотентен).
+   countInitialFar — общий объём для прогресс-бара
 ================================================================ */
 export function countInitialFar() {
   refillFarTiles(camera.position.x, camera.position.z)
-  return pendingFarTiles.size
+  return pendingFarTiles.size + farTiles.size
 }
 
-export function countInitialOverlays() {
-  refillOverlayChunks(camera.position.x, camera.position.z)
-  return pendingOverlays.size
-}
-
-/* ---------- Debug ---------- */
+/* ================================================================
+   Debug
+================================================================ */
 export function getStats() {
   return {
     farTiles: farTiles.size,

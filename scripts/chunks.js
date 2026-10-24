@@ -654,6 +654,12 @@ function processReadyChunks() {
     const { key, cx, cz, data } = readyChunks[bestIdx]
     readyChunks.splice(bestIdx, 1) // забираем из очереди
 
+    // NEW: пропускаем дубликат — чанк уже загружен
+    if (chunks.has(key)) {
+      console.warn('[dup chunk]', key)
+      continue
+    }
+
     // 2. Проверяем, не устарел ли он (вдруг камера улетела, пока он ждал)
     const dx = cx - cxi
     const dz = cz - czi
