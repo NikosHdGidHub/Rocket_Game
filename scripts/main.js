@@ -18,6 +18,7 @@ import { G, time } from './state.js'
 import * as Abilities from './abilities.js'
 import * as Sounds from './sounds.js'
 import * as Sign from './sign.js'
+import * as Debug from './debug.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
@@ -101,6 +102,8 @@ Space.init() //  (создаёт звёзды и InstancedMesh сфер)
    2. Первичная загрузка с прогресс-баром.
 ================================================================ */
 async function initialLoad() {
+  Debug.init()
+  window.__dbgChunks = Chunks.getStats
   const $loading = document.getElementById('loading')
   const $bar = document.getElementById('loadingBar')
   const $text = document.getElementById('loadingText')
@@ -172,8 +175,10 @@ function loop(now) {
 
   const realDt = Math.min(MAX_FRAME_DT, (now - last) / 1000)
   last = now
+  const frameStart = performance.now()
 
   // ─── Физика: fixed step ───
+  const tPhys = performance.now()
   accumulator += realDt
   let steps = 0
   while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
@@ -183,27 +188,48 @@ function loop(now) {
     steps++
   }
   if (steps >= MAX_STEPS) accumulator = 0
+  Debug.mark('physics', performance.now() - tPhys)
 
   // ─── Визуал: раз в кадр ───
+  const tVis = performance.now()
   const alpha = accumulator / FIXED_DT
   const visualTime = time.gameTime - FIXED_DT + FIXED_DT * alpha
   Game.updateVisuals(realDt, alpha, visualTime)
+  Debug.mark('visuals', performance.now() - tVis)
 
+  let t = performance.now()
   Chunks.update()
+  Debug.mark('chunks', performance.now() - t)
+
+  t = performance.now()
   Lod.update(realDt)
+  Debug.mark('lod', performance.now() - t)
+
+  t = performance.now()
   DayNight.update(realDt)
+  Debug.mark('daynight', performance.now() - t)
+
+  t = performance.now()
   Space.update()
+  Debug.mark('space', performance.now() - t)
+
+  t = performance.now()
   UI.update()
+  Debug.mark('ui', performance.now() - t)
+
+  t = performance.now()
   Scene.updateScenery()
+  Debug.mark('scenery', performance.now() - t)
 
+  t = performance.now()
   Scene.render()
-  requestAnimationFrame(loop)
+  Debug.mark('render', performance.now() - t)
 
-  // в конце loop:
-  /*if (steps !== lastSteps) {
-    console.log(`steps=${steps} dt=${(realDt * 1000).toFixed(1)}ms`)
-    lastSteps = steps
-  }*/
+  const total = performance.now() - frameStart
+  Debug.mark('total', total)
+  Debug.frame(realDt * 1000)
+
+  requestAnimationFrame(loop)
 }
 
 initialLoad()
