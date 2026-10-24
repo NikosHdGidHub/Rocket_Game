@@ -741,17 +741,29 @@ let _lastPersist = { cxi: NaN, czi: NaN, showFine: null, showProps: null }
 let _preloading = false
 
 export function update() {
-  // Полный 2D без префетча — ни очередей, ни видимости не трогаем.
-  if (lod.fade > 0.5 && !_preloading && lod.altSmooth > CFG.CHUNKS.preloadAltitude) {
-    return
-  }
-
   const camX = camera.position.x
   const camY = camera.position.y
   const camZ = camera.position.z
-
   const cxi = Math.floor(camX / CHUNK_SIZE)
   const czi = Math.floor(camZ / CHUNK_SIZE)
+
+  // ── Сначала — persistent visibility, она не про префетч ──
+  const showFine = lod.fade < 0.95
+  const showProps = lod.showing3D
+  if (
+    cxi !== _lastPersist.cxi ||
+    czi !== _lastPersist.czi ||
+    showFine !== _lastPersist.showFine ||
+    showProps !== _lastPersist.showProps
+  ) {
+    updatePersistentVisibility(camX, camZ)
+    _lastPersist = { cxi, czi, showFine, showProps }
+  }
+
+  // ── Затем — early-return для очередей в чистом 2D ──
+  if (lod.fade > 0.5 && !_preloading && lod.altSmooth > CFG.CHUNKS.preloadAltitude) {
+    return
+  }
 
   // Префетч: в 2D, но уже не слишком высоко — готовим почву для спуска.
   const wantPreload = lod.fade > 0.5 && lod.altSmooth < CFG.CHUNKS.preloadAltitude
@@ -772,8 +784,6 @@ export function update() {
   processReadyChunks() //  добавить максимум 1 чанк в сцену
   processChunkQueue() // отправить задачи свободным воркерам
 
-  const showFine = lod.fade < 0.95
-  const showProps = lod.showing3D
   if (
     cxi !== _lastPersist.cxi ||
     czi !== _lastPersist.czi ||
