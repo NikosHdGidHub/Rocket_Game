@@ -583,13 +583,13 @@ export const CHUNKS = /** @type {const} */ ({
   segments: 53,
 
   /** Сколько чанков грузить ВПЕРЁД (в +X).*/
-  loadForward: 9,
+  loadForward: 12,
 
   /**Сколько чанков грузить НАЗАД (в -X).*/
   loadBack: 1,
 
   /** Сколько чанков грузить В СТОРОНЫ (±Z).*/
-  loadSide: 4,
+  loadSide: 7,
 
   /**Высота на которой подгружаются компрессные чанки */
   preloadAltitude: 1100,
@@ -1851,7 +1851,7 @@ export const GPU_HINT = /** @type {const} */ ({
    Стоит на x=2000, лицом против движения ракеты. Статична.
 ================================================================ */
 export const SIGN = /** @type {const} */ ({
-  enabled: true,
+  enabled: false,
 
   /** Шрифт three.js typeface (JSON). */
   fontUrl: '../data/fonts/helvetiker_bold.typeface.json',
