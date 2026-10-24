@@ -718,10 +718,31 @@ function updateLOD(dt) {
 
   if (!lod.altInit) {
     lod.altSmooth = alt
+    lod.fogAlt = alt
+    lod.fogDelay = 0
     lod.altInit = true
   } else {
+    // altSmooth — как раньше (его используют чанки, far tiles, in2D)
     const k = 1 - Math.exp(-4.0 * dt)
     lod.altSmooth += (alt - lod.altSmooth) * k
+
+    // fogAlt — асимметрично, только для тумана
+    const fogDiff = alt - lod.fogAlt
+    if (fogDiff >= 0) {
+      // Летим вверх — туман рассеивается быстро, сбрасываем паузу
+      lod.fogDelay = CFG.FOG.altDescendDelay
+      const kUp = 1 - Math.exp(-CFG.FOG.altRiseSpeed * dt)
+      lod.fogAlt += fogDiff * kUp
+    } else {
+      // Летим вниз — сначала пауза, потом плавное сгущение
+      if (lod.fogDelay > 0) {
+        lod.fogDelay -= dt
+        // fogAlt держим на месте — туман ещё не сгущается
+      } else {
+        const kDn = 1 - Math.exp(-CFG.FOG.altFallSpeed * dt)
+        lod.fogAlt += fogDiff * kDn
+      }
+    }
   }
 
   if (!lod.in2D) {
@@ -786,7 +807,7 @@ function updateLOD(dt) {
   let dFar3D = FOG_3D_FAR
   if (CFG.FOG.dynamicByAltitude) {
     const F = CFG.FOG
-    const t = Math.min(1, Math.max(0, lod.altSmooth / F.altRef3D))
+    const t = Math.min(1, Math.max(0, lod.fogAlt / F.altRef3D))
     dNear3D = F.nearGround + (FOG_3D_NEAR - F.nearGround) * t
     dFar3D = F.farGround + (FOG_3D_FAR - F.farGround) * t
   }
