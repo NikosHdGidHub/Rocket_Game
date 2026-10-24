@@ -345,13 +345,13 @@ export const TERRAIN = /** @type {const} */ ({
   growthStart: 2000,
 
   /** Скорость роста (прибавка growth за 1 м по X).*/
-  growthRate: 1 / 20000,
+  growthRate: 1 / 10000,
 
   /** X-координата ПИКА роста. growth доходит до максимума здесь. */
   growthPeak: 20000,
 
   /** X-координата возврата growth к baseline (=1). Горы ещё видны. */
-  growthEnd: 30000,
+  growthEnd: 40000,
 
   /** Длина (м) финального затухания гор в равнину. [типично] 1500–3000. 0 = без затухания (горы остаются baseline навсегда).*/
   mountainsRampOut: 1800,
