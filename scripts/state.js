@@ -96,3 +96,9 @@ export const bestFlight = {
   /** Дистанция этого полёта (для отладки / UI). */
   best: 0,
 }
+
+/** Runtime flags (not persisted). */
+export const runtime = {
+  /** Активна ли тяга прямо сейчас (для visuals + ghostRecorder). */
+  boosting: false,
+}
