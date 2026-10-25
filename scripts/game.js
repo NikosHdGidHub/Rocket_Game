@@ -899,7 +899,11 @@ function updateRocketVisuals(dt) {
   _workingFlame.copy(targetFlame).lerp(_lowAltFlameColor, 1 - engineEff)
   flameMat.color.copy(_workingFlame)
   flameMat.opacity = boosting || forsageActive ? 0.95 : 0.5
-  exhaustLight.intensity = boostAmt * (boosting || forsageActive ? 45 : 8)
+  exhaustLight.intensity =
+    boostAmt *
+    (boosting || forsageActive
+      ? CFG.ROCKET.exhaustLightIntensityBoost
+      : CFG.ROCKET.exhaustLightIntensityIdle)
 }
 
 /* ================================================================

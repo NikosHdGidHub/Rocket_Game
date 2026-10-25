@@ -173,7 +173,12 @@ flameInner.position.x = -1.85
 flameInner.castShadow = false
 rocket.add(flameInner)
 
-export const exhaustLight = new THREE.PointLight(CFG.ROCKET.exhaustLight, 0, 14)
+export const exhaustLight = new THREE.PointLight(
+  CFG.ROCKET.exhaustLight,
+  0,
+  CFG.ROCKET.exhaustLightRange,
+  CFG.ROCKET.exhaustLightDecay
+)
 exhaustLight.position.set(-2.0, 0, 0)
 rocket.add(exhaustLight)
 
@@ -232,10 +237,16 @@ function getChestMats(type) {
   return chestMats[type]
 }
 
-/* ---------- Один общий источник света, «переезжает» к ближайшему сундуку ---------- */
-const chestLight = new THREE.PointLight(CFG.CHESTS.glowColor, 0, 40)
-scene.add(chestLight)
-chestLight.visible = false
+/* ---------- Пул PointLight'ов: N всегда в сцене, гаснут через intensity ---------- */
+const _chestLightPool = []
+{
+  const L = CFG.CHESTS.lights
+  for (let i = 0; i < L.count; i++) {
+    const light = new THREE.PointLight(CFG.CHESTS.glowColor, 0, L.range, L.decay)
+    scene.add(light)
+    _chestLightPool.push(light)
+  }
+}
 
 /* ---------- Геометрии — общие для всех сундуков ---------- */
 const bodyGeo = new THREE.BoxGeometry(2.4, 1.4, 1.6)
@@ -336,34 +347,53 @@ export function updateChests(dt, rx, rz) {
     mats.beam.opacity = pulse
   }
 
-  let nearest = null
-  let nearestD2 = Infinity
+  // Glow-сферы: масштаб от близости
+  for (const c of chests) {
+    if (c.opened) continue
+    const dx = rx - c.x
+    const dz = rz - c.z
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
+    c.glow.scale.setScalar(1 + near * 0.6)
+  }
 
+  // Пул источников света — N ближайших неоткрытых сундуков
+  updateChestLights(dt, rx, rz)
+}
+
+function updateChestLights(dt, rx, rz) {
+  const L = CFG.CHESTS.lights
+
+  const candidates = []
   for (const c of chests) {
     if (c.opened) continue
     const dx = rx - c.x
     const dz = rz - c.z
     const d2 = dx * dx + dz * dz
-    if (d2 < nearestD2) {
-      nearestD2 = d2
-      nearest = c
-    }
-    const dist = Math.sqrt(d2)
-    const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
-    c.glow.scale.setScalar(1 + near * 0.6)
+    candidates.push({ chest: c, d2 })
   }
+  candidates.sort((a, b) => a.d2 - b.d2)
 
-  const R = 500
-  if (nearest && nearestD2 < R * R) {
-    const override = CFG.CHESTS.types[nearest.type] || {}
+  const k = 1 - Math.exp(-L.fadeSpeed * dt)
+
+  for (let i = 0; i < _chestLightPool.length; i++) {
+    const light = _chestLightPool[i]
+    const cand = candidates[i]
+
+    if (!cand) {
+      // Свободный свет — плавно гасим
+      light.intensity += (0 - light.intensity) * k
+      continue
+    }
+
+    const c = cand.chest
+    const override = CFG.CHESTS.types[c.type] || {}
     const glowColor = override.glowColor ?? CFG.CHESTS.glowColor
-    chestLight.color.setHex(glowColor)
-    const gy = terrainHeight(nearest.x, nearest.z)
-    chestLight.position.set(nearest.x, gy + 2.0, nearest.z)
-    chestLight.intensity = CFG.CHESTS.glowIntensity * 2
-    chestLight.visible = true
-  } else {
-    chestLight.visible = false
+    if (light.color.getHex() !== glowColor) light.color.setHex(glowColor)
+
+    const gy = terrainHeight(c.x, c.z)
+    light.position.set(c.x, gy + L.height, c.z)
+    light.intensity += (L.intensity - light.intensity) * k
   }
 }
 
