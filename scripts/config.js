@@ -1398,25 +1398,26 @@ export const RULES = {
    СУНДУКИ — статичные точки на земле, дают редкие карточки.
    ================================================================ */
 
+/* ---------- Объединённый список ----------
+   Дублирующиеся X раньше ломали: если X есть и в xPositions, и в
+   specialChests — сундук создавался дважды (второй перекрывал первый).
+   Теперь xPositions — только «обычные», specialChests — только спец.
+   allPositions = объединение, вычисляется один раз при загрузке. */
+const _chestX = [3000, 5000, 8000, 12000, 17000, 23000, 30000, 38000]
+const _specialChests = {
+  6000: 'forsage',
+  15000: 'forsage',
+}
+
 export const CHESTS = /** @type {const} */ ({
   enabled: true,
 
-  /**
-   * X-координаты ВСЕХ сундуков. Порядок важен — по возрастанию.
-   * 6000 и 15000 — специальные (forsage), остальные — случайные.
-   */
-  xPositions: [3000, 5000, 6000, 8000, 12000, 15000, 17000, 23000, 30000, 38000],
+  xPositions: _chestX,
+  specialChests: _specialChests,
 
-  /**
-   * Специальные сундуки: X → тип.
-   * Сундук с типом 'forsage' гарантированно выдаёт (или улучшает)
-   * способность «Форсаж». Если способность уже максимальна —
-   * выдаёт случайную карточку (fallback).
-   */
-  specialChests: {
-    6000: 'forsage',
-    15000: 'forsage',
-  },
+  /** Единый отсортированный список ВСЕХ X. Используется везде, где
+      раньше был CHESTS.xPositions: initChests, ачивки, прогресс-бар. */
+  allPositions: [..._chestX, ...Object.keys(_specialChests).map(Number)].sort((a, b) => a - b),
 
   /**
    * Визуальные override-ы по типу. Всё, чего нет в types[type],
@@ -1455,6 +1456,64 @@ export const CHESTS = /** @type {const} */ ({
   cardTypeLimit: 2,
 })
 
+/* ================================================================
+   ГЕМЫ — валюта карточек. Левитируют над землёй, собираются в полёте.
+
+   Отличия от сундуков:
+   • Нет beam (столба света) и нет прогресс-бара — только свечение.
+   • Подбираются в сфере (x, y, z) радиусом takeRange, а не падением.
+   • X-смещение рандомится от seed: реальная позиция = xPositions[i]
+     + hash-смещение по x, y, z. Одна и та же между сессиями.
+   • Собираются один раз, навсегда (как сундуки).
+   ================================================================ */
+export const GEMS = /** @type {const} */ ({
+  enabled: true,
+
+  /** Базовые X. Порядок — по возрастанию. Реальные X = база + смещение. */
+  xPositions: [2000, 4500, 7000, 10000, 14000, 19000, 26000, 34000, 42000],
+
+  /** Разброс по X от базового (м, ±). */
+  xPosDif: 30,
+
+  /** Базовая высота над рельефом (м). */
+  yOffset: 40,
+
+  /** Разброс по Y (м, ±). Реальная высота = yOffset ± yPosDif. */
+  yPosDif: 15,
+
+  /** Разброс по Z (м, ±). Та же механика, что у сундуков. */
+  zOffset: 30,
+
+  /** Радиус сбора — сфера по (x, y, z), не только XZ. */
+  takeRange: 40,
+
+  /** Радиус октаэдра (м). */
+  size: 1.8,
+
+  /** Радиус аддитивной сферы-свечения вокруг гема (м). */
+  glowSize: 6,
+  glowOpacity: 0.35,
+
+  /** Цвета (синий ромб). */
+  colors: {
+    core: 0x7ed4ff, // базовый цвет кристалла
+    emissive: 0x4daeff, // свечение изнутри
+    glow: 0x3d8bff, // ореол вокруг
+  },
+
+  /** Общий PointLight, «переезжает» к ближайшему гему в радиусе. */
+  glowLightColor: 0x4daeff,
+  glowLightIntensity: 3.0,
+  glowLightRange: 60,
+  glowLightRadius: 500, // радиус от ракеты, в котором свет активен
+
+  /** Анимация. */
+  bobSpeed: 1.4, // скорость парения по Y
+  bobHeight: 2.0, // амплитуда парения (м, доп. к позиции)
+  rotateSpeed: 0.9, // скорость вращения вокруг Y
+  pulseSpeed: 2.5, // скорость пульсации ореола
+})
+
 /**
  * Редкие карточки.
  *
@@ -1485,6 +1544,8 @@ export const CARDS = /** @type {const} */ ([
       { stat: 'thrustAcc', mult: 0.8, isBuff: false },
     ],
     color: 0xff631a, // #ff631a
+    buyPrice: 2,
+    sellPrice: 1,
   },
   {
     id: 'fuel_oversized',
@@ -1499,6 +1560,8 @@ export const CARDS = /** @type {const} */ ([
       { stat: 'drag', mult: 1.6, isBuff: false },
     ],
     color: 0xff631a, // #ff631a
+    buyPrice: 2,
+    sellPrice: 1,
   },
   {
     id: 'fuel_solid',
@@ -1512,6 +1575,8 @@ export const CARDS = /** @type {const} */ ([
     flags: ['engineAlwaysOn'],
     once: true,
     color: 0xff631a, // #ff631a
+    buyPrice: 2,
+    sellPrice: 1,
   },
 
   // ── ENGINE ──
@@ -1528,6 +1593,8 @@ export const CARDS = /** @type {const} */ ([
       { stat: 'maxFuel', mult: 0.8, isBuff: false },
     ],
     color: 0xf2e533,
+    buyPrice: 2,
+    sellPrice: 1,
   },
   {
     id: 'engine_updated',
@@ -1538,6 +1605,8 @@ export const CARDS = /** @type {const} */ ([
     desc_buff: 'Тяга ×1.4',
     effects: [{ stat: 'thrustAcc', mult: 1.4, isBuff: true }],
     color: 0xf2e533,
+    buyPrice: 2,
+    sellPrice: 1,
   },
   {
     id: 'engine_external',
@@ -1552,6 +1621,8 @@ export const CARDS = /** @type {const} */ ([
       { stat: 'drag', mult: 1.6, isBuff: false },
     ],
     color: 0xf2e533,
+    buyPrice: 2,
+    sellPrice: 1,
   },
   {
     id: 'engine_forsage',
@@ -1568,6 +1639,8 @@ export const CARDS = /** @type {const} */ ([
     once: true,
     condition: 'forsage',
     color: 0xcf33f2,
+    buyPrice: 2,
+    sellPrice: 1,
   },
 
   // ── POWER ──
@@ -1579,6 +1652,8 @@ export const CARDS = /** @type {const} */ ([
     desc_buff: 'Сила пинка ×4',
     effects: [{ stat: 'launchSpeed', mult: 4.0, isBuff: true }],
     color: 0x6df58d,
+    buyPrice: 2,
+    sellPrice: 1,
   },
 
   // ── STREAMLINING ──
@@ -1591,6 +1666,8 @@ export const CARDS = /** @type {const} */ ([
     desc_buff: 'Сопротивление ×0.7',
     effects: [{ stat: 'drag', mult: 0.7, isBuff: true }],
     color: 0xb3ecea,
+    buyPrice: 2,
+    sellPrice: 1,
   },
   {
     id: 'stream_body',
@@ -1605,6 +1682,8 @@ export const CARDS = /** @type {const} */ ([
       { stat: 'thrustAcc', mult: 0.8, isBuff: false },
     ],
     color: 0xb3ecea,
+    buyPrice: 2,
+    sellPrice: 1,
   },
 
   // ── FORSAGE (special) ──
@@ -1617,6 +1696,8 @@ export const CARDS = /** @type {const} */ ([
     desc_buff: 'Даёт новую способность «Форсаж»',
     desc_upgrade: 'Улучшает способность «Форсаж»',
     color: 0xb134ff,
+    buyFlag: false,
+    sellFlag: false,
   },
 ])
 
@@ -1737,7 +1818,7 @@ export const ACHIEVEMENTS = /** @type {const} */ ([
     tier: 'medium',
     name: 'Коллекционер',
     desc: 'Открыть все сундуки',
-    target: CHESTS.xPositions.length,
+    target: CHESTS.allPositions.length,
   },
 
   {
@@ -1782,7 +1863,7 @@ export const ACHIEVEMENTS = /** @type {const} */ ([
     tier: 'hard',
     name: 'Спринтер',
     desc: 'Собрать все сундуки за 25 минут',
-    target: CHESTS.xPositions.length,
+    target: CHESTS.allPositions.length,
     timeLimit: 25 * 60 * 1000,
   },
 ])

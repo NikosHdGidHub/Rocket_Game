@@ -299,7 +299,7 @@ function chestZ(x) {
 }
 
 export function initChests() {
-  for (const x of CFG.CHESTS.xPositions) {
+  for (const x of CFG.CHESTS.allPositions) {
     const z = chestZ(x)
     const type = CFG.CHESTS.specialChests[x] || 'random'
     const opened = G.openedChests.has(x)
