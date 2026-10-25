@@ -410,6 +410,48 @@ button.action.load-save {
   transform: scale(0.95);
 }
 
+/* ---------- Статусы прироста карточек ---------- */
+/* ---------- Статусы прироста карточек ---------- */
+.status-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.status-cell > span {
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+
+/* Идеальный баланс — светло-зелёный */
+.status-ideal {
+  color: #b6ffbe;
+  font-weight: 700;
+}
+
+/* Сильный бафф — темнее, жирнее */
+.status-strong {
+  color: #4fd655;
+  font-weight: 800;
+}
+
+/* Дизбаланс сильный бафф — жирный коричневый */
+.status-imbalance-strong {
+  color: #237602;
+  font-weight: 800;
+}
+
+/* Слабый бафф — жёлтый */
+.status-weak {
+  color: #ffd75e;
+  font-weight: 700;
+}
+
+/* Дизбаланс слабый бафф (включая 0% и минус) — красный, как раньше */
+.status-imbalance-weak {
+  color: #ff7a7a;
+  font-weight: 700;
+}
+
 /* ---------- Подсветка строки победителя в таблице стратегий ---------- */
 table tbody tr.winner {
   background: rgba(125, 255, 160, 0.08);

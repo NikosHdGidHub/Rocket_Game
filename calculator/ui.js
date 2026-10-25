@@ -19,7 +19,7 @@ export const fmtSpentShort = (n) => {
 export const fmtSpentExact = (n) => Math.floor(n).toLocaleString('ru-RU')
 export const fmtM = (m) => {
   if (m < 1000) return Math.round(m) + ' м'
-  if (m < 10000) return (m / 1000).toFixed(2) + ' км'
+  if (m < 100000) return (m / 1000).toFixed(2) + ' км'
   return Math.round(m / 1000) + ' км'
 }
 
@@ -39,6 +39,26 @@ function updateUpgradesTotal(prefix) {
     sum += totalSpent(u, +inp.value)
   }
   $el.textContent = sum > 0 ? fmtSpentExact(sum) + ' 💰' : '—'
+}
+
+/* ================================================================
+   Пороги статуса прироста карточек.
+   Проверка идёт СВЕРХУ ВНИЗ — берётся первый min, которому pct >= min.
+   Меняешь min / label / cls — и таблица меняется без правок в другом месте.
+================================================================ */
+export const CARD_GAIN_STATUS = [
+  { min: 60, label: 'Дизбаланс сильный бафф', cls: 'status-imbalance-strong' },
+  { min: 40, label: 'Сильный бафф', cls: 'status-strong' },
+  { min: 25, label: 'Идеальный баланс', cls: 'status-ideal' },
+  { min: 10, label: 'Слабый бафф', cls: 'status-weak' },
+  { min: -Infinity, label: 'Дизбаланс слабый бафф', cls: 'status-imbalance-weak' },
+]
+
+export function classifyGainStatus(pct) {
+  for (const s of CARD_GAIN_STATUS) {
+    if (pct >= s.min) return s
+  }
+  return CARD_GAIN_STATUS[CARD_GAIN_STATUS.length - 1]
 }
 
 /* ---------- Построение форм ---------- */
@@ -368,13 +388,7 @@ async function handleCardGainClick(btn) {
     const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
     const sign = gain >= 0 ? '+' : ''
 
-    const cell = btn.closest('td')
-    if (cell && btn.isConnected) {
-      cell.innerHTML = `
-        <span class="${cls}" style="font-weight:700">${sign}${fmtM(gain)}</span>
-        <span class="${cls}" style="font-weight:700;margin-left:6px">(${sign}${pct.toFixed(1)}%)</span>`
-      cell.title = `Оптимум базы: ${fmtM(baseDist)} → с картой: ${fmtM(nextDist)}`
-    }
+    applyGainResultToButton(btn, nextDist, baseDist)
   } catch (err) {
     console.error('Не удалось посчитать прирост:', err)
     if (btn.isConnected) {
@@ -508,25 +522,38 @@ async function handleCalcAllClick(btn) {
   }
 }
 
+/** Обновляет ячейку "Прирост" и ставит подпись в колонку "Статус". */
+function applyGainResultToButton(btn, nextDist, baseDist) {
+  if (!btn || !btn.isConnected) return
+  const cell = btn.closest('td')
+  if (!cell) return
+
+  const gain = nextDist - baseDist
+  const pct = baseDist > 0 ? (gain / baseDist) * 100 : 0
+  const sign = gain >= 0 ? '+' : ''
+  const status = classifyGainStatus(pct)
+
+  // Прирост и % — тот же статусный класс, что и подпись в колонке "Статус".
+  cell.innerHTML = `
+    <span class="${status.cls}">${sign}${fmtM(gain)}</span>
+    <span class="${status.cls}" style="margin-left:6px">(${sign}${pct.toFixed(1)}%)</span>`
+  cell.title = `Оптимум базы: ${fmtM(baseDist)} → с картой: ${fmtM(nextDist)} · ${status.label}`
+
+  const row = cell.closest('tr')
+  const statusCell = row && row.querySelector('.status-cell')
+  if (statusCell) {
+    statusCell.innerHTML = `<span class="${status.cls}">${status.label}</span>`
+    statusCell.title = `Прирост: ${pct.toFixed(1)}%`
+  }
+}
+
 function updateCardCell(task, nextDist, baseDist) {
   const selector =
     task.type === 'forsage'
       ? '.card-gain-btn[data-forsage="1"]'
       : `.card-gain-btn[data-card-id="${task.cardId}"]`
   const btn = document.querySelector(`#single-results ${selector}`)
-  if (!btn) return
-
-  const gain = nextDist - baseDist
-  const pct = baseDist > 0 ? (gain / baseDist) * 100 : 0
-  const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
-  const sign = gain >= 0 ? '+' : ''
-
-  const cell = btn.closest('td')
-  if (!cell) return
-  cell.innerHTML = `
-    <span class="${cls}" style="font-weight:700">${sign}${fmtM(gain)}</span>
-    <span class="${cls}" style="font-weight:700;margin-left:6px">(${sign}${pct.toFixed(1)}%)</span>`
-  cell.title = `Оптимум базы: ${fmtM(baseDist)} → с картой: ${fmtM(nextDist)}`
+  applyGainResultToButton(btn, nextDist, baseDist)
 }
 
 setupGainDelegation()
@@ -650,6 +677,7 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
         <td>${card.icon} ${displayName}</td>
         <td class="num">${cur}</td>
         <td class="num neutral" style="text-align:right">MAX</td>
+        <td class="num neutral status-cell">—</td>
       </tr>`)
       continue
     }
@@ -663,6 +691,7 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
           🔍 Найти прирост
         </button>
       </td>
+      <td class="num status-cell" title="Появится после расчёта">—</td>
     </tr>`)
   }
 
@@ -674,6 +703,7 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
       <td>🚀 Форсаж</td>
       <td class="num">${fLvl}/${fMax}</td>
       <td class="num neutral" style="text-align:right">MAX</td>
+      <td class="num neutral status-cell">—</td>
     </tr>`)
   } else {
     rows.push(`<tr>
@@ -685,6 +715,7 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
           🔍 Найти прирост
         </button>
       </td>
+      <td class="num status-cell" title="Появится после расчёта">—</td>
     </tr>`)
   }
 
@@ -701,6 +732,7 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
       <th>Карточка</th>
       <th style="text-align:right">Копий</th>
       <th style="text-align:right">Прирост (оптимум)</th>
+      <th style="text-align:right">Статус</th>
     </tr></thead>
     <tbody>${rows.join('')}</tbody>
   </table>`
