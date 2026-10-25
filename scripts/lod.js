@@ -110,7 +110,7 @@ function requestOverlay(ox, oz) {
   const key = ox + ',' + oz
   if (overlayChunks.has(key) || pendingOverlays.has(key)) return
   pendingOverlays.add(key)
-  lodWorker.postMessage({ type: 'overlay', ox, oz })
+  lodWorker.postMessage({ type: 'overlay', ox, oz, canvasSize: OVERLAY_CANVAS })
 }
 
 /* ---------- Финализация (добавление в сцену) ---------- */
@@ -300,7 +300,7 @@ export function refillOverlayChunks(camX, camZ) {
 
       if (!overlayChunks.has(key) && !pendingOverlays.has(key)) {
         pendingOverlays.add(key)
-        lodWorker.postMessage({ type: 'overlay', ox, oz })
+        lodWorker.postMessage({ type: 'overlay', ox, oz, canvasSize: OVERLAY_CANVAS })
       }
     }
   }

@@ -10,6 +10,8 @@ import * as Settings from './settings.js'
 import * as Sounds from './sounds.js'
 import * as Abilities from './abilities.js'
 import * as CardsModal from './cardsModal.js'
+import * as Quality from './quality.js'
+import * as ConfirmModal from './confirmModal.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')
@@ -441,21 +443,95 @@ export function init(callbacks) {
   const $settingsBtn = document.getElementById('settingsBtn')
   const $settingsPanel = document.getElementById('settingsPanel')
   const $settingsClose = document.getElementById('settingsClose')
-  const $lowSpecToggle = document.getElementById('lowSpecToggle')
 
-  if ($lowSpecToggle) {
-    // Показать сохранённое значение
-    $lowSpecToggle.checked = Settings.settings.lowSpecMode
+  /* ---------- Качество графики: радио-группа ---------- */
+  const $qualityGroup = document.getElementById('qualityRadioGroup')
+  const $qualityAutoHint = document.getElementById('qualityAutoHint')
+  const $qualityAutoResolved = document.getElementById('qualityAutoResolved')
 
-    $lowSpecToggle.addEventListener('change', () => {
-      Settings.settings.lowSpecMode = $lowSpecToggle.checked
+  function refreshQualityUI() {
+    if (!$qualityGroup) return
+    const current = Settings.settings.quality
+    const radios = $qualityGroup.querySelectorAll('input[name="quality"]')
+    radios.forEach((r) => {
+      r.checked = r.value === current
+    })
+
+    if ($qualityAutoHint && $qualityAutoResolved) {
+      if (current === 'auto') {
+        $qualityAutoHint.hidden = false
+        $qualityAutoResolved.textContent = Quality.getLabel(Settings.settings._resolvedPreset)
+      } else {
+        $qualityAutoHint.hidden = true
+      }
+    }
+  }
+
+  if ($qualityGroup) {
+    refreshQualityUI()
+
+    $qualityGroup.addEventListener('change', async (e) => {
+      const input = e.target
+      if (!input || input.name !== 'quality') return
+
+      const nextId = input.value
+      const currentId = Settings.settings.quality
+      if (nextId === currentId) return
+
+      const currentResolved = Quality.resolvePreset(currentId)
+      const nextResolved = Quality.resolvePreset(nextId)
+      const lines = Quality.describeDiff(currentResolved, nextResolved)
+
+      let bodyHtml = ''
+      bodyHtml += `<p>Применить пресет «<b>${Quality.getLabel(nextResolved)}</b>»?</p>`
+      if (lines.length > 0) {
+        bodyHtml += '<ul>' + lines.map((l) => `<li>${l}</li>`).join('') + '</ul>'
+      } else {
+        bodyHtml += '<p><i>Визуальных изменений не будет.</i></p>'
+      }
+      const inFlight = G.phase !== 'ready' && G.phase !== 'landed'
+      if (inFlight) {
+        bodyHtml += '<p style="color:#ff9f1a"><b>⚠️ Текущий полёт будет прерван.</b></p>'
+      }
+      bodyHtml += '<p style="opacity:0.65">Игра перезагрузится.</p>'
+
+      const ok = await ConfirmModal.confirm({
+        title: 'Смена качества графики',
+        body: bodyHtml,
+        confirmText: 'Применить и перезагрузить',
+        cancelText: 'Отмена',
+      })
+
+      if (!ok) {
+        refreshQualityUI() // откат визуального выбора
+        return
+      }
+
+      Settings.settings.quality = nextId
       Settings.save()
-      // Мир уже загружен с прежней плотностью — перезагружаем страницу,
-      // чтобы settings.js применил новое значение до генерации чанков.
       showToast('Применяем… 🔄', CFG.UI.toastColors.upgrade)
       setTimeout(() => location.reload(), 350)
     })
   }
+
+  /* ---------- Тумблер «Показывать FPS» ---------- */
+  const $showFpsToggle = document.getElementById('showFpsToggle')
+  const $fpsCounter = document.getElementById('fpsCounter')
+
+  function applyFpsVisibility() {
+    if (!$fpsCounter) return
+    $fpsCounter.classList.toggle('hidden', !Settings.settings.showFps)
+  }
+
+  if ($showFpsToggle) {
+    $showFpsToggle.checked = Settings.settings.showFps
+    $showFpsToggle.addEventListener('change', () => {
+      Settings.settings.showFps = $showFpsToggle.checked
+      Settings.save()
+      applyFpsVisibility()
+    })
+  }
+  applyFpsVisibility()
 
   /* ---------- Звук: громкость ---------- */
   const $soundVolume = document.getElementById('soundVolume')
@@ -612,4 +688,37 @@ function drainAchQueue() {
       drainAchQueue()
     }, 380)
   }, 2500)
+}
+
+/* ================================================================
+   FPS: обновление счётчика и бейджа в настройках
+================================================================ */
+let _lastFpsValue = -1
+
+export function updateFpsDisplay(avgFps) {
+  const $fpsValue = document.getElementById('fpsValue')
+  const $counter = document.getElementById('fpsCounter')
+  if (!$fpsValue || !$counter) return
+
+  const v = Math.round(avgFps)
+  if (v !== _lastFpsValue) {
+    _lastFpsValue = v
+    $fpsValue.textContent = v
+  }
+  $counter.classList.toggle('warn', v < 53 && v >= 40)
+  $counter.classList.toggle('critical', v < 40)
+}
+
+let _lastLowFpsShown = -1
+
+export function showLowFpsBadge(avgFps) {
+  const $badge = document.getElementById('qualityFpsBadge')
+  if (!$badge) return
+
+  const v = Math.round(avgFps)
+  if (v === _lastLowFpsShown && !$badge.hidden) return
+  _lastLowFpsShown = v
+
+  $badge.hidden = false
+  $badge.innerHTML = `⚠️ Низкий FPS: <b>~${v}</b>. Рекомендуем снизить качество.`
 }

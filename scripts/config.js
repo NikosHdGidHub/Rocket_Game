@@ -1432,25 +1432,6 @@ export const CHESTS = /** @type {const} */ ({
       раньше был CHESTS.xPositions: initChests, ачивки, прогресс-бар. */
   allPositions: [..._chestX, ...Object.keys(_specialChests).map(Number)].sort((a, b) => a - b),
 
-  /**
-   * Визуальные override-ы по типу. Всё, чего нет в types[type],
-   * берётся из корневых полей (beamColor, glowColor, beamOpacity, ...).
-   * Настройки применяются и к beam/glow-материалам, и к пулу PointLight.
-   */
-  types: {
-    forsage: {
-      beamColor: 0xb071f3, // #b071f3
-      glowColor: 0xb9100ff, // #9100ff
-
-      beamOpacity: 0.65, // плотнее обычного (root: 0.4)
-      glowOpacity: 0.75, // плотнее обычного (root: 0.5)
-
-      lightIntensity: 420, // ярче обычного (root: 30)
-      lightRange: 280, // дальше обычного (root: 80)
-      lightHeight: 5.0, // выше обычного (root: 4.0)
-    },
-  },
-
   /** Z-координата сундука — детерминированная. */
   zOffset: 30,
 
@@ -1473,11 +1454,7 @@ export const CHESTS = /** @type {const} */ ({
   glowColor: 0xffb300, // #ffb300
   glowIntensity: 5.0,
 
-  /* ---------- Пул источников света ----------
-     Как у гемов: N PointLight ВСЕГДА в сцене, интенсивность плавно
-     фейдится к 0. Тоглить `visible = false` нельзя — это меняет
-     NUM_POINT_LIGHTS в шейдерах и триггерит их рекомпиляцию,
-     что давало фриз при подлёте к сундуку. */
+  /* ---------- Пул источников света ----------*/
   lights: {
     count: 2, // сколько сундуков одновременно освещены
     intensity: 80, // яркость вблизи источника
@@ -1485,6 +1462,25 @@ export const CHESTS = /** @type {const} */ ({
     decay: 1, // 1 = линейное затухание 1/d
     height: 4.0, // высота света над землёй (м)
     fadeSpeed: 4, // 1/с — скорость плавного вкл/выкл
+  },
+
+  /**
+   * Визуальные override-ы по типу. Всё, чего нет в types[type],
+   * берётся из корневых полей (beamColor, glowColor, beamOpacity, ...).
+   * Настройки применяются и к beam/glow-материалам, и к пулу PointLight.
+   */
+  types: {
+    forsage: {
+      beamColor: 0xb071f3, // #b071f3
+      glowColor: 0xb9100ff, // #9100ff
+
+      beamOpacity: 0.65, // плотнее обычного (root: 0.4)
+      glowOpacity: 0.75, // плотнее обычного (root: 0.5)
+
+      lightIntensity: 420, // ярче обычного (root: 30)
+      lightRange: 280, // дальше обычного (root: 80)
+      lightHeight: 5.0, // выше обычного (root: 4.0)
+    },
   },
 
   /** На каком расстоянии (м) сундук «подсвечивается» ярче. */
@@ -2039,4 +2035,61 @@ export const SIGN = /** @type {const} */ ({
 
   /** Если false — надпись не тонет в тумане (видна издалека). */
   fog: true,
+})
+
+/* ================================================================
+   QUALITY_PRESETS — четыре пресета качества графики.
+
+   Применяются в settings.js → Quality.apply() ДО того, как модули
+   прочитают RENDERER / PROPS / CHUNKS / LIGHTS / FAR_TILES /
+   OVERLAY / SPACE. Изменение требует перезагрузки страницы.
+
+   high — базовый, совпадает с дефолтными значениями в этом файле,
+   поэтому установка high = «ничего не меняется».
+   ================================================================ */
+export const QUALITY_PRESETS = /** @type {const} */ ({
+  low: {
+    label: 'Низкое',
+    desc: 'Максимум FPS, без теней',
+    renderer: { antialias: false, pixelRatioCap: 1, maxChunksPerFrame: 1 },
+    props: { density: 1000, maxRenderDistance: 1000 },
+    lights: { shadow: { enabled: false } },
+    chunks: { segments: 40 },
+    farTiles: { segments: 100, segmentsHigh: 40 },
+    overlay: { canvasSize: 512 },
+    space: { stars: { count: 800 }, spheres: { maxCount: 1024 } },
+  },
+  medium: {
+    label: 'Среднее',
+    desc: 'Баланс качества и производительности',
+    renderer: { antialias: false, pixelRatioCap: 1.5, maxChunksPerFrame: 2 },
+    props: { density: 2000, maxRenderDistance: 1500 },
+    lights: { shadow: { enabled: true } },
+    chunks: { segments: 48 },
+    farTiles: { segments: 140, segmentsHigh: 48 },
+    overlay: { canvasSize: 768 },
+    space: { stars: { count: 1500 }, spheres: { maxCount: 2560 } },
+  },
+  high: {
+    label: 'Высокое',
+    desc: 'Рекомендуется для мощных устройств',
+    renderer: { antialias: true, pixelRatioCap: 1, maxChunksPerFrame: 2 },
+    props: { density: 3200, maxRenderDistance: 1900 },
+    lights: { shadow: { enabled: true } },
+    chunks: { segments: 53 },
+    farTiles: { segments: 190, segmentsHigh: 53 },
+    overlay: { canvasSize: 1024 },
+    space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
+  },
+  ultra: {
+    label: 'Ультра',
+    desc: 'Максимум качества (сильный GPU)',
+    renderer: { antialias: true, pixelRatioCap: 2, maxChunksPerFrame: 3 },
+    props: { density: 3800, maxRenderDistance: 2000 },
+    lights: { shadow: { enabled: true } },
+    chunks: { segments: 64 },
+    farTiles: { segments: 220, segmentsHigh: 64 },
+    overlay: { canvasSize: 1024 },
+    space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
+  },
 })

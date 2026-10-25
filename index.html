@@ -14,6 +14,7 @@
       <button id="achBtn" class="side-btn ach-btn" title="Достижения">🏆</button>
       <button id="cardsBtn" class="side-btn cards-btn" title="Карточки">🎴</button>
     </div>
+    <div id="fpsCounter" class="fps-counter hidden"><b id="fpsValue">—</b> FPS</div>
     <div id="hud">
       <div class="stat">📏 <b id="dist">0</b> м</div>
       <div class="stat">💲 <b id="coins">0</b></div>
@@ -92,14 +93,57 @@
             <b>Высокая производительность</b>. Полностью закройте Chrome и откройте заново.
           </div>
         </div>
-        <label class="settings-row">
-          <input type="checkbox" id="lowSpecToggle" />
-          <span>Режим слабого устройства</span>
-        </label>
-        <div class="settings-hint">
-          Уменьшает количество растительности ×2.<br />
-          Игра перезагрузится автоматически.
+        <div class="settings-quality">
+          <div class="settings-quality-title">Качество графики</div>
+          <div class="settings-quality-auto-hint" id="qualityAutoHint" hidden>
+            Авто (сейчас: <b id="qualityAutoResolved">—</b>)
+          </div>
+          <div class="settings-quality-fps" id="qualityFpsBadge" hidden></div>
+          <div class="settings-radio-group" id="qualityRadioGroup">
+            <label class="settings-radio">
+              <input type="radio" name="quality" value="auto" />
+              <div class="settings-radio-body">
+                <div class="settings-radio-title">Авто</div>
+                <div class="settings-radio-desc">Определяется автоматически</div>
+              </div>
+            </label>
+            <label class="settings-radio">
+              <input type="radio" name="quality" value="low" />
+              <div class="settings-radio-body">
+                <div class="settings-radio-title">Низкое</div>
+                <div class="settings-radio-desc">Максимум FPS, без теней</div>
+              </div>
+            </label>
+            <label class="settings-radio">
+              <input type="radio" name="quality" value="medium" />
+              <div class="settings-radio-body">
+                <div class="settings-radio-title">Среднее</div>
+                <div class="settings-radio-desc">Баланс качества и FPS</div>
+              </div>
+            </label>
+            <label class="settings-radio">
+              <input type="radio" name="quality" value="high" />
+              <div class="settings-radio-body">
+                <div class="settings-radio-title">Высокое</div>
+                <div class="settings-radio-desc">Красивая картинка</div>
+              </div>
+            </label>
+            <label class="settings-radio">
+              <input type="radio" name="quality" value="ultra" />
+              <div class="settings-radio-body">
+                <div class="settings-radio-title">Ультра</div>
+                <div class="settings-radio-desc">Максимум (сильный GPU)</div>
+              </div>
+            </label>
+          </div>
+          <div class="settings-hint">Изменение требует перезагрузки.</div>
         </div>
+
+        <label class="settings-row">
+          <input type="checkbox" id="showFpsToggle" />
+          <span>Показывать счётчик FPS</span>
+        </label>
+
         <div class="settings-divider"></div>
         <label class="settings-row settings-volume-row">
           <span>🔊 Громкость</span>
@@ -151,6 +195,17 @@
     </div>
 
     <div id="toast"></div>
+
+    <div id="confirmModal" class="settings-panel">
+      <div class="settings-card confirm-card">
+        <div class="settings-title confirm-title">Подтверждение</div>
+        <div class="confirm-body"></div>
+        <div class="confirm-actions">
+          <button class="confirm-cancel settings-close">Отмена</button>
+          <button class="confirm-ok settings-close">OK</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="./scripts/main.js"></script>
   </body>

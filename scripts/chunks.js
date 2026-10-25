@@ -4,7 +4,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
-import './settings.js' // side effect: применяет lowSpecMode к CFG.PROPS.density
+import './settings.js' // side effect: применяет quality preset к CFG.*
 import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './scene.js'
 import { lod } from './state.js'
 import { TEMPLATES } from './world/props.js'
@@ -53,7 +53,7 @@ function initWorkerPool() {
       const idx = i
       w.onmessage = (e) => onWorkerMessage(idx, e)
       w.onerror = (err) => console.error('[chunks] worker error:', err)
-      w.postMessage({ type: 'init', density: CFG.PROPS.density })
+      w.postMessage({ type: 'init', density: CFG.PROPS.density, segments: CFG.CHUNKS.segments })
       workerPool.push({ worker: w, busy: false })
     }
     console.log(`[chunks] worker pool: ${workerPool.length}`)

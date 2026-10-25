@@ -2,6 +2,12 @@
    main.js — точка входа. Только init + главный цикл.
    Вся логика — в модулях (см. соседние файлы).
 ================================================================ */
+
+// 0) Настройки — ОБЯЗАТЕЛЬНО первыми: их top-level side effect
+//    применяет quality preset к CFG до чтения scene.js / chunks.js.
+import './settings.js'
+
+// 1) Остальное
 import * as CFG from './config.js'
 import * as Scene from './scene.js'
 import * as Chunks from './chunks.js'
@@ -19,6 +25,7 @@ import * as Abilities from './abilities.js'
 import * as Sounds from './sounds.js'
 import * as Sign from './sign.js'
 import * as Debug from './debug.js'
+import * as FpsMonitor from './fpsMonitor.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
@@ -60,41 +67,22 @@ Game.init() // loadProgress + resetRocket + HUD
 
 Abilities.syncFromCards() // восстановить level из G.cards (из сейва)
 
-/* ================================================================
-   🧪 DEBUG: тестовая выдача способности «Форсаж»
-   Удалить перед релизом.
-   ================================================================ */
-/*function dbgGiveForsage(level = 1, showPopup = false) {
-  const maxLv = CFG.ABILITIES.forsage.levels.length
-  const lv = Math.max(1, Math.min(level, maxLv))
-  G.cards.forsage = Math.max(G.cards.forsage || 0, lv)
-  Abilities.onCardObtained('forsage')
-  if (showPopup) {
-    const card = CFG.CARDS.find((c) => c.key === 'forsage')
-    if (card) UI.showCardPopup(card)
-  }
-  Game.saveProgress()
-  console.log(`[DEBUG] Форсаж выдан: level=${G.abilities.forsage.level}, cards=${G.cards.forsage}`)
-}
-
-window.dbgGiveForsage = dbgGiveForsage
-window.dbgRemoveForsage = () => {
-  G.cards.forsage = 0
-  Abilities.syncFromCards()
-  const a = G.abilities.forsage
-  a.active = false
-  a.activeEnd = 0
-  a.cooldownEnd = 0
-  Game.saveProgress()
-  console.log('[DEBUG] Форсаж убран')
-}
-
-// Автовыдача при старте (молча, без попапа) — чтобы сразу тестить.
-// Убрать/закомментировать, когда тест закончится.
-if (!G.abilities.forsage.level) {
-  dbgGiveForsage(1, false)
-  console.log('🧪 Форсаж автоматически выдан для теста')
-}*/
+let _fpsToastShown = false
+FpsMonitor.init({
+  onAverage: (fps) => UI.updateFpsDisplay(fps),
+  onLow: (fps, level) => {
+    if (!_fpsToastShown) {
+      _fpsToastShown = true
+      UI.showToast(
+        level === 'critical'
+          ? '⚠️ Очень низкий FPS — снизьте качество'
+          : '⚠️ Низкий FPS — проверьте настройки',
+        '#ff9f1a'
+      )
+    }
+    UI.showLowFpsBadge(fps)
+  },
+})
 
 Entities.resyncChests()
 Entities.resyncGems()
@@ -234,6 +222,7 @@ function loop(now) {
   const total = performance.now() - frameStart
   Debug.mark('total', total)
   Debug.frame(realDt * 1000)
+  FpsMonitor.frame(realDt * 1000)
 
   requestAnimationFrame(loop)
 }
@@ -269,6 +258,16 @@ window.dbgPersistent = () => {
 window.dbgDayNight = () => DayNight.debug()
 window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)
 window.dbgSpace = () => console.log(Space.debug())
+
+window.dbgQuality = async () => {
+  const S = await import('./settings.js')
+  const Q = await import('./quality.js')
+  return {
+    setting: S.settings.quality,
+    resolved: S.settings._resolvedPreset,
+    label: Q.getLabel(S.settings._resolvedPreset),
+  }
+}
 
 /*
 window.dbgOpenChestAt = Game.debugOpenChestAt

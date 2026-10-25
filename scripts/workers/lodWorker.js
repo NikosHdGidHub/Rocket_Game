@@ -16,7 +16,9 @@ const SUN_DIR = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
 const _col = new THREE.Color()
 
 /* ---------- Overlay Helpers ---------- */
-function hexToRgb(hex) { return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255] }
+function hexToRgb(hex) {
+  return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]
+}
 function makeDiscOffsets(sizePx) {
   const R = (sizePx - 1) / 2
   const offsets = []
@@ -50,7 +52,10 @@ function plotPoint(pix, W, H, cx, cy, offsets, r, g, b, a, merge) {
     } else {
       const curA = pix[i4 + 3]
       if (a > curA) {
-        pix[i4] = r; pix[i4 + 1] = g; pix[i4 + 2] = b; pix[i4 + 3] = a
+        pix[i4] = r
+        pix[i4 + 1] = g
+        pix[i4 + 2] = b
+        pix[i4 + 3] = a
       }
     }
   }
@@ -60,13 +65,10 @@ function plotPoint(pix, W, H, cx, cy, offsets, r, g, b, a, merge) {
    MESSAGE HANDLER
 ================================================================ */
 self.onmessage = (e) => {
-  const { type, fx, fz, ox, oz, seg } = e.data
+  const { type, fx, fz, ox, oz, seg, canvasSize } = e.data
 
-  if (type === 'far') {
-    generateFarTile(fx, fz, seg)
-  } else if (type === 'overlay') {
-    generateOverlay(ox, oz)
-  }
+  if (type === 'far') generateFarTile(fx, fz, seg)
+  else if (type === 'overlay') generateOverlay(ox, oz, canvasSize)
 }
 
 /* ================================================================
@@ -93,7 +95,7 @@ function generateFarTile(fx, fz, seg) {
     const h = terrainHeight(wx, wz)
     pos.setY(i, h)
     uv.setXY(i, wx / TILE, wz / TILE)
-    
+
     heightToTerrainColor(h, _col)
     colArr[i * 3] = _col.r
     colArr[i * 3 + 1] = _col.g
@@ -105,7 +107,7 @@ function generateFarTile(fx, fz, seg) {
     for (let ix = 0; ix < vertsPerRow; ix++) {
       const i00 = iz * vertsPerRow + ix
       const h = pos.getY(i00)
-      
+
       let hx, hz
       if (ix < seg) hx = pos.getY(i00 + 1)
       else hx = terrainHeight(cxw + pos.getX(i00) + eps, czw + pos.getZ(i00))
@@ -124,20 +126,22 @@ function generateFarTile(fx, fz, seg) {
   const uvArr = new Float32Array(uv.array)
   const nrmArr = new Float32Array(nrm.array)
 
-  self.postMessage(
-    { type: 'far', fx, fz, seg, posArr, uvArr, nrmArr, colArr },
-    [posArr.buffer, uvArr.buffer, nrmArr.buffer, colArr.buffer]
-  )
+  self.postMessage({ type: 'far', fx, fz, seg, posArr, uvArr, nrmArr, colArr }, [
+    posArr.buffer,
+    uvArr.buffer,
+    nrmArr.buffer,
+    colArr.buffer,
+  ])
 }
 
 /* ================================================================
    OVERLAY TILE
 ================================================================ */
-function generateOverlay(ox, oz) {
-  const W = OVERLAY_CANVAS
+function generateOverlay(ox, oz, canvasSize) {
+  const W = canvasSize || OVERLAY_CANVAS
   const pxPerM = W / OVERLAY_SIZE
   const chunksPerSide = Math.round(OVERLAY_SIZE / CFG.CHUNKS.size)
-  
+
   const baseX = ox * OVERLAY_SIZE
   const baseZ = oz * OVERLAY_SIZE
   const c0x = Math.floor(baseX / CFG.CHUNKS.size)
@@ -203,8 +207,9 @@ function generateOverlay(ox, oz) {
   const posArr = new Float32Array(pos.array)
   const nrmArr = new Float32Array(geo.attributes.normal.array)
 
-  self.postMessage(
-    { type: 'overlay', ox, oz, posArr, nrmArr, pix },
-    [posArr.buffer, nrmArr.buffer, pix.buffer]
-  )
+  self.postMessage({ type: 'overlay', ox, oz, posArr, nrmArr, pix }, [
+    posArr.buffer,
+    nrmArr.buffer,
+    pix.buffer,
+  ])
 }

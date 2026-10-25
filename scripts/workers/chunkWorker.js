@@ -18,21 +18,26 @@ import { computeChunkProps } from '../world/chunkProps.js'
 import { terrainHeight, heightToTerrainColor, terrainBrightnessNoise } from '../world/world.js'
 
 const CHUNK_SIZE = CFG.CHUNKS.size
-const CHUNK_SEG = CFG.CHUNKS.segments
-const VPR = CHUNK_SEG + 1
-const STEP = CHUNK_SIZE / CHUNK_SEG
+let CHUNK_SEG = CFG.CHUNKS.segments
+let VPR = CHUNK_SEG + 1
+let STEP = CHUNK_SIZE / CHUNK_SEG
 const GROUND_TILE = CFG.GROUND_TEX.tile
 
 const SUN_DIR = new THREE.Vector3(...CFG.SKY.sunDir).normalize()
 const _color = new THREE.Color()
 
-let DENSITY = CFG.PROPS.density  // может быть переопределён init-сообщением
+let DENSITY = CFG.PROPS.density // может быть переопределён init-сообщением
 
 self.onmessage = (e) => {
   const data = e.data
 
   if (data.type === 'init') {
     DENSITY = data.density
+    if (typeof data.segments === 'number' && data.segments > 0) {
+      CHUNK_SEG = data.segments
+      VPR = CHUNK_SEG + 1
+      STEP = CHUNK_SIZE / CHUNK_SEG
+    }
     return
   }
 
@@ -42,19 +47,16 @@ self.onmessage = (e) => {
     const meshData = makeMeshData(cx, cz, items)
     const propMatrices = buildPropMatrices(cx, cz, items, meshData.heights)
 
-    self.postMessage(
-      { cx, cz, ...meshData, propMatrices },
-      [
-        meshData.heights.buffer,
-        meshData.normals.buffer,
-        meshData.colors.buffer,
-        meshData.uvs.buffer,
-        propMatrices.pine.buffer,
-        propMatrices.oak.buffer,
-        propMatrices.bush.buffer,
-        propMatrices.rock.buffer,
-      ]
-    )
+    self.postMessage({ cx, cz, ...meshData, propMatrices }, [
+      meshData.heights.buffer,
+      meshData.normals.buffer,
+      meshData.colors.buffer,
+      meshData.uvs.buffer,
+      propMatrices.pine.buffer,
+      propMatrices.oak.buffer,
+      propMatrices.bush.buffer,
+      propMatrices.rock.buffer,
+    ])
   } catch (err) {
     console.error('[chunkWorker] error', cx, cz, err)
   }
@@ -96,9 +98,7 @@ function makeMeshData(cx, cz, items) {
       const i = iz * VPR + ix
       const h = heights[i]
       const hx =
-        ix < CHUNK_SEG
-          ? heights[i + 1]
-          : terrainHeight(baseX + (ix + 1) * STEP, baseZ + iz * STEP)
+        ix < CHUNK_SEG ? heights[i + 1] : terrainHeight(baseX + (ix + 1) * STEP, baseZ + iz * STEP)
       const hz =
         iz < CHUNK_SEG
           ? heights[i + VPR]
@@ -193,10 +193,20 @@ function buildPropMatrices(cx, cz, items, heights) {
     let iz = Math.floor(gz)
     let fx = gx - ix
     let fz = gz - iz
-    if (ix < 0) { ix = 0; fx = 0 }
-    else if (ix > VPR - 2) { ix = VPR - 2; fx = 1 }
-    if (iz < 0) { iz = 0; fz = 0 }
-    else if (iz > VPR - 2) { iz = VPR - 2; fz = 1 }
+    if (ix < 0) {
+      ix = 0
+      fx = 0
+    } else if (ix > VPR - 2) {
+      ix = VPR - 2
+      fx = 1
+    }
+    if (iz < 0) {
+      iz = 0
+      fz = 0
+    } else if (iz > VPR - 2) {
+      iz = VPR - 2
+      fz = 1
+    }
 
     const i00 = iz * VPR + ix
     const i10 = i00 + 1
@@ -217,12 +227,7 @@ function buildPropMatrices(cx, cz, items, heights) {
     const c = Math.cos(it.rotY) * s
     const sn = Math.sin(it.rotY) * s
     // Матрица 4×4 (column-major): scale·rotY + translation
-    groups[it.kind].push(
-      c, 0, -sn, 0,
-      0, s, 0, 0,
-      sn, 0, c, 0,
-      it.x, y, it.z, 1
-    )
+    groups[it.kind].push(c, 0, -sn, 0, 0, s, 0, 0, sn, 0, c, 0, it.x, y, it.z, 1)
   }
 
   return {

@@ -1308,3 +1308,212 @@ canvas {
   color: #ffd75e;
   font-weight: 700;
 }
+
+/* ================================================================
+   Quality presets: radio-группа
+   ================================================================ */
+.settings-quality {
+  text-align: left;
+}
+.settings-quality-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.75;
+  margin-bottom: 8px;
+}
+.settings-quality-auto-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+.settings-quality-auto-hint b {
+  color: #ffd75e;
+}
+.settings-quality-fps {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 159, 26, 0.08);
+  border: 1px solid rgba(255, 159, 26, 0.35);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ff9f1a;
+  text-align: left;
+  line-height: 1.4;
+}
+.settings-quality-fps b {
+  color: #fff;
+  font-weight: 800;
+}
+
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.15s;
+  user-select: none;
+}
+.settings-radio:hover {
+  border-color: rgba(255, 215, 94, 0.4);
+}
+.settings-radio input[type='radio'] {
+  display: none;
+}
+.settings-radio::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+  transition: 0.15s;
+  box-sizing: border-box;
+  background: transparent;
+}
+.settings-radio:has(input:checked) {
+  border-color: #ffd75e;
+  background: rgba(255, 215, 94, 0.08);
+}
+.settings-radio:has(input:checked)::before {
+  border-color: #ffd75e;
+  background: radial-gradient(circle, #ffd75e 40%, transparent 44%);
+}
+.settings-radio-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+.settings-radio-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #eaf2ff;
+}
+.settings-radio-desc {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* ================================================================
+   FPS-счётчик в HUD
+   ================================================================ */
+.fps-counter {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 12;
+  padding: 6px 10px;
+  background: rgba(12, 18, 32, 0.62);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #eaf2ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+.fps-counter.hidden {
+  display: none;
+}
+.fps-counter b {
+  color: #7dffa0;
+  font-weight: 900;
+}
+.fps-counter.warn b {
+  color: #ff9f1a;
+}
+.fps-counter.critical b {
+  color: #ff5a5a;
+}
+@media (max-width: 640px) {
+  .fps-counter {
+    top: 10px;
+    right: 10px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+}
+
+/* ================================================================
+   Confirm-модалка (универсальная)
+   ================================================================ */
+.confirm-card {
+  width: min(420px, 90vw);
+  text-align: left;
+}
+.confirm-title {
+  text-align: center;
+}
+.confirm-body {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #eaf2ff;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.confirm-body p {
+  margin: 0 0 8px;
+}
+.confirm-body p:last-child {
+  margin-bottom: 0;
+}
+.confirm-body ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.confirm-body li {
+  margin: 2px 0;
+  opacity: 0.9;
+}
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.confirm-actions .settings-close {
+  flex: 1;
+  margin-top: 0;
+}
+.confirm-cancel {
+  color: #eaf2ff;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.35),
+    0 6px 14px rgba(0, 0, 0, 0.25);
+}
+.confirm-cancel:active {
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.35),
+    0 3px 8px rgba(0, 0, 0, 0.25);
+}
+.confirm-ok.danger {
+  color: #fff;
+  background: linear-gradient(180deg, #e63946, #b3202e);
+  box-shadow:
+    0 4px 0 #7a1520,
+    0 6px 14px rgba(0, 0, 0, 0.35);
+}
+.confirm-ok.danger:active {
+  box-shadow:
+    0 1px 0 #7a1520,
+    0 3px 8px rgba(0, 0, 0, 0.35);
+}
