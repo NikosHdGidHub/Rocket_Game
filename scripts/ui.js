@@ -705,8 +705,9 @@ export function updateFpsDisplay(avgFps) {
     _lastFpsValue = v
     $fpsValue.textContent = v
   }
-  $counter.classList.toggle('warn', v < 53 && v >= 40)
-  $counter.classList.toggle('critical', v < 40)
+  const F = CFG.FPS
+  $counter.classList.toggle('warn', v < F.warnThreshold && v >= F.criticalThreshold)
+  $counter.classList.toggle('critical', v < F.criticalThreshold)
 }
 
 let _lastLowFpsShown = -1
@@ -721,4 +722,24 @@ export function showLowFpsBadge(avgFps) {
 
   $badge.hidden = false
   $badge.innerHTML = `⚠️ Низкий FPS: <b>~${v}</b>. Рекомендуем снизить качество.`
+}
+
+/* ================================================================
+   Notice — компактный тост для системных уведомлений.
+   Отдельно от #toast (крупный, по центру) и #achToast (правый верх).
+   Позиция — под HUD по центру, переносится на узких экранах.
+================================================================ */
+let _noticeTimer = null
+
+export function showNotice(text, durationMs = 3500, color = null) {
+  const $notice = document.getElementById('notice')
+  if (!$notice) return
+
+  $notice.textContent = text
+  if (color) $notice.style.color = color
+  else $notice.style.removeProperty('color')
+
+  $notice.classList.add('on')
+  clearTimeout(_noticeTimer)
+  _noticeTimer = setTimeout(() => $notice.classList.remove('on'), durationMs)
 }

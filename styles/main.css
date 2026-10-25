@@ -1517,3 +1517,44 @@ canvas {
     0 1px 0 #7a1520,
     0 3px 8px rgba(0, 0, 0, 0.35);
 }
+
+/* ================================================================
+   Notice — компактный тост для системных уведомлений (не FPS-huge)
+   ================================================================ */
+.notice {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: rgba(12, 18, 32, 0.92);
+  backdrop-filter: blur(8px);
+  color: #ff9f1a;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 159, 26, 0.5);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+  z-index: 15;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.3s,
+    transform 0.3s;
+  max-width: min(500px, calc(100vw - 30px));
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.notice.on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+@media (max-width: 640px) {
+  .notice {
+    top: 54px;
+    font-size: 12px;
+    padding: 7px 12px;
+  }
+}

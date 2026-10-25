@@ -64,9 +64,15 @@ function plotPoint(pix, W, H, cx, cy, offsets, r, g, b, a, merge) {
 /* ================================================================
    MESSAGE HANDLER
 ================================================================ */
-self.onmessage = (e) => {
-  const { type, fx, fz, ox, oz, seg, canvasSize } = e.data
+let DENSITY = CFG.PROPS.density
 
+self.onmessage = (e) => {
+  const { type, fx, fz, ox, oz, seg, canvasSize, density } = e.data
+
+  if (type === 'init') {
+    if (typeof density === 'number' && density > 0) DENSITY = density
+    return
+  }
   if (type === 'far') generateFarTile(fx, fz, seg)
   else if (type === 'overlay') generateOverlay(ox, oz, canvasSize)
 }
@@ -163,7 +169,7 @@ function generateOverlay(ox, oz, canvasSize) {
     for (let dx = 0; dx < chunksPerSide; dx++) {
       const cx = c0x + dx
       const cz = c0z + dz
-      const items = computeChunkProps(cx, cz) // Считаем прямо в воркере
+      const items = computeChunkProps(cx, cz, DENSITY) // Считаем прямо в воркере
 
       for (let k = 0; k < items.length; k++) {
         const it = items[k]

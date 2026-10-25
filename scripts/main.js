@@ -67,23 +67,6 @@ Game.init() // loadProgress + resetRocket + HUD
 
 Abilities.syncFromCards() // восстановить level из G.cards (из сейва)
 
-let _fpsToastShown = false
-FpsMonitor.init({
-  onAverage: (fps) => UI.updateFpsDisplay(fps),
-  onLow: (fps, level) => {
-    if (!_fpsToastShown) {
-      _fpsToastShown = true
-      UI.showToast(
-        level === 'critical'
-          ? '⚠️ Очень низкий FPS — снизьте качество'
-          : '⚠️ Низкий FPS — проверьте настройки',
-        '#ff9f1a'
-      )
-    }
-    UI.showLowFpsBadge(fps)
-  },
-})
-
 Entities.resyncChests()
 Entities.resyncGems()
 Lod.setPhaseGetter(() => G.phase)
@@ -139,6 +122,22 @@ async function initialLoad() {
   // они успеют загрузиться.
 
   if ($loading) $loading.style.display = 'none'
+
+  // FPS-монитор запускаем ТОЛЬКО теперь — иначе warmup истекает
+  // ещё во время прогрузки чанков, и первый же тик выдаёт ложный
+  // «низкий FPS».
+  let _fpsNoticeShown = false
+  FpsMonitor.init({
+    onAverage: (fps) => UI.updateFpsDisplay(fps),
+    onLow: (fps, level) => {
+      if (!_fpsNoticeShown) {
+        _fpsNoticeShown = true
+        const N = CFG.FPS.notification
+        UI.showNotice(level === 'critical' ? N.criticalText : N.warnText, N.durationMs, N.color)
+      }
+      UI.showLowFpsBadge(fps)
+    },
+  })
 
   requestAnimationFrame(loop)
   setTimeout(() => UI.showToast('ПНИ РАКЕТУ! 🦵', CFG.UI.toastColors.upgrade), 400)

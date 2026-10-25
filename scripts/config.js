@@ -2051,12 +2051,12 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
   low: {
     label: 'Низкое',
     desc: 'Максимум FPS, без теней',
-    renderer: { antialias: false, pixelRatioCap: 1, maxChunksPerFrame: 1 },
+    renderer: { antialias: false, pixelRatioCap: 0.8, maxChunksPerFrame: 1 },
     props: { density: 1000, maxRenderDistance: 1000 },
-    lights: { shadow: { enabled: false } },
+    lights: { shadow: { enabled: true } },
     chunks: { segments: 40 },
     farTiles: { segments: 100, segmentsHigh: 40 },
-    overlay: { canvasSize: 512 },
+    overlay: { enabled: false, canvasSize: 512 },
     space: { stars: { count: 800 }, spheres: { maxCount: 1024 } },
   },
   medium: {
@@ -2067,7 +2067,7 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     lights: { shadow: { enabled: true } },
     chunks: { segments: 48 },
     farTiles: { segments: 140, segmentsHigh: 48 },
-    overlay: { canvasSize: 768 },
+    overlay: { enabled: true, canvasSize: 1024 },
     space: { stars: { count: 1500 }, spheres: { maxCount: 2560 } },
   },
   high: {
@@ -2078,7 +2078,7 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     lights: { shadow: { enabled: true } },
     chunks: { segments: 53 },
     farTiles: { segments: 190, segmentsHigh: 53 },
-    overlay: { canvasSize: 1024 },
+    overlay: { enabled: true, canvasSize: 1024 },
     space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
   },
   ultra: {
@@ -2089,7 +2089,40 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     lights: { shadow: { enabled: true } },
     chunks: { segments: 64 },
     farTiles: { segments: 220, segmentsHigh: 64 },
-    overlay: { canvasSize: 1024 },
+    overlay: { enabled: true, canvasSize: 1536 },
     space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
+  },
+})
+
+/* ================================================================
+   FPS — пороги, окно усреднения и текст уведомления
+   о низком FPS. Два уровня: warn и critical.
+================================================================ */
+export const FPS = /** @type {const} */ ({
+  /** Порог «предупреждение» (FPS < warnThreshold → warn). */
+  warnThreshold: 53,
+
+  /** Порог «критично» (FPS < criticalThreshold → critical). */
+  criticalThreshold: 40,
+
+  /** Сколько миллисекунд после старта не проверять FPS
+      (прогрев: компиляция шейдеров, стрим чанков, пр.). */
+  warmupMs: 4000,
+
+  /** Размер скользящего окна для усреднения (мс). */
+  windowMs: 5000,
+
+  /** Как часто запускать проверку внутри окна (мс). */
+  checkIntervalMs: 1000,
+
+  /** Минимум кадров в окне, чтобы проверка имела смысл. */
+  minSamples: 10,
+
+  /** Уведомление (toast-small при первом срабатывании). */
+  notification: {
+    warnText: '⚠️ Низкий FPS — проверьте настройки',
+    criticalText: '⚠️ Очень низкий FPS — снизьте качество',
+    durationMs: 3500,
+    color: '#ff9f1a',
   },
 })

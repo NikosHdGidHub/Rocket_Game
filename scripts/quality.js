@@ -104,6 +104,9 @@ export function apply(presetId) {
   CFG.FAR_TILES.segments = preset.farTiles.segments
   CFG.FAR_TILES.segmentsHigh = preset.farTiles.segmentsHigh
 
+  if (typeof preset.overlay.enabled === 'boolean') {
+    CFG.OVERLAY.enabled = preset.overlay.enabled
+  }
   CFG.OVERLAY.canvasSize = preset.overlay.canvasSize
 
   CFG.SPACE.stars.count = preset.space.stars.count

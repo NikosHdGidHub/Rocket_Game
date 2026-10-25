@@ -45,10 +45,13 @@ export function init() {
   })
   applySkyFog(farGroundMat)
 
-  // Создаём воркер для LOD
   lodWorker = new LodWorker()
   lodWorker.onmessage = onWorkerMessage
   lodWorker.onerror = (err) => console.error('[lodWorker] error:', err)
+
+  // NEW: плотность должна совпадать с той, что использует chunkWorker,
+  // иначе overlay-точки не совпадут с 3D-деревьями.
+  lodWorker.postMessage({ type: 'init', density: CFG.PROPS.density })
 }
 
 /* ---------- Обработка ответов от воркера ---------- */
