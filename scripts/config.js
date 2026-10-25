@@ -1546,10 +1546,10 @@ export const CARDS = /** @type {const} */ ([
     name: 'Новый двигатель',
     variant: 'Внешние двигатели',
     desc_buff: 'Тяга ×2',
-    desc_debuff: 'Сопротивление воздуха ×1.7',
+    desc_debuff: 'Сопротивление воздуха ×1.6',
     effects: [
-      { stat: 'thrustAcc', mult: 2, isBuff: true },
-      { stat: 'drag', mult: 1.5, isBuff: false },
+      { stat: 'thrustAcc', mult: 2.0, isBuff: true },
+      { stat: 'drag', mult: 1.6, isBuff: false },
     ],
     color: 0xf2e533,
   },
@@ -1639,7 +1639,7 @@ export const ABILITIES = /** @type {const} */ ({
     name: 'Форсаж',
     levels: [
       { multiplier: 2.0, duration: 3.0, cooldown: 60 },
-      { multiplier: 3.0, duration: 4.0, cooldown: 45 },
+      { multiplier: 3.0, duration: 4.0, cooldown: 60 },
     ],
   },
 })
