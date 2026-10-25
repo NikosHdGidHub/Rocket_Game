@@ -24,7 +24,7 @@ import { G, time } from './state.js'
 import * as Abilities from './abilities.js'
 import * as Sounds from './lib/sounds.js'
 import * as Sign from './views/sign.js'
-import * as Debug from './debug.js'
+import * as Debug from './lib/debug.js'
 import * as FpsMonitor from './services/fpsMonitor.js'
 
 /* ================================================================
@@ -228,59 +228,3 @@ function loop(now) {
 
 initialLoad()
 
-/* ================================================================
-   4. Debug-хелперы.
-================================================================ */
-window.dbg = () => {
-  const c = Chunks.getStats()
-  const l = Lod.getStats()
-  console.log(
-    `chunks=${c.chunks} (persistent=${c.persistentLoaded}/${c.persistentTotal}) ` +
-      `propsCache=${c.propsCache} ` +
-      `farTiles=${l.farTiles} ` +
-      `overlayChunks=${l.overlayChunks} ` +
-      `pendingFar=${l.pendingFar} pendingOv=${l.pendingOverlays}`
-  )
-  import('./state.js').then((s) => {
-    console.log(
-      `lodFade=${s.lod.fade.toFixed(2)} in2DMode=${s.lod.in2D} ` +
-        `altSmooth=${s.lod.altSmooth.toFixed(0)} ` +
-        `rocketX=${s.rocketState.pos.x.toFixed(0)} rocketY=${s.rocketState.pos.y.toFixed(0)}`
-    )
-  })
-}
-
-window.dbgPersistent = () => {
-  console.table(Chunks.debugPersistent())
-}
-
-window.dbgDayNight = () => DayNight.debug()
-window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)
-window.dbgSpace = () => console.log(Space.debug())
-
-window.dbgQuality = async () => {
-  const S = await import('./lib/settings.js')
-  const Q = await import('./lib/quality.js')
-  return {
-    setting: S.settings.quality,
-    resolved: S.settings._resolvedPreset,
-    label: Q.getLabel(S.settings._resolvedPreset),
-  }
-}
-
-/*
-window.dbgOpenChestAt = Game.debugOpenChestAt
-window.dbgGiveCard = Game.giveCard
-window.dbgRemoveCard = Game.removeCard
-window.dbgListCards = Game.listCardsDebug
-window.dbgCanGive = (id) => {
-  const r = Game.canGiveCardReason(id)
-  console.log(r ? '⛔ ' + r : '✅ можно')
-}*/
-/*
-window.dbgGiveGems = (n = 10) => {
-  G.gems += n
-  Game.saveProgress()
-  CardsModal.refresh()
-  console.log(`+${n} 💎 → всего ${G.gems}`)
-}*/
