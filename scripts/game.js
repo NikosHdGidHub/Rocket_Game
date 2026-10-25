@@ -28,7 +28,7 @@ import {
   gems,
   updateGems as updateGemsFX,
   markGemCollected,
-} from './entities.js'
+} from './views/entities/index.js'
 import * as Angles from './lib/angles.js'
 
 import * as UI from './ui.js'
