@@ -27,6 +27,7 @@ import {
   updateGhostRocket,
   gems,
   updateGems as updateGemsFX,
+  markGemCollected,
 } from './entities.js'
 import * as Angles from './angles.js'
 
@@ -1085,6 +1086,7 @@ function collectGems(gemList) {
     gem.collected = true
     G.collectedGems.add(gem.id)
     gem.group.visible = false
+    markGemCollected(gem)
     G.gems += 1
   }
   const n = gemList.length
