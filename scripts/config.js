@@ -37,7 +37,7 @@ export const RENDERER = /** @type {const} */ ({
    *         false — «лесенки» на границах, но быстрее на слабых GPU.
    * [типично] true на десктопе, false на мобильных.
    */
-  antialias: true,
+  antialias: false,
 
   /**
    * Ограничение pixel ratio (плотности пикселей).
@@ -46,7 +46,7 @@ export const RENDERER = /** @type {const} */ ({
    *          Ставим потолок 2 — выше визуально незаметно, но дорого.
    * [типично] 1 (экономно), 1.5 (баланс), 2 (качество).
    */
-  pixelRatioCap: 1.5,
+  pixelRatioCap: 2,
 
   /**
    * Экспозиция ACES-тонмаппинга.
@@ -1268,13 +1268,13 @@ export const GAME = /** @type {const} */ ({
   upgrade_cost_diff: 1.4,
 
   /** Сколько монет у игрока на старте. */
-  initialCoins: 500000,
+  initialCoins: 5,
 
   /** Рекорд дистанции на старте (м). */
   initialBest: 0,
 
   /** Начальные уровни апгрейдов. Каждый начинается с 1. */
-  initialUpgrades: { power: 7, aero: 7, fuel: 8, thrust: 7 },
+  initialUpgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
 })
 
 /* ================================================================

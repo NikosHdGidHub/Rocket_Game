@@ -279,10 +279,10 @@ window.dbgCanGive = (id) => {
   const r = Game.canGiveCardReason(id)
   console.log(r ? '⛔ ' + r : '✅ можно')
 }*/
-
+/*
 window.dbgGiveGems = (n = 10) => {
   G.gems += n
   Game.saveProgress()
   CardsModal.refresh()
   console.log(`+${n} 💎 → всего ${G.gems}`)
-}
+}*/
