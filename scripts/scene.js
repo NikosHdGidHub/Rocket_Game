@@ -126,15 +126,21 @@ export function applySkyFog(mat) {
        }`
     )
 
-    // ─── ЭТОТ БЛОК ВРЕМЕННО ОТКЛЮЧАЕМ ───
-    // Возвращаем стандартный three.js fog, только с более простой формулой
+    // --- Фрагментный: эллиптический туман ---
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <fog_fragment>',
       `#ifdef USE_FOG
+         vec2  toFrag = vSkyWorldPos.xz - fogCenter;
+         float along  = dot(toFrag, fogDirU);
+         float across = abs(dot(toFrag, vec2(-fogDirU.y, fogDirU.x)));
+         float rAlong = along >= 0.0 ? 1.0 : fogShapeBack;
+         vec2  p      = vec2(along / rAlong, across / fogShapeSide);
+         float eDist  = length(p);
+
          vec3  skyLook = normalize(vSkyWorldPos - cameraPosition);
-         float h = max(skyLook.y, 0.0);
-         vec3  fogCol = mix(skyBottom, skyTop, pow(h, skyExponent));
-         float fogFactor = smoothstep(fogNear, fogFar, length(vSkyWorldPos - cameraPosition));
+         vec3  fogCol  = skyColorAtDir(skyLook);
+
+         float fogFactor = smoothstep(fogNear, fogFar, eDist);
          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogCol, fogFactor);
        #endif`
     )
