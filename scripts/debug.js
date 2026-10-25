@@ -2,7 +2,7 @@
    debug.js — overlay с метриками производительности.
    Включается через ?debug в URL или window.__dbgOn = true
 ================================================================ */
-import { renderer } from './scene.js'
+import { renderer } from './views/scene.js'
 
 let _on = false
 let _root = null

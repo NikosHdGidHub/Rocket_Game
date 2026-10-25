@@ -4,7 +4,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
-import { scene } from './scene.js'
+import { scene } from './views/scene.js'
 import { G, rocketState } from './state.js'
 import { terrainHeight, hash2i } from './world/world.js'
 

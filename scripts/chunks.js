@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import * as CFG from './config.js'
 import './lib/settings.js' // side effect: применяет quality preset к CFG.*
-import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './scene.js'
+import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './views/scene.js'
 import { lod } from './state.js'
 import { TEMPLATES } from './world/props.js'
 import { computeChunkProps } from './world/chunkProps.js'
@@ -872,7 +872,7 @@ export function countInitial() {
 export function init() {
   // applySkyFog — импортируем лениво, чтобы не тянуть scene-циклы раньше времени.
   // На практике scene.js уже загружен в момент вызова init(), так что просто:
-  import('./scene.js').then((m) => m.applySkyFog(propMat))
+  import('./views/scene.js').then((m) => m.applySkyFog(propMat))
   initWorkerPool()
 }
 

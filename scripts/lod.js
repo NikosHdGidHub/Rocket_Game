@@ -7,7 +7,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
-import { scene, camera, groundTex, applySkyFog, fogU } from './scene.js'
+import { scene, camera, groundTex, applySkyFog, fogU } from './views/scene.js'
 import { lod, rocketState } from './state.js'
 import { boss } from './entities.js'
 import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS } from './chunks.js'

@@ -6,7 +6,7 @@
    Состояние цикла сохраняется в localStorage (отдельный ключ).
 ================================================================ */
 import * as THREE from 'three'
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 import {
   scene,
   sun,
@@ -17,8 +17,8 @@ import {
   SKY_HORIZON,
   SUN_COLOR,
 } from './scene.js'
-import { propMat } from './chunks.js'
-import { time } from './state.js'
+import { propMat } from '../chunks.js'
+import { time } from '../state.js'
 
 const DN = CFG.DAYNIGHT
 

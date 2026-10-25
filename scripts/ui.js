@@ -5,7 +5,7 @@
 ================================================================ */
 import * as CFG from './config.js'
 import { G, input } from './state.js'
-import { renderer } from './scene.js'
+import { renderer } from './views/scene.js'
 import * as Settings from './lib/settings.js'
 import * as Sounds from './lib/sounds.js'
 import * as Abilities from './abilities.js'

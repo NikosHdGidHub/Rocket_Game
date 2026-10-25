@@ -9,7 +9,7 @@
    — Статична, висит в воздухе лицом против движения ракеты.
 ================================================================ */
 import * as THREE from 'three'
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 import { scene } from './scene.js'
 import { FontLoader } from 'three/addons/loaders/FontLoader.js'
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js'

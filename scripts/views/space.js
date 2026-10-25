@@ -11,10 +11,10 @@
    посчитанные daynight-значения. Иначе затрутся.
 ================================================================ */
 import * as THREE from 'three'
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 import { scene, camera, sun, hemiLight, SKY_ZENITH, SKY_HORIZON, HAZE_COLOR } from './scene.js'
-import { rocketState, time } from './state.js'
-import { WORLD_SEED, hash2i, mulberry32 } from './world/world.js'
+import { rocketState, time } from '../state.js'
+import { WORLD_SEED, hash2i, mulberry32 } from '../world/world.js'
 
 const SPC = CFG.SPACE
 

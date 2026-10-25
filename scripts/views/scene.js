@@ -6,9 +6,9 @@
    и «лесные» материалы, чтобы туман совпадал с небом.
 ================================================================ */
 import * as THREE from 'three'
-import * as CFG from './config.js'
-import { rocketState } from './state.js'
-import { makeGroundTexture, GROUND_TILE } from './world/world.js'
+import * as CFG from '../config.js'
+import { rocketState } from '../state.js'
+import { makeGroundTexture, GROUND_TILE } from '../world/world.js'
 
 /* ---------- Мутабельные экспорты (заполняются в init) ---------- */
 export let renderer
