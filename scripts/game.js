@@ -29,7 +29,7 @@ import {
   updateGems as updateGemsFX,
   markGemCollected,
 } from './entities.js'
-import * as Angles from './angles.js'
+import * as Angles from './lib/angles.js'
 
 import * as UI from './ui.js'
 

@@ -11,7 +11,7 @@
    Важно: apply() должен быть вызван ДО того, как scene.js / chunks.js
    прочитают конфиг. Это делает settings.js в top-level.
 ================================================================ */
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 
 export const PRESET_IDS = ['low', 'medium', 'high', 'ultra']
 export const SETTING_VALUES = ['auto', ...PRESET_IDS]

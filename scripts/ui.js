@@ -6,11 +6,11 @@
 import * as CFG from './config.js'
 import { G, input } from './state.js'
 import { renderer } from './scene.js'
-import * as Settings from './settings.js'
-import * as Sounds from './sounds.js'
+import * as Settings from './lib/settings.js'
+import * as Sounds from './lib/sounds.js'
 import * as Abilities from './abilities.js'
 import * as CardsModal from './cardsModal.js'
-import * as Quality from './quality.js'
+import * as Quality from './lib/quality.js'
 import * as ConfirmModal from './confirmModal.js'
 
 /* ---------- Кэши DOM-элементов ---------- */

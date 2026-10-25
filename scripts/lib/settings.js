@@ -8,7 +8,7 @@
 
    Импортировать этот файл первым — до scene.js / chunks.js.
 ================================================================ */
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 import * as Quality from './quality.js'
 
 const KEY = 'rocket_game_settings_v1'

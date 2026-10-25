@@ -10,7 +10,7 @@
    Огонь и HUD берут данные отсюда — единый источник правды.
 ================================================================ */
 import * as THREE from 'three'
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 
 const AC = CFG.ROCKET.anglesCourse
 

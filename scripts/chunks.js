@@ -4,7 +4,7 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from './config.js'
-import './settings.js' // side effect: применяет quality preset к CFG.*
+import './lib/settings.js' // side effect: применяет quality preset к CFG.*
 import { scene, groundMat, SUN_DIR, camera, applySkyFog } from './scene.js'
 import { lod } from './state.js'
 import { TEMPLATES } from './world/props.js'

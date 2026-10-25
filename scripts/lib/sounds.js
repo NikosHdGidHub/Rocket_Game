@@ -9,7 +9,7 @@
    — Громкость конкретного звука берётся из CFG.SOUNDS.list[key].volume.
    — Пользовательская настройка из settings.js действует как множитель.
 ================================================================ */
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 import { settings } from './settings.js'
 
 const S = CFG.SOUNDS

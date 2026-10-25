@@ -2,7 +2,7 @@
    fpsMonitor.js — мониторинг среднего FPS за скользящее окно.
    Все пороги/тайминги — в config.js (CFG.FPS).
 ================================================================ */
-import * as CFG from './config.js'
+import * as CFG from '../config.js'
 
 const F = CFG.FPS
 

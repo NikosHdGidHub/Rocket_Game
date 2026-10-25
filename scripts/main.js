@@ -5,7 +5,7 @@
 
 // 0) Настройки — ОБЯЗАТЕЛЬНО первыми: их top-level side effect
 //    применяет quality preset к CFG до чтения scene.js / chunks.js.
-import './settings.js'
+import './lib/settings.js'
 
 // 1) Остальное
 import * as CFG from './config.js'
@@ -22,10 +22,10 @@ import * as DayNight from './daynight.js'
 import * as Space from './space.js'
 import { G, time } from './state.js'
 import * as Abilities from './abilities.js'
-import * as Sounds from './sounds.js'
+import * as Sounds from './lib/sounds.js'
 import * as Sign from './sign.js'
 import * as Debug from './debug.js'
-import * as FpsMonitor from './fpsMonitor.js'
+import * as FpsMonitor from './services/fpsMonitor.js'
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
@@ -259,8 +259,8 @@ window.dbgSetDayTime = (t) => DayNight.debugSetTime(t)
 window.dbgSpace = () => console.log(Space.debug())
 
 window.dbgQuality = async () => {
-  const S = await import('./settings.js')
-  const Q = await import('./quality.js')
+  const S = await import('./lib/settings.js')
+  const Q = await import('./lib/quality.js')
   return {
     setting: S.settings.quality,
     resolved: S.settings._resolvedPreset,
