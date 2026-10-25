@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import * as CFG from './config.js'
 import { scene } from './scene.js'
-import { G } from './state.js'
+import { G, rocketState } from './state.js'
 import { terrainHeight, hash2i } from './world/world.js'
 
 /* ================================================================
@@ -368,6 +368,148 @@ export function updateChests(dt, rx, rz) {
 }
 
 /* ================================================================
+   GEMS — октаэдры с эмиссивным свечением.
+   Геометрии и материалы общие; позиции/анимация — у каждого свои.
+================================================================ */
+export const gemGroup = new THREE.Group()
+scene.add(gemGroup)
+
+/** { id, x, z, baseY, group, mesh, glow, collected } */
+export const gems = []
+
+const _gemCoreGeo = new THREE.OctahedronGeometry(CFG.GEMS.size, 0)
+const _gemGlowGeo = new THREE.SphereGeometry(CFG.GEMS.glowSize, 12, 10)
+
+const _gemCoreMat = new THREE.MeshStandardMaterial({
+  color: CFG.GEMS.colors.core,
+  emissive: CFG.GEMS.colors.emissive,
+  emissiveIntensity: 1.5,
+  roughness: 0.2,
+  metalness: 0.6,
+  flatShading: true,
+})
+
+const _gemGlowMat = new THREE.MeshBasicMaterial({
+  color: CFG.GEMS.colors.glow,
+  transparent: true,
+  opacity: CFG.GEMS.glowOpacity,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: false,
+})
+
+/* Общий PointLight — как у сундуков, «переезжает» к ближайшему. */
+const gemLight = new THREE.PointLight(CFG.GEMS.glowLightColor, 0, CFG.GEMS.glowLightRange)
+scene.add(gemLight)
+gemLight.visible = false
+
+/** Детерминированные смещения по seed (стабильны между сессиями). */
+function gemX(x) {
+  const r = (hash2i(x, 0x9c1f) & 0xffff) / 0xffff
+  return x + (r * 2 - 1) * CFG.GEMS.xPosDif
+}
+function gemZ(x) {
+  const yaw = CFG.GAME.flightYaw || 0
+  const r = (hash2i(x, 0x4e2d) & 0xffff) / 0xffff
+  return x * Math.tan(yaw) + r * 2.0 * CFG.GEMS.zOffset - CFG.GEMS.zOffset
+}
+function gemYOffset(x) {
+  const r = (hash2i(x, 0x2b8e) & 0xffff) / 0xffff
+  return (r * 2 - 1) * CFG.GEMS.yPosDif
+}
+
+function buildGemMesh(x, y, z) {
+  const g = new THREE.Group()
+
+  const mesh = new THREE.Mesh(_gemCoreGeo, _gemCoreMat)
+  g.add(mesh)
+
+  const glow = new THREE.Mesh(_gemGlowGeo, _gemGlowMat)
+  g.add(glow)
+
+  g.position.set(x, y, z) // ← теперь честный (x, y, z)
+  return { group: g, mesh, glow }
+}
+
+export function initGems() {
+  for (const x of CFG.GEMS.xPositions) {
+    const gx = gemX(x)
+    const gz = gemZ(x)
+    const gy = terrainHeight(gx, gz) + CFG.GEMS.yOffset + gemYOffset(x)
+    const collected = G.collectedGems.has(x)
+
+    const { group, mesh, glow } = buildGemMesh(gx, gy, gz)
+    group.visible = !collected
+    gemGroup.add(group)
+
+    gems.push({
+      id: x,
+      x: gx,
+      z: gz,
+      baseY: gy,
+      group,
+      mesh,
+      glow,
+      collected,
+    })
+  }
+}
+
+export function resyncGems() {
+  for (const gem of gems) {
+    gem.collected = G.collectedGems.has(gem.id)
+    gem.group.visible = !gem.collected
+  }
+}
+
+/* Обновление визуала (per-frame). */
+export function updateGems(dt) {
+  const t = performance.now() * 0.001
+  const G_CFG = CFG.GEMS
+
+  for (const gem of gems) {
+    if (gem.collected) continue
+
+    // Вращение самого кристалла (glow не крутим — сфера).
+    gem.mesh.rotation.y = t * G_CFG.rotateSpeed
+    gem.mesh.rotation.x = t * G_CFG.rotateSpeed * 0.3
+
+    // Парение.
+    const bob = Math.sin(t * G_CFG.bobSpeed + gem.id * 0.7) * G_CFG.bobHeight
+    gem.group.position.y = gem.baseY + bob
+
+    // Пульсация ореола.
+    const pulse = 0.85 + Math.sin(t * G_CFG.pulseSpeed + gem.id) * 0.15
+    gem.glow.scale.setScalar(pulse)
+  }
+
+  // Свет — к ближайшему гему в радиусе.
+  const rx = rocketState.pos.x
+  const rz = rocketState.pos.z
+  let nearest = null
+  let nearestD2 = Infinity
+  for (const gem of gems) {
+    if (gem.collected) continue
+    const dx = rx - gem.x
+    const dz = rz - gem.z
+    const d2 = dx * dx + dz * dz
+    if (d2 < nearestD2) {
+      nearestD2 = d2
+      nearest = gem
+    }
+  }
+
+  const R = G_CFG.glowLightRadius
+  if (nearest && nearestD2 < R * R) {
+    gemLight.position.set(nearest.x, nearest.baseY, nearest.z)
+    gemLight.intensity = G_CFG.glowLightIntensity
+    gemLight.visible = true
+  } else {
+    gemLight.visible = false
+  }
+}
+
+/* ================================================================
    GHOST ROCKET — призрак лучшего полёта.
    Клон настоящей ракеты, но с MeshBasicMaterial:
      • не участвует в освещении (ни sun, ни hemi, ни fog),
@@ -501,4 +643,5 @@ export function updateGhostRocket(samples, t) {
 ================================================================ */
 export function init() {
   initChests()
+  initGems()
 }

@@ -12,6 +12,7 @@
 import * as CFG from './config.js'
 import { G } from './state.js'
 
+let _callbacks = {}
 let _initialized = false
 let _currentTab = 'all'
 let _isOpen = false
@@ -29,9 +30,10 @@ const STAT_LABELS = {
 /* ================================================================
    INIT / OPEN / CLOSE / REFRESH
 ================================================================ */
-export function init() {
+export function init(callbacks = {}) {
   if (_initialized) return
   _initialized = true
+  _callbacks = callbacks
 
   const $panel = document.getElementById('cardsPanel')
   const $close = document.getElementById('cardsClose')
@@ -127,10 +129,7 @@ function totalMultiplier(stat) {
 }
 
 function getFamilyCount(family) {
-  return CFG.CARDS.filter((c) => c.family === family).reduce(
-    (s, c) => s + (G.cards[c.id] || 0),
-    0
-  )
+  return CFG.CARDS.filter((c) => c.family === family).reduce((s, c) => s + (G.cards[c.id] || 0), 0)
 }
 
 function cardIsAvailable(card) {
@@ -145,8 +144,14 @@ function cardIsAvailable(card) {
    RENDER — сводка сверху + список карт
 ================================================================ */
 function render() {
+  renderGemsCounter()
   renderSummary()
   renderList()
+}
+
+function renderGemsCounter() {
+  const $c = document.getElementById('cardsGemsCount')
+  if ($c) $c.textContent = G.gems
 }
 
 /* ---------- Итоговые множители ---------- */
@@ -230,13 +235,10 @@ function renderCard(card) {
     row.style.borderColor = '#' + hex + '55'
   }
 
-  // Бейдж «(×N)» перед именем — только когда получена
   const badge = count > 0 ? `<span class="card-row-count">(×${count})</span>` : ''
 
-  // Тело: описание или эффекты
   let bodyHtml = ''
   if (card.special) {
-    // Форсаж — способность, не числовые effects
     const descText = isReceived ? card.desc_upgrade || card.desc_buff : card.desc_buff
     bodyHtml = `<div class="card-row-desc">${descText}</div>`
     if (isReceived) {
@@ -249,7 +251,6 @@ function renderCard(card) {
       const cls = eff.isBuff ? 'buff' : 'debuff'
       const arrow = eff.isBuff ? '▲' : '▼'
       const baseStr = formatMult(eff.mult)
-      // «→ ×4» — только если текущее число копий > 1
       let totalPart = ''
       if (count > 1) {
         const total = Math.pow(eff.mult, count)
@@ -258,6 +259,9 @@ function renderCard(card) {
       bodyHtml += `<div class="card-row-effect ${cls}">${arrow} ${label.icon} ${label.name} ${baseStr}${totalPart}</div>`
     }
   }
+
+  // NEW: кнопки покупки/продажи
+  const actionsHtml = buildActionsHtml(card, count)
 
   row.innerHTML = `
     <div class="card-row-icon">${card.icon}</div>
@@ -268,6 +272,119 @@ function renderCard(card) {
       </div>
       ${bodyHtml}
     </div>
+    ${actionsHtml ? `<div class="card-row-actions">${actionsHtml}</div>` : ''}
   `
+
+  wireTradeButtons(row, card)
+
   return row
+}
+
+function escAttr(s) {
+  return String(s).replace(/"/g, '&quot;')
+}
+
+function buildActionsHtml(card, count) {
+  const showBuy = card.buyFlag !== false && card.buyPrice > 0
+  const showSell = card.sellFlag !== false && card.sellPrice > 0 && count > 0
+  if (!showBuy && !showSell) return ''
+
+  let html = ''
+
+  if (showBuy) {
+    const reason = _callbacks.canBuy?.(card.id)
+    const dis = reason ? 'disabled' : ''
+    const tip = reason ? `title="${escAttr(reason)}"` : ''
+    html += `<button class="card-trade-btn buy" data-action="buy" ${dis} ${tip}>Купить ${card.buyPrice} 💎</button>`
+  }
+  if (showSell) {
+    const reason = _callbacks.canSell?.(card.id)
+    const dis = reason ? 'disabled' : ''
+    const tip = reason ? `title="${escAttr(reason)}"` : ''
+    html += `<button class="card-trade-btn sell" data-action="sell" ${dis} ${tip}>Продать ${card.sellPrice} 💎</button>`
+  }
+  return html
+}
+
+function wireTradeButtons(row, card) {
+  const buyBtn = row.querySelector('.card-trade-btn.buy')
+  const sellBtn = row.querySelector('.card-trade-btn.sell')
+
+  if (buyBtn && !buyBtn.disabled) {
+    buyBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      handleBuy(card)
+    })
+  }
+  if (sellBtn && !sellBtn.disabled) {
+    sellBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      handleSell(card)
+    })
+  }
+}
+
+/* ================================================================
+   TRADE: покупка / продажа
+================================================================ */
+function getTradePreview(card, delta) {
+  if (!_callbacks.getTradePreview) return null
+  return _callbacks.getTradePreview(card.id, delta)
+}
+
+function buildTradeConfirm(card, delta) {
+  const price = delta > 0 ? card.buyPrice : card.sellPrice
+  const preview = getTradePreview(card, delta) || {
+    curCount: 0,
+    newCount: 0,
+    effects: [],
+  }
+  const name = card.variant ? `${card.name} · ${card.variant}` : card.name
+
+  const title = delta > 0 ? `Купить «${name}» за ${price} 💎?` : `Продать «${name}» за ${price} 💎?`
+
+  const lines = [title, '']
+
+  if (preview.effects.length > 0) {
+    lines.push(`Количество: ×${preview.curCount} → ×${preview.newCount}`)
+    for (const e of preview.effects) {
+      const label = STAT_LABELS[e.stat] || { icon: '❓', name: e.stat }
+      lines.push(`${label.icon} ${label.name}: ${formatMult(e.before)} → ${formatMult(e.after)}`)
+    }
+    lines.push('')
+  }
+
+  const gemsBefore = G.gems
+  const gemsAfter = delta > 0 ? G.gems - price : G.gems + price
+  lines.push(`Гемов: ${gemsBefore} → ${gemsAfter}`)
+
+  return lines.join('\n')
+}
+
+function handleBuy(card) {
+  const reason = _callbacks.canBuy?.(card.id)
+  if (reason) {
+    alert(reason)
+    return
+  }
+
+  const msg = buildTradeConfirm(card, +1)
+  if (!confirm(msg)) return
+
+  const res = _callbacks.onBuy?.(card.id)
+  if (!res?.ok) alert(res?.reason || 'Не удалось купить')
+}
+
+function handleSell(card) {
+  const reason = _callbacks.canSell?.(card.id)
+  if (reason) {
+    alert(reason)
+    return
+  }
+
+  const msg = buildTradeConfirm(card, -1)
+  if (!confirm(msg)) return
+
+  const res = _callbacks.onSell?.(card.id)
+  if (!res?.ok) alert(res?.reason || 'Не удалось продать')
 }

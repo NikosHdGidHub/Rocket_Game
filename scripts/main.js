@@ -31,7 +31,13 @@ Sounds.init() //звуки
 
 // Модалка: привязываем табы и кнопки (idempotent, можно вызвать до UI.init)
 AchModal.init()
-CardsModal.init()
+CardsModal.init({
+  onBuy: (id) => Game.buyCard(id),
+  onSell: (id) => Game.sellCard(id),
+  canBuy: (id) => Game.canBuyCard(id),
+  canSell: (id) => Game.canSellCard(id),
+  getTradePreview: (id, delta) => Game.getCardTradePreview(id, delta),
+})
 
 UI.init({
   onLaunch: Game.startKick,
@@ -90,8 +96,8 @@ if (!G.abilities.forsage.level) {
   console.log('🧪 Форсаж автоматически выдан для теста')
 }*/
 
-Entities.resyncChests() // ← теперь флаги сундуков актуальны
-
+Entities.resyncChests()
+Entities.resyncGems()
 Lod.setPhaseGetter(() => G.phase)
 
 Chunks.init() // навешивает sky-fog на propMat
@@ -273,3 +279,10 @@ window.dbgCanGive = (id) => {
   const r = Game.canGiveCardReason(id)
   console.log(r ? '⛔ ' + r : '✅ можно')
 }*/
+
+window.dbgGiveGems = (n = 10) => {
+  G.gems += n
+  Game.saveProgress()
+  CardsModal.refresh()
+  console.log(`+${n} 💎 → всего ${G.gems}`)
+}

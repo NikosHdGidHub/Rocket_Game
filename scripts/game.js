@@ -25,6 +25,8 @@ import {
   chests,
   updateChests as updateChestsFX,
   updateGhostRocket,
+  gems,
+  updateGems as updateGemsFX,
 } from './entities.js'
 import * as Angles from './angles.js'
 
@@ -100,6 +102,8 @@ export function saveProgress() {
       upgrades: { ...G.upgrades },
       cards: { ...G.cards },
       openedChests: [...G.openedChests],
+      gems: G.gems,
+      collectedGems: [...G.collectedGems],
       achievements: Achievements.serialize(),
       totalPlaytime: time.totalPlaytime + time.gameTime,
     }
@@ -151,6 +155,14 @@ export function loadProgress() {
     if (Array.isArray(data.openedChests)) {
       for (const x of data.openedChests) {
         if (typeof x === 'number' && isFinite(x)) G.openedChests.add(x)
+      }
+    }
+    if (typeof data.gems === 'number' && isFinite(data.gems) && data.gems >= 0) {
+      G.gems = Math.floor(data.gems)
+    }
+    if (Array.isArray(data.collectedGems)) {
+      for (const x of data.collectedGems) {
+        if (typeof x === 'number' && isFinite(x)) G.collectedGems.add(x)
       }
     }
     Achievements.deserialize(data.achievements)
@@ -395,6 +407,98 @@ function openChest(chest) {
     CardsModal.refresh()
   })
   saveProgress() // ← сохраняем факт открытия сундука сразу
+}
+
+/* ================================================================
+   КАРТОЧКИ: покупка / продажа за гемы
+================================================================ */
+
+/** null = можно; иначе — строка с причиной. */
+export function canBuyCard(cardId) {
+  const card = CFG.CARDS.find((c) => c.id === cardId)
+  if (!card) return 'Карточка не найдена'
+  if (card.buyFlag === false) return 'Покупка недоступна'
+  if (!card.buyPrice || card.buyPrice <= 0) return 'Цена не указана'
+
+  const reason = canGiveCardReason(cardId)
+  if (reason) return reason
+
+  if (G.gems < card.buyPrice) return `Нужно ${card.buyPrice} 💎 (у вас ${G.gems})`
+  return null
+}
+
+export function canSellCard(cardId) {
+  const card = CFG.CARDS.find((c) => c.id === cardId)
+  if (!card) return 'Карточка не найдена'
+  if (card.sellFlag === false) return 'Продажа недоступна'
+  if (!card.sellPrice || card.sellPrice <= 0) return 'Цена не указана'
+
+  const cur = G.cards[cardId] || 0
+  if (cur <= 0) return 'Нет карточек для продажи'
+  return null
+}
+
+/** Возвращает { ok: boolean, reason?: string }. */
+export function buyCard(cardId) {
+  const reason = canBuyCard(cardId)
+  if (reason) return { ok: false, reason }
+
+  const card = CFG.CARDS.find((c) => c.id === cardId)
+  G.gems -= card.buyPrice
+  G.cards[card.id] = (G.cards[card.id] || 0) + 1
+
+  if (card.family === 'forsage') Abilities.onCardObtained('forsage')
+
+  saveProgress()
+  CardsModal.refresh()
+  return { ok: true }
+}
+
+/** Возвращает { ok: boolean, reason?: string }. */
+export function sellCard(cardId) {
+  const reason = canSellCard(cardId)
+  if (reason) return { ok: false, reason }
+
+  const card = CFG.CARDS.find((c) => c.id === cardId)
+  G.gems += card.sellPrice
+  const cur = G.cards[cardId] || 0
+  G.cards[cardId] = cur - 1
+  if (G.cards[cardId] === 0) delete G.cards[cardId]
+
+  // Форсаж (на будущее — сейчас sellFlag: false)
+  if (card.family === 'forsage') {
+    Abilities.syncFromCards()
+    const a = G.abilities.forsage
+    if (a) {
+      a.active = false
+      a.activeEnd = 0
+      a.cooldownEnd = 0
+    }
+  }
+
+  saveProgress()
+  CardsModal.refresh()
+  return { ok: true }
+}
+
+/** Данные для confirm-сообщения: { curCount, newCount, effects } */
+export function getCardTradePreview(cardId, delta) {
+  const card = CFG.CARDS.find((c) => c.id === cardId)
+  if (!card) return null
+
+  const curCount = G.cards[cardId] || 0
+  const newCount = Math.max(0, curCount + delta)
+
+  const effects = []
+  if (card.effects) {
+    for (const eff of card.effects) {
+      const before = Math.pow(eff.mult, curCount)
+      const after = Math.pow(eff.mult, newCount)
+      if (Math.abs(before - after) < 0.001) continue
+      effects.push({ stat: eff.stat, before, after })
+    }
+  }
+  return { curCount, newCount, effects }
 }
 
 /* ================================================================
@@ -866,6 +970,7 @@ export function updatePhysics(dt) {
   Abilities.update(dt)
   updateBossPhase(dt)
   updateRocketPhysics(dt)
+  checkGemPickup()
 }
 
 /* ================================================================
@@ -880,6 +985,7 @@ export function updateVisuals(dt, alpha, visualTime = time.gameTime) {
   updateRocketVisuals(dt)
   updateCamera(dt, _ipos)
   updateChestsFX(dt, _ipos.x, _ipos.z)
+  updateGemsFX(dt)
 
   if (G.phase === 'fly' && bestFlight.samples) {
     const t = Math.max(0, visualTime - ghostRecorder.startTime) // ← visualTime, не gameTime
@@ -969,6 +1075,39 @@ export function debugOpenChestAt(x) {
   G.openedChests.delete(x)
   openChest(chest)
   console.log(`[DEBUG] Открыт сундук X=${x}, type=${chest.type}`)
+}
+
+/* ================================================================
+   ГЕМЫ: подбор и сбор
+================================================================ */
+function collectGems(gemList) {
+  for (const gem of gemList) {
+    gem.collected = true
+    G.collectedGems.add(gem.id)
+    gem.group.visible = false
+    G.gems += 1
+  }
+  const n = gemList.length
+  UI.showToast(n === 1 ? '+1 💎' : `+${n} 💎`, '#7ed4ff')
+  saveProgress()
+  CardsModal.refresh()
+}
+
+function checkGemPickup() {
+  const p = rocketState.pos
+  const R2 = CFG.GEMS.takeRange * CFG.GEMS.takeRange
+  const toCollect = []
+
+  for (const gem of gems) {
+    if (gem.collected) continue
+    const dx = p.x - gem.x
+    const dy = p.y - gem.baseY
+    const dz = p.z - gem.z
+    if (dx * dx + dy * dy + dz * dz <= R2) {
+      toCollect.push(gem)
+    }
+  }
+  if (toCollect.length > 0) collectGems(toCollect)
 }
 
 /* ================================================================

@@ -237,3 +237,98 @@
     font-size: 13px;
   }
 }
+
+/* ================================================================
+   Счётчик гемов в шапке модалки
+   ================================================================ */
+.cards-gems {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: rgba(126, 212, 255, 0.08);
+  border: 1px solid rgba(126, 212, 255, 0.28);
+  border-radius: 10px;
+  color: #7ed4ff;
+  font-weight: 800;
+}
+
+.cards-gems-icon {
+  font-size: 20px;
+  filter: drop-shadow(0 0 6px rgba(126, 212, 255, 0.65));
+}
+
+.cards-gems-count {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cards-gems-label {
+  font-size: 11px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+}
+
+/* ================================================================
+   Кнопки покупки/продажи в строке карточки
+   ================================================================ */
+.card-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-left: 8px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.card-trade-btn {
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+.card-trade-btn.buy {
+  color: #7ed4ff;
+  border-color: rgba(126, 212, 255, 0.5);
+  background: rgba(126, 212, 255, 0.1);
+}
+.card-trade-btn.buy:hover:not(:disabled) {
+  background: rgba(126, 212, 255, 0.22);
+  border-color: #7ed4ff;
+}
+.card-trade-btn.buy:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
+.card-trade-btn.sell {
+  color: #ffd75e;
+  border-color: rgba(255, 215, 94, 0.5);
+  background: rgba(255, 215, 94, 0.1);
+}
+.card-trade-btn.sell:hover:not(:disabled) {
+  background: rgba(255, 215, 94, 0.22);
+  border-color: #ffd75e;
+}
+.card-trade-btn.sell:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .card-trade-btn {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+}
