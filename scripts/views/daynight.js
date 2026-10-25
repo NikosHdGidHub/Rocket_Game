@@ -17,7 +17,7 @@ import {
   SKY_HORIZON,
   SUN_COLOR,
 } from './scene.js'
-import { propMat } from '../chunks.js'
+import { propMat } from '../views/chunks/index.js'
 import { time } from '../state.js'
 
 const DN = CFG.DAYNIGHT

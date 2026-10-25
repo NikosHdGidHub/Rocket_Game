@@ -10,7 +10,7 @@ import * as CFG from './config.js'
 import { scene, camera, groundTex, applySkyFog, fogU } from './views/scene.js'
 import { lod, rocketState } from './state.js'
 import { boss } from './views/entities/index.js'
-import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS } from './chunks.js'
+import { CHUNK_SIZE, chunks, PERSISTENT_CHUNKS } from './views/chunks/index.js'
 import LodWorker from './workers/lodWorker.js?worker'
 
 /* ================================================================

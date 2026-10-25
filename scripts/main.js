@@ -10,7 +10,7 @@ import './lib/settings.js'
 // 1) Остальное
 import * as CFG from './config.js'
 import * as Scene from './views/scene.js'
-import * as Chunks from './chunks.js'
+import * as Chunks from './views/chunks/index.js'
 import * as Lod from './lod.js'
 import * as Entities from './views/entities/index.js'
 import * as Game from './game.js'
