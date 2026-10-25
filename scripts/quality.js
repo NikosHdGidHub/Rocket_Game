@@ -121,6 +121,11 @@ export function getLabel(presetId) {
   return p ? p.label : presetId
 }
 
+export function getDesc(presetId) {
+  const p = CFG.QUALITY_PRESETS[presetId]
+  return p ? p.desc : ''
+}
+
 /** Список строк «что изменится» между двумя пресетами. */
 export function describeDiff(currentId, nextId) {
   const a = CFG.QUALITY_PRESETS[currentId]
@@ -147,7 +152,11 @@ export function describeDiff(currentId, nextId) {
       `Сглаживание: ${a.renderer.antialias ? 'вкл' : 'выкл'} → ${b.renderer.antialias ? 'вкл' : 'выкл'}`
     )
   }
-  if (a.overlay.canvasSize !== b.overlay.canvasSize) {
+  if (a.overlay.enabled !== b.overlay.enabled) {
+    lines.push(
+      `2D-лес (overlay): ${a.overlay.enabled ? 'вкл' : 'выкл'} → ${b.overlay.enabled ? 'вкл' : 'выкл'}`
+    )
+  } else if (a.overlay.enabled && a.overlay.canvasSize !== b.overlay.canvasSize) {
     lines.push(`Текстура леса (2D): ${a.overlay.canvasSize}px → ${b.overlay.canvasSize}px`)
   }
 

@@ -1081,7 +1081,7 @@ canvas {
 
 .settings-card {
   position: relative;
-  width: min(340px, 86vw);
+  width: min(400px, 86vw);
   padding: 24px 20px 18px;
   border-radius: 20px;
   background: linear-gradient(160deg, #1a2440, #0f1527 70%);
@@ -1348,64 +1348,80 @@ canvas {
   font-weight: 800;
 }
 
-.settings-radio-group {
+/* ================================================================
+   Quality presets: button group (segmented control)
+   ================================================================ */
+.settings-btn-group {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.settings-radio {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  background: rgba(255, 255, 255, 0.04);
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: 0.15s;
-  user-select: none;
+  border-radius: 12px;
 }
-.settings-radio:hover {
-  border-color: rgba(255, 215, 94, 0.4);
-}
-.settings-radio input[type='radio'] {
-  display: none;
-}
-.settings-radio::before {
-  content: '';
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  flex-shrink: 0;
-  transition: 0.15s;
-  box-sizing: border-box;
-  background: transparent;
-}
-.settings-radio:has(input:checked) {
-  border-color: #ffd75e;
-  background: rgba(255, 215, 94, 0.08);
-}
-.settings-radio:has(input:checked)::before {
-  border-color: #ffd75e;
-  background: radial-gradient(circle, #ffd75e 40%, transparent 44%);
-}
-.settings-radio-body {
+
+.settings-qbtn {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  text-align: left;
-}
-.settings-radio-title {
-  font-size: 13px;
-  font-weight: 700;
+  padding: 10px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: #eaf2ff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s,
+    transform 0.08s;
 }
-.settings-radio-desc {
+
+.settings-qbtn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-qbtn.active {
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  color: #20130a;
+  font-weight: 800;
+  box-shadow:
+    0 2px 0 #b96a00,
+    0 3px 10px rgba(255, 159, 26, 0.35);
+}
+
+.settings-qbtn:active {
+  transform: translateY(1px);
+}
+
+.settings-qdesc {
   font-size: 11px;
-  opacity: 0.6;
+  opacity: 0.65;
+  margin-top: 8px;
+  line-height: 1.4;
+  text-align: left;
+  min-height: 15px; /* чтобы высота не прыгала при смене */
+}
+
+@media (max-width: 640px) {
+  .settings-qbtn {
+    font-size: 10px;
+    padding: 9px 2px;
+    letter-spacing: -0.2px;
+  }
+  .settings-qdesc {
+    font-size: 10.5px;
+  }
 }
 
 /* ================================================================

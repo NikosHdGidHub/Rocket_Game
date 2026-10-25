@@ -445,41 +445,65 @@ export function init(callbacks) {
   const $settingsClose = document.getElementById('settingsClose')
 
   /* ---------- Качество графики: радио-группа ---------- */
-  const $qualityGroup = document.getElementById('qualityRadioGroup')
+  /* ---------- Качество графики: button group ---------- */
+  const $qualityGroup = document.getElementById('qualityBtnGroup')
   const $qualityAutoHint = document.getElementById('qualityAutoHint')
   const $qualityAutoResolved = document.getElementById('qualityAutoResolved')
+  const $qualityDesc = document.getElementById('qualityDesc')
 
   function refreshQualityUI() {
     if (!$qualityGroup) return
     const current = Settings.settings.quality
-    const radios = $qualityGroup.querySelectorAll('input[name="quality"]')
-    radios.forEach((r) => {
-      r.checked = r.value === current
+    const resolved = Settings.settings._resolvedPreset
+
+    const btns = $qualityGroup.querySelectorAll('.settings-qbtn')
+    btns.forEach((b) => {
+      b.classList.toggle('active', b.dataset.value === current)
     })
 
     if ($qualityAutoHint && $qualityAutoResolved) {
       if (current === 'auto') {
         $qualityAutoHint.hidden = false
-        $qualityAutoResolved.textContent = Quality.getLabel(Settings.settings._resolvedPreset)
+        $qualityAutoResolved.textContent = Quality.getLabel(resolved)
       } else {
         $qualityAutoHint.hidden = true
       }
+    }
+
+    if ($qualityDesc) {
+      $qualityDesc.textContent = Quality.getDesc(resolved)
     }
   }
 
   if ($qualityGroup) {
     refreshQualityUI()
 
-    $qualityGroup.addEventListener('change', async (e) => {
-      const input = e.target
-      if (!input || input.name !== 'quality') return
+    $qualityGroup.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.settings-qbtn')
+      if (!btn) return
+      const nextId = btn.dataset.value
+      if (!nextId) return
 
-      const nextId = input.value
       const currentId = Settings.settings.quality
       if (nextId === currentId) return
 
       const currentResolved = Quality.resolvePreset(currentId)
       const nextResolved = Quality.resolvePreset(nextId)
+
+      // Shortcut: смена намерения без смены CFG.
+      // (auto → пресет, к которому auto уже разрешился; или обратно)
+      // Применяется без reload — CFG не меняется.
+      if (currentResolved === nextResolved) {
+        Settings.settings.quality = nextId
+        Settings.save()
+        refreshQualityUI()
+        showToast(
+          `Качество: ${nextId === 'auto' ? 'Авто' : Quality.getLabel(nextResolved)}`,
+          CFG.UI.toastColors.upgrade
+        )
+        return
+      }
+
       const lines = Quality.describeDiff(currentResolved, nextResolved)
 
       let bodyHtml = ''
@@ -503,7 +527,7 @@ export function init(callbacks) {
       })
 
       if (!ok) {
-        refreshQualityUI() // откат визуального выбора
+        refreshQualityUI() // откат визуального состояния
         return
       }
 

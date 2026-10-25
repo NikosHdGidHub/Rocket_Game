@@ -99,43 +99,16 @@
             Авто (сейчас: <b id="qualityAutoResolved">—</b>)
           </div>
           <div class="settings-quality-fps" id="qualityFpsBadge" hidden></div>
-          <div class="settings-radio-group" id="qualityRadioGroup">
-            <label class="settings-radio">
-              <input type="radio" name="quality" value="auto" />
-              <div class="settings-radio-body">
-                <div class="settings-radio-title">Авто</div>
-                <div class="settings-radio-desc">Определяется автоматически</div>
-              </div>
-            </label>
-            <label class="settings-radio">
-              <input type="radio" name="quality" value="low" />
-              <div class="settings-radio-body">
-                <div class="settings-radio-title">Низкое</div>
-                <div class="settings-radio-desc">Максимум FPS, без теней</div>
-              </div>
-            </label>
-            <label class="settings-radio">
-              <input type="radio" name="quality" value="medium" />
-              <div class="settings-radio-body">
-                <div class="settings-radio-title">Среднее</div>
-                <div class="settings-radio-desc">Баланс качества и FPS</div>
-              </div>
-            </label>
-            <label class="settings-radio">
-              <input type="radio" name="quality" value="high" />
-              <div class="settings-radio-body">
-                <div class="settings-radio-title">Высокое</div>
-                <div class="settings-radio-desc">Красивая картинка</div>
-              </div>
-            </label>
-            <label class="settings-radio">
-              <input type="radio" name="quality" value="ultra" />
-              <div class="settings-radio-body">
-                <div class="settings-radio-title">Ультра</div>
-                <div class="settings-radio-desc">Максимум (сильный GPU)</div>
-              </div>
-            </label>
+
+          <div class="settings-btn-group" id="qualityBtnGroup">
+            <button type="button" class="settings-qbtn" data-value="auto">Авто</button>
+            <button type="button" class="settings-qbtn" data-value="low">Низкое</button>
+            <button type="button" class="settings-qbtn" data-value="medium">Среднее</button>
+            <button type="button" class="settings-qbtn" data-value="high">Высокое</button>
+            <button type="button" class="settings-qbtn" data-value="ultra">Ультра</button>
           </div>
+
+          <div class="settings-qdesc" id="qualityDesc"></div>
           <div class="settings-hint">Изменение требует перезагрузки.</div>
         </div>
 
