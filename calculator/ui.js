@@ -3,7 +3,7 @@
    и загрузка текущего билда из сохранения игры.
 ================================================================ */
 import * as CFG from '../scripts/config.js'
-import { simulateAdaptive, BOOST_LABELS, BOOST_STRATEGIES } from './simulation.js'
+import { simulateAdaptive, findOptimumAsync, BOOST_LABELS, BOOST_STRATEGIES } from './simulation.js'
 import { renderTrajectoryChart, renderAngleChart } from './charts.js'
 
 /* ---------- Хелперы ---------- */
@@ -141,8 +141,7 @@ export function buildOptsInputs(containerId, prefix = '') {
   const r2 = document.createElement('div')
   r2.className = 'row'
   const optionsHtml = BOOST_STRATEGIES.map(
-    (key) =>
-      `<option value="${key}">${BOOST_LABELS[key] || key}</option>`
+    (key) => `<option value="${key}">${BOOST_LABELS[key] || key}</option>`
   ).join('')
   r2.innerHTML = `
     <label>Стратегия PUSH</label>
@@ -185,7 +184,8 @@ export function buildOptsInputs(containerId, prefix = '') {
 
 export function readState(prefix = '') {
   const upgrades = {}
-  for (const u of CFG.UPGRADES) upgrades[u.key] = +document.getElementById(`${prefix}${u.key}`).value
+  for (const u of CFG.UPGRADES)
+    upgrades[u.key] = +document.getElementById(`${prefix}${u.key}`).value
   const cards = {}
   for (const card of CFG.CARDS) {
     if (card.special) continue
@@ -267,6 +267,113 @@ export function loadSave(prefix = '') {
 
   return true
 }
+
+/* ================================================================
+   «Найти прирост» для карточек — сравнение ОПТИМУМОВ.
+   Базовый оптимум кэшируется между кликами по разным карточкам.
+================================================================ */
+
+let baseOptCache = { key: null, distance: 0 }
+let _gainBusy = false
+let _gainDelegationAttached = false
+
+/** Ключ кэша: всё, что реально влияет на оптимум.
+ *  boostThrottle / noseLift* переопределяются внутри findOptimumAsync,
+ *  поэтому в ключ не входят. */
+function cardStateKey(upgrades, cards, opts) {
+  return JSON.stringify({ upgrades, cards, forsageLevel: opts.forsageLevel || 0 })
+}
+
+async function findBestDistance(upgrades, cards, opts, onProgress) {
+  const data = await findOptimumAsync(upgrades, cards, opts, onProgress)
+  return data.best.distance
+}
+
+/** Делегирование кликов по кнопкам «Найти прирост» — вешаем один раз. */
+function setupGainDelegation() {
+  if (_gainDelegationAttached) return
+  const $out = document.getElementById('single-results')
+  if (!$out) return
+  _gainDelegationAttached = true
+  $out.addEventListener('click', (e) => {
+    const btn = e.target.closest('.card-gain-btn')
+    if (btn) handleCardGainClick(btn)
+  })
+}
+
+async function handleCardGainClick(btn) {
+  if (_gainBusy) return
+  _gainBusy = true
+
+  const origText = btn.textContent
+  document.querySelectorAll('.card-gain-btn').forEach((b) => (b.disabled = true))
+
+  try {
+    // Свежее состояние из формы: пользователь мог подвигать слайдеры
+    // после отрисовки таблицы.
+    const { upgrades, cards, opts } = readState('')
+
+    const isForsage = btn.dataset.forsage === '1'
+    const cardId = btn.dataset.cardId
+
+    let nextCards = cards
+    let nextOpts = opts
+    if (isForsage) {
+      nextOpts = { ...opts, forsageLevel: (opts.forsageLevel || 0) + 1 }
+    } else {
+      nextCards = { ...cards, [cardId]: (cards[cardId] || 0) + 1 }
+    }
+
+    const t0 = performance.now()
+
+    // ─── 1. Оптимум базового билда (кэш) ───
+    const baseKey = cardStateKey(upgrades, cards, opts)
+    let baseDist
+    if (baseOptCache.key === baseKey) {
+      baseDist = baseOptCache.distance
+    } else {
+      btn.textContent = '⏳ База…'
+      baseDist = await findBestDistance(upgrades, cards, opts, (d) => {
+        const sec = Math.round((performance.now() - t0) / 1000)
+        btn.textContent = `⏳ База · ${d} · ${sec}с`
+      })
+      baseOptCache = { key: baseKey, distance: baseDist }
+    }
+
+    // ─── 2. Оптимум с +1 карточкой ───
+    const t1 = performance.now()
+    btn.textContent = '⏳ С картой…'
+    const nextDist = await findBestDistance(upgrades, nextCards, nextOpts, (d) => {
+      const sec = Math.round((performance.now() - t1) / 1000)
+      btn.textContent = `⏳ С картой · ${d} · ${sec}с`
+    })
+
+    const gain = nextDist - baseDist
+    const pct = baseDist > 0 ? (gain / baseDist) * 100 : 0
+    const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
+    const sign = gain >= 0 ? '+' : ''
+
+    const cell = btn.closest('td')
+    if (cell && btn.isConnected) {
+      cell.innerHTML = `
+        <span class="${cls}" style="font-weight:700">${sign}${fmtM(gain)}</span>
+        <span class="${cls}" style="font-weight:700;margin-left:6px">(${sign}${pct.toFixed(1)}%)</span>`
+      cell.title = `Оптимум базы: ${fmtM(baseDist)} → с картой: ${fmtM(nextDist)}`
+    }
+  } catch (err) {
+    console.error('Не удалось посчитать прирост:', err)
+    if (btn.isConnected) {
+      btn.textContent = origText
+      btn.disabled = false
+    }
+  } finally {
+    _gainBusy = false
+    // Кликнутая кнопка могла исчезнуть — остальные вернём в строй.
+    document.querySelectorAll('.card-gain-btn').forEach((b) => (b.disabled = false))
+  }
+}
+
+setupGainDelegation()
 
 /* ---------- Рендер результатов ---------- */
 
@@ -353,6 +460,7 @@ export function renderSingleResult(result, upgrades, cards, opts) {
     </table>`
 
   $out.innerHTML += renderCardInfluence(result, upgrades, cards, opts)
+  setupGainDelegation() //нужно на случай, если модуль загрузился раньше появления #single-results
 
   const $charts = document.getElementById('charts-row')
   $charts.style.display = 'grid'
@@ -384,23 +492,20 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
       rows.push(`<tr>
         <td>${card.icon} ${displayName}</td>
         <td class="num">${cur}</td>
-        <td class="num neutral">MAX</td>
-        <td class="num neutral">—</td>
+        <td class="num neutral" style="text-align:right">MAX</td>
       </tr>`)
       continue
     }
 
-    const nextCards = { ...cards, [card.id]: cur + 1 }
-    const nextResult = simulateAdaptive(upgrades, nextCards, opts)
-    const gain = nextResult.distance - baseResult.distance
-    const pct = baseResult.distance > 0 ? (gain / baseResult.distance) * 100 : 0
-    const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
-
     rows.push(`<tr>
       <td>${card.icon} ${displayName}</td>
       <td class="num">${cur}</td>
-      <td class="num ${cls}">${gain >= 0 ? '+' : ''}${fmtM(gain)}</td>
-      <td class="num ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</td>
+      <td class="num" style="text-align:right">
+        <button class="mini-btn card-gain-btn" data-card-id="${card.id}"
+          title="Сравнить оптимум текущего билда и билда с +1 этой карточкой. ~1–3 с.">
+          🔍 Найти прирост
+        </button>
+      </td>
     </tr>`)
   }
 
@@ -411,32 +516,28 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
     rows.push(`<tr>
       <td>🚀 Форсаж</td>
       <td class="num">${fLvl}/${fMax}</td>
-      <td class="num neutral">MAX</td>
-      <td class="num neutral">—</td>
+      <td class="num neutral" style="text-align:right">MAX</td>
     </tr>`)
   } else {
-    const nextOpts = { ...opts, forsageLevel: fLvl + 1 }
-    const nextResult = simulateAdaptive(upgrades, cards, nextOpts)
-    const gain = nextResult.distance - baseResult.distance
-    const pct = baseResult.distance > 0 ? (gain / baseResult.distance) * 100 : 0
-    const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
-
     rows.push(`<tr>
       <td>🚀 Форсаж</td>
       <td class="num">${fLvl}/${fMax}</td>
-      <td class="num ${cls}">${gain >= 0 ? '+' : ''}${fmtM(gain)}</td>
-      <td class="num ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</td>
+      <td class="num" style="text-align:right">
+        <button class="mini-btn card-gain-btn" data-forsage="1"
+          title="Сравнить оптимум текущего билда и билда со следующим уровнем форсажа.">
+          🔍 Найти прирост
+        </button>
+      </td>
     </tr>`)
   }
 
   return `
-    <div class="section-title">Влияние карточек (+1 копия от текущего)</div>
+    <div class="section-title">Влияние карточек (+1 копия · прирост по оптимуму)</div>
     <table>
       <thead><tr>
         <th>Карточка</th>
         <th style="text-align:right">Копий</th>
-        <th style="text-align:right">Прирост</th>
-        <th style="text-align:right">%</th>
+        <th style="text-align:right">Прирост (оптимум)</th>
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`
@@ -535,10 +636,7 @@ export function renderOptimum(optData) {
 
   // ── Графики ──
   // Траектория оптимума + кривая «дальность vs угол» для победившей стратегии.
-  const chartPoints = [
-    ...coarseResults.filter((r) => r.strategy === best.strategy),
-    ...fineResults,
-  ]
+  const chartPoints = [...coarseResults.filter((r) => r.strategy === best.strategy), ...fineResults]
     .sort((a, b) => a.angle - b.angle)
     .map((r) => ({ angle: r.angle, distance: r.distance }))
 
