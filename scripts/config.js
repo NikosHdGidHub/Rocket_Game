@@ -1037,14 +1037,19 @@ export const ROCKET = /** @type {const} */ ({
   forsageScale: 1.15,
 
   /** Цвет точечного света от сопла. */
-  exhaustLight: 0xff9a3c,
+  exhaustLight: 0xffc04a, // #ffc04a
+
+  /** Цвет света при активном форсаже — фиолетовый в тон пламени. */
+  exhaustLightForsage: 0x9b59b6, // #9b59b6
 
   /* ---------- Источник света от сопла ----------
      Тот же приём: decay: 1 + явный range. Свет привязан к ракете,
      летит с ней; освещает землю под соплом и ближайшие деревья. */
   exhaustLightRange: 80,
+  exhaustLightRangeForsage: 250,
   exhaustLightDecay: 1,
   exhaustLightIntensityBoost: 60, // при включённом бусте / форсаже
+  exhaustLightIntensityForsage: 490, // форсаж — заметно ярче
   exhaustLightIntensityIdle: 15, // «тлеющий» — двигатель не работает
 
   // ─── ПРИЗРАК РАКЕТЫ ───
@@ -1263,7 +1268,7 @@ export const GAME = /** @type {const} */ ({
   upgrade_cost_diff: 1.4,
 
   /** Сколько монет у игрока на старте. */
-  initialCoins: 5,
+  initialCoins: 500000,
 
   /** Рекорд дистанции на старте (м). */
   initialBest: 0,
@@ -1429,12 +1434,20 @@ export const CHESTS = /** @type {const} */ ({
 
   /**
    * Визуальные override-ы по типу. Всё, чего нет в types[type],
-   * берётся из корневых полей (beamColor, glowColor).
+   * берётся из корневых полей (beamColor, glowColor, beamOpacity, ...).
+   * Настройки применяются и к beam/glow-материалам, и к пулу PointLight.
    */
   types: {
     forsage: {
-      beamColor: 0xc38bff, // #c38bff
-      glowColor: 0x9b59b6, // #9b59b6
+      beamColor: 0xb071f3, // #b071f3
+      glowColor: 0xb9100ff, // #9100ff
+
+      beamOpacity: 0.65, // плотнее обычного (root: 0.4)
+      glowOpacity: 0.75, // плотнее обычного (root: 0.5)
+
+      lightIntensity: 420, // ярче обычного (root: 30)
+      lightRange: 280, // дальше обычного (root: 80)
+      lightHeight: 5.0, // выше обычного (root: 4.0)
     },
   },
 
@@ -1452,6 +1465,9 @@ export const CHESTS = /** @type {const} */ ({
   beamRadius: 2.0,
   beamColor: 0xffd75e, // #ffd75e
   beamOpacity: 0.4,
+
+  /** Базовая непрозрачность glow-сферы вокруг сундука (0..1). */
+  glowOpacity: 0.5,
 
   /** Яркость и цвет ядра сундука (default). */
   glowColor: 0xffb300, // #ffb300
@@ -1512,8 +1528,8 @@ export const GEMS = /** @type {const} */ ({
   lights: {
     count: 2,
     color: 0x4daeff,
-    intensity: 200,
-    range: 200, // радиус затухания света (м)
+    intensity: 150,
+    range: 180, // радиус затухания света (м)
     fadeSpeed: 4, // 1/с — скорость плавного вкл/выкл
   },
 

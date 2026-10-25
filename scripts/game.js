@@ -42,6 +42,8 @@ const ANG_DAMP = CFG.GAME.angDamp
 const ANG_MAX = CFG.GAME.angMax
 const _baseFlameColor = new THREE.Color(CFG.ROCKET.flame.outer)
 const _forsageFlameColor = new THREE.Color(CFG.ROCKET.flame.forsage)
+const _exhaustColorNormal = new THREE.Color(CFG.ROCKET.exhaustLight)
+const _exhaustColorForsage = new THREE.Color(CFG.ROCKET.exhaustLightForsage)
 
 const _ipos = new THREE.Vector3()
 const _ivel = new THREE.Vector3()
@@ -899,11 +901,17 @@ function updateRocketVisuals(dt) {
   _workingFlame.copy(targetFlame).lerp(_lowAltFlameColor, 1 - engineEff)
   flameMat.color.copy(_workingFlame)
   flameMat.opacity = boosting || forsageActive ? 0.95 : 0.5
-  exhaustLight.intensity =
-    boostAmt *
-    (boosting || forsageActive
-      ? CFG.ROCKET.exhaustLightIntensityBoost
-      : CFG.ROCKET.exhaustLightIntensityIdle)
+  if (forsageActive) {
+    exhaustLight.color.copy(_exhaustColorForsage)
+    exhaustLight.intensity = boostAmt * CFG.ROCKET.exhaustLightIntensityForsage
+    exhaustLight.distance = CFG.ROCKET.exhaustLightRangeForsage
+  } else {
+    exhaustLight.color.copy(_exhaustColorNormal)
+    exhaustLight.intensity =
+      boostAmt *
+      (boosting ? CFG.ROCKET.exhaustLightIntensityBoost : CFG.ROCKET.exhaustLightIntensityIdle)
+    exhaustLight.distance = CFG.ROCKET.exhaustLightRange
+  }
 }
 
 /* ================================================================

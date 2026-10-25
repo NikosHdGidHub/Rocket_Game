@@ -214,11 +214,13 @@ function getChestMats(type) {
   const override = CFG.CHESTS.types[type] || {}
   const beamColor = override.beamColor ?? CFG.CHESTS.beamColor
   const glowColor = override.glowColor ?? CFG.CHESTS.glowColor
+  const beamOpacityBase = override.beamOpacity ?? CFG.CHESTS.beamOpacity
+  const glowOpacityBase = override.glowOpacity ?? CFG.CHESTS.glowOpacity
 
   const beam = new THREE.MeshBasicMaterial({
     color: beamColor,
     transparent: true,
-    opacity: CFG.CHESTS.beamOpacity,
+    opacity: beamOpacityBase,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     fog: false,
@@ -227,13 +229,15 @@ function getChestMats(type) {
   const glow = new THREE.MeshBasicMaterial({
     color: glowColor,
     transparent: true,
-    opacity: 0.5,
+    opacity: glowOpacityBase,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     fog: false,
   })
 
-  chestMats[type] = { beam, glow }
+  // Базовая opacity сохраняется, чтобы updateChests мог пульсировать
+  // относительно неё (а не относительно глобального CFG.CHESTS.beamOpacity).
+  chestMats[type] = { beam, glow, beamOpacityBase, glowOpacityBase }
   return chestMats[type]
 }
 
@@ -341,10 +345,10 @@ export function resyncChests() {
 export function updateChests(dt, rx, rz) {
   const t = performance.now() * 0.001
 
-  // Глобальная пульсация всех beam-материалов
-  const pulse = CFG.CHESTS.beamOpacity * (0.75 + Math.sin(t * 2) * 0.25)
+  // Пульсация beam-материалов — от ИХ базовой opacity (свой тип = свой уровень)
+  const pulse = 0.75 + Math.sin(t * 2) * 0.25
   for (const mats of Object.values(chestMats)) {
-    mats.beam.opacity = pulse
+    mats.beam.opacity = mats.beamOpacityBase * pulse
   }
 
   // Glow-сферы: масштаб от близости
@@ -364,6 +368,12 @@ export function updateChests(dt, rx, rz) {
 function updateChestLights(dt, rx, rz) {
   const L = CFG.CHESTS.lights
 
+  // CULL — по максимально возможному range (у forsage он больше обычного)
+  let maxRange = L.range
+  for (const t of Object.values(CFG.CHESTS.types)) {
+    if (t.lightRange && t.lightRange > maxRange) maxRange = t.lightRange
+  }
+
   const candidates = []
   for (const c of chests) {
     if (c.opened) continue
@@ -381,7 +391,6 @@ function updateChestLights(dt, rx, rz) {
     const cand = candidates[i]
 
     if (!cand) {
-      // Свободный свет — плавно гасим
       light.intensity += (0 - light.intensity) * k
       continue
     }
@@ -389,11 +398,16 @@ function updateChestLights(dt, rx, rz) {
     const c = cand.chest
     const override = CFG.CHESTS.types[c.type] || {}
     const glowColor = override.glowColor ?? CFG.CHESTS.glowColor
+    const intensity = override.lightIntensity ?? L.intensity
+    const range = override.lightRange ?? L.range
+    const height = override.lightHeight ?? L.height
+
     if (light.color.getHex() !== glowColor) light.color.setHex(glowColor)
+    light.distance = range
 
     const gy = terrainHeight(c.x, c.z)
-    light.position.set(c.x, gy + L.height, c.z)
-    light.intensity += (L.intensity - light.intensity) * k
+    light.position.set(c.x, gy + height, c.z)
+    light.intensity += (intensity - light.intensity) * k
   }
 }
 
