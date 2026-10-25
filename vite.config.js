@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import { resolve } from 'node:path'
 
+const ROOT = import.meta.dirname
+
 export default defineConfig({
   // GitHub Pages: https://nikoshdgidhub.github.io/Rocket_Game/
   // → base = '/Rocket_Game/'
@@ -19,8 +21,8 @@ export default defineConfig({
     rollupOptions: {
       // Две страницы: игра + калькулятор
       input: {
-        main: resolve(__dirname, 'index.html'),
-        calculator: resolve(__dirname, 'calculator.html'),
+        main: resolve(ROOT, 'index.html'),
+        calculator: resolve(ROOT, 'calculator.html'),
       },
     },
   },
