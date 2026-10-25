@@ -443,7 +443,7 @@ export function loadChunk(cx, cz) {
   scene.add(mesh)
   mesh.visible = lod.fade < 0.95
   for (const p of props) p.visible = lod.showing3D
-  chunks.set(key, { mesh, props })
+  chunks.set(key, { mesh, props, cx, cz })
 }
 
 export function unloadChunk(key) {
