@@ -1,7 +1,7 @@
 /* ================================================================
    achievementsModal.js — модалка достижений с табами.
 ================================================================ */
-import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from '../achievements.js'
+import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from '../services/achievements.js'
 import { time } from '../state.js'
 
 let _initialized = false

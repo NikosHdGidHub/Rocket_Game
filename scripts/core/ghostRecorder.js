@@ -3,7 +3,7 @@
 ================================================================ */
 import * as CFG from '../config.js'
 import { rocketState, time, ghostRecorder, runtime } from '../state.js'
-import * as Abilities from '../abilities.js'
+import * as Abilities from '../services/abilities.js'
 
 export function startGhostRecording() {
   ghostRecorder.samples.length = 0

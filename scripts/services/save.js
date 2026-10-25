@@ -3,7 +3,7 @@
 ================================================================ */
 import * as CFG from '../config.js'
 import { G, time, ghostRecorder, bestFlight } from '../state.js'
-import * as Achievements from '../achievements.js'
+import * as Achievements from './achievements.js'
 import * as DayNight from '../views/daynight.js'
 import * as UI from '../ui/index.js'
 

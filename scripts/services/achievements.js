@@ -2,8 +2,8 @@
    achievements.js — логика достижений: состояние, хуки на события,
    сохранение. Определения — в config.js (CFG.ACHIEVEMENTS).
 ================================================================ */
-import * as CFG from './config.js'
-import { G, time } from './state.js'
+import * as CFG from '../config.js'
+import { G, time } from '../state.js'
 
 export const ACHIEVEMENTS = CFG.ACHIEVEMENTS
 

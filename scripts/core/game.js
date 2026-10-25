@@ -4,10 +4,10 @@
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from '../config.js'
-import * as Achievements from '../achievements.js'
+import * as Achievements from '../services/achievements.js'
 import * as CardsModal from '../ui/cardsModal.js'
 import { G, rocketState, cam, input, time, ghostRecorder, bestFlight } from '../state.js'
-import * as Abilities from '../abilities.js'
+import * as Abilities from '../services/abilities.js'
 import {
   rocket,
   chests,

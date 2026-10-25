@@ -10,8 +10,8 @@
      locked (level=0) → ready (level≥1) → active → cooldown → ready → …
    Активировать можно только в фазе 'fly' и только когда isReady.
 ================================================================ */
-import * as CFG from './config.js'
-import { G, time } from './state.js'
+import * as CFG from '../config.js'
+import { G, time } from '../state.js'
 
 const AB = CFG.ABILITIES
 

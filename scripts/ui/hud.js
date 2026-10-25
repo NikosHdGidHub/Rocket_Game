@@ -2,7 +2,7 @@
    hud.js — HUD: счётчики, полоса топлива, сундук-прогресс, угол, форсаж.
 ================================================================ */
 import { G } from '../state.js'
-import * as Abilities from '../abilities.js'
+import * as Abilities from '../services/abilities.js'
 
 const $dist = document.getElementById('dist')
 const $chestProgress = document.getElementById('chestProgress')

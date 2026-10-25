@@ -4,7 +4,7 @@
 import * as THREE from 'three'
 import * as CFG from '../config.js'
 import { G, rocketState, input, runtime } from '../state.js'
-import * as Abilities from '../abilities.js'
+import * as Abilities from '../services/abilities.js'
 import {
   rocket, flame, flameInner, flameMat, exhaustLight,
   chests, gems, markGemCollected,
