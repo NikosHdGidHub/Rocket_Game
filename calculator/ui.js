@@ -3,6 +3,7 @@
    и загрузка текущего билда из сохранения игры.
 ================================================================ */
 import * as CFG from '../scripts/config.js'
+import { getOptPool } from './optPool.js'
 import { simulateAdaptive, findOptimumAsync, BOOST_LABELS, BOOST_STRATEGIES } from './simulation.js'
 import { renderTrajectoryChart, renderAngleChart } from './charts.js'
 
@@ -277,6 +278,14 @@ let baseOptCache = { key: null, distance: 0 }
 let _gainBusy = false
 let _gainDelegationAttached = false
 
+let _calcAllToken = 0
+
+function setAllGainButtonsDisabled(disabled) {
+  document.querySelectorAll('.card-gain-btn, .calc-all-btn').forEach((b) => {
+    b.disabled = disabled
+  })
+}
+
 /** Ключ кэша: всё, что реально влияет на оптимум.
  *  boostThrottle / noseLift* переопределяются внутри findOptimumAsync,
  *  поэтому в ключ не входят. */
@@ -285,8 +294,9 @@ function cardStateKey(upgrades, cards, opts) {
 }
 
 async function findBestDistance(upgrades, cards, opts, onProgress) {
-  const data = await findOptimumAsync(upgrades, cards, opts, onProgress)
-  return data.best.distance
+  const pool = getOptPool()
+  const res = await pool.findOptimum(upgrades, cards, opts, onProgress)
+  return res.bestDistance
 }
 
 /** Делегирование кликов по кнопкам «Найти прирост» — вешаем один раз. */
@@ -296,8 +306,13 @@ function setupGainDelegation() {
   if (!$out) return
   _gainDelegationAttached = true
   $out.addEventListener('click', (e) => {
-    const btn = e.target.closest('.card-gain-btn')
-    if (btn) handleCardGainClick(btn)
+    const gainBtn = e.target.closest('.card-gain-btn')
+    if (gainBtn) {
+      handleCardGainClick(gainBtn)
+      return
+    }
+    const allBtn = e.target.closest('.calc-all-btn')
+    if (allBtn) handleCalcAllClick(allBtn)
   })
 }
 
@@ -306,7 +321,7 @@ async function handleCardGainClick(btn) {
   _gainBusy = true
 
   const origText = btn.textContent
-  document.querySelectorAll('.card-gain-btn').forEach((b) => (b.disabled = true))
+  setAllGainButtonsDisabled(true)
 
   try {
     // Свежее состояние из формы: пользователь мог подвигать слайдеры
@@ -369,8 +384,149 @@ async function handleCardGainClick(btn) {
   } finally {
     _gainBusy = false
     // Кликнутая кнопка могла исчезнуть — остальные вернём в строй.
-    document.querySelectorAll('.card-gain-btn').forEach((b) => (b.disabled = false))
+    setAllGainButtonsDisabled(false)
   }
+}
+
+//Просчитать всё
+async function handleCalcAllClick(btn) {
+  if (_gainBusy) return
+  _gainBusy = true
+  const token = ++_calcAllToken
+
+  const origText = btn.textContent
+  setAllGainButtonsDisabled(true)
+
+  try {
+    const { upgrades, cards, opts } = readState('')
+    const pool = getOptPool()
+
+    // ─── База (в фоне, параллельно с карточками) ───
+    const baseKey = cardStateKey(upgrades, cards, opts)
+    const basePromise = (async () => {
+      if (baseOptCache.key === baseKey) return baseOptCache.distance
+      btn.textContent = '⏳ База…'
+      const d = await findBestDistance(upgrades, cards, opts, null)
+      baseOptCache = { key: baseKey, distance: d }
+      return d
+    })()
+
+    // ─── Собираем задачи ───
+    const familyCounts = {}
+    for (const card of CFG.CARDS) {
+      if (card.special) continue
+      familyCounts[card.family] = (familyCounts[card.family] || 0) + (cards[card.id] || 0)
+    }
+    const tasks = []
+    for (const card of CFG.CARDS) {
+      if (card.special) continue
+      const cur = cards[card.id] || 0
+      if ((familyCounts[card.family] || 0) >= CFG.CHESTS.cardTypeLimit) continue
+      if (card.once && cur >= 1) continue
+      tasks.push({
+        type: 'card',
+        cardId: card.id,
+        nextCards: { ...cards, [card.id]: cur + 1 },
+        nextOpts: opts,
+      })
+    }
+    const fLvl = opts.forsageLevel || 0
+    const fMax = CFG.ABILITIES.forsage.levels.length
+    if (fLvl < fMax) {
+      tasks.push({
+        type: 'forsage',
+        nextCards: cards,
+        nextOpts: { ...opts, forsageLevel: fLvl + 1 },
+      })
+    }
+
+    if (tasks.length === 0) {
+      btn.textContent = '— нечего считать —'
+      setTimeout(() => {
+        if (btn.isConnected) {
+          btn.textContent = origText
+          btn.disabled = false
+        }
+      }, 1200)
+      return
+    }
+
+    // ─── Запускаем всё в пул сразу ───
+    let done = 0
+    const total = tasks.length
+    btn.textContent = `⏳ 0/${total}`
+
+    const promises = tasks.map((task) =>
+      pool
+        .findOptimum(upgrades, task.nextCards, task.nextOpts, null)
+        .then(async (res) => {
+          const baseDist = await basePromise
+          if (token !== _calcAllToken) return // таблицу уже перерисовали — не трогаем
+          done++
+          btn.textContent = `⏳ ${done}/${total}`
+          updateCardCell(task, res.bestDistance, baseDist)
+        })
+        .catch((err) => {
+          console.error('[calcAll] task failed', task, err)
+          if (token !== _calcAllToken) return
+          done++
+          btn.textContent = `⏳ ${done}/${total} (ошибка)`
+        })
+    )
+
+    // Дожидаемся базы (даже если tasks пусты — там уже может быть reject)
+    let baseDist
+    try {
+      baseDist = await basePromise
+    } catch (err) {
+      console.error('[calcAll] base failed', err)
+      if (btn.isConnected) btn.textContent = '❌ Ошибка базового расчёта'
+      return
+    }
+    void baseDist
+
+    await Promise.all(promises)
+
+    if (token === _calcAllToken && btn.isConnected) {
+      btn.textContent = `✅ Готово (${total})`
+      setTimeout(() => {
+        if (btn.isConnected) {
+          btn.textContent = origText
+          btn.disabled = false
+        }
+      }, 1500)
+    }
+  } catch (err) {
+    console.error('[calcAll]', err)
+    if (btn.isConnected) {
+      btn.textContent = origText
+      btn.disabled = false
+    }
+  } finally {
+    _gainBusy = false
+    setAllGainButtonsDisabled(false)
+  }
+}
+
+function updateCardCell(task, nextDist, baseDist) {
+  const selector =
+    task.type === 'forsage'
+      ? '.card-gain-btn[data-forsage="1"]'
+      : `.card-gain-btn[data-card-id="${task.cardId}"]`
+  const btn = document.querySelector(`#single-results ${selector}`)
+  if (!btn) return
+
+  const gain = nextDist - baseDist
+  const pct = baseDist > 0 ? (gain / baseDist) * 100 : 0
+  const cls = gain > 0 ? 'good' : gain < 0 ? 'bad' : 'neutral'
+  const sign = gain >= 0 ? '+' : ''
+
+  const cell = btn.closest('td')
+  if (!cell) return
+  cell.innerHTML = `
+    <span class="${cls}" style="font-weight:700">${sign}${fmtM(gain)}</span>
+    <span class="${cls}" style="font-weight:700;margin-left:6px">(${sign}${pct.toFixed(1)}%)</span>`
+  cell.title = `Оптимум базы: ${fmtM(baseDist)} → с картой: ${fmtM(nextDist)}`
 }
 
 setupGainDelegation()
@@ -384,6 +540,7 @@ function boostEndLabel(result) {
 }
 
 export function renderSingleResult(result, upgrades, cards, opts) {
+  _calcAllToken++ //  инвалидирует in-flight «Просчитать всё»
   const $out = document.getElementById('single-results')
 
   const angleInfo = boostEndLabel(result)
@@ -532,15 +689,21 @@ export function renderCardInfluence(baseResult, upgrades, cards, opts) {
   }
 
   return `
-    <div class="section-title">Влияние карточек (+1 копия · прирост по оптимуму)</div>
-    <table>
-      <thead><tr>
-        <th>Карточка</th>
-        <th style="text-align:right">Копий</th>
-        <th style="text-align:right">Прирост (оптимум)</th>
-      </tr></thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>`
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 10px">
+    <div class="section-title" style="margin:0">Влияние карточек (+1 копия · прирост по оптимуму)</div>
+    <button class="mini-btn calc-all-btn"
+      title="Прогнать все карточки через оптимизацию в фоновом режиме (Web Workers). Займёт несколько секунд.">
+      🚀 Просчитать всё
+    </button>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Карточка</th>
+      <th style="text-align:right">Копий</th>
+      <th style="text-align:right">Прирост (оптимум)</th>
+    </tr></thead>
+    <tbody>${rows.join('')}</tbody>
+  </table>`
 }
 
 export function renderOptimum(optData) {
