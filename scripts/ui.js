@@ -9,9 +9,9 @@ import { renderer } from './views/scene.js'
 import * as Settings from './lib/settings.js'
 import * as Sounds from './lib/sounds.js'
 import * as Abilities from './abilities.js'
-import * as CardsModal from './cardsModal.js'
+import * as CardsModal from './ui/cardsModal.js'
 import * as Quality from './lib/quality.js'
-import * as ConfirmModal from './confirmModal.js'
+import * as ConfirmModal from './ui/confirmModal.js'
 
 /* ---------- Кэши DOM-элементов ---------- */
 const $dist = document.getElementById('dist')

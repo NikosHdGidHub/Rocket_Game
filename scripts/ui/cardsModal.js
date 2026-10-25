@@ -9,8 +9,8 @@
    Табы: Все / Полученные / Доступные.
    На открытии всегда перерисовывается — это простой и надёжный путь.
 ================================================================ */
-import * as CFG from './config.js'
-import { G } from './state.js'
+import * as CFG from '../config.js'
+import { G } from '../state.js'
 
 let _callbacks = {}
 let _initialized = false

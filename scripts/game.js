@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import * as CFG from './config.js'
 import * as Achievements from './achievements.js'
-import * as CardsModal from './cardsModal.js'
+import * as CardsModal from './ui/cardsModal.js'
 import * as DayNight from './views/daynight.js'
 import { camera } from './views/scene.js'
 import { terrainHeight } from './world/world.js'

@@ -1,8 +1,8 @@
 /* ================================================================
    achievementsModal.js — модалка достижений с табами.
 ================================================================ */
-import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from './achievements.js'
-import { time } from './state.js'
+import { ACHIEVEMENTS, A, isTimeLimitedFailed, timeLimitedRemainingSec } from '../achievements.js'
+import { time } from '../state.js'
 
 let _initialized = false
 let _currentTab = 'all' // 'all' | 'progress' | 'done'
