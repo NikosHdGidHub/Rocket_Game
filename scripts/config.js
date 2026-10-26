@@ -159,6 +159,16 @@ export const FOG = /** @type {const} */ ({
   altRef3D: 450,
 
   // 3D-режим (низко над землёй)
+  //
+  // ВАЖНО: far3D переопределяется QUALITY_PRESETS[current].fog.far3D
+  // при applyToConfig() (см. lib/settings.js) ДО чтения этого поля.
+  // Значение ниже — дефолт (= high-пресет).
+  //
+  // Инварианты при правке:
+  //   far3D > farGround (350) — 3D-туман должен быть шире, чем у земли
+  //   far3D ≲ farGround2D (2200) — иначе при активации 2D произойдёт
+  //                              видимый «dip» дальности тумана
+  //   far3D < CAMERA.far (15000) — обрезание не упирается в плоскость
   near3D: 100,
   far3D: 2000,
 
@@ -620,9 +630,23 @@ export const CHUNKS = /** @type {const} */ ({
 ================================================================ */
 
 export const LOD = /** @type {const} */ ({
-  /** Высота над рельефом (м), при которой включается 2D-режим. */
+  /**
+   * Высота над рельефом (м), при которой включается 2D-режим.
+   * ВАЖНО: переопределяется QUALITY_PRESETS[current].lod.changeAltitude
+   * при applyToConfig() (см. lib/settings.js) ДО чтения этого поля.
+   * Значение ниже — это дефолт (= high-пресет).
+   *
+   * Инварианты при правке:
+   *   changeAltitude < altRef2D (3000)          — диапазон 2D-тумана > 0
+   *   changeAltitude < FAR_TILES.altitudeHigh   — 2D включается раньше,
+   *                                                чем far-tiles грубеют
+   *   changeAltitude ≳ CHUNKS.preloadAltitude/2 — успевают предзагружаться
+   */
   changeAltitude: 1100,
-  /** Должна быть меньше changeAltitude */
+  /**
+   * Высота (м) деактивации 2D-режима. Гистерезис — должен быть МЕНЬШЕ
+   * changeAltitude. Переопределяется из QUALITY_PRESETS.
+   */
   changeBack: 1000,
 
   /** Радиус кольца сэмплирования высоты вокруг ракеты (м). */
@@ -2220,7 +2244,7 @@ export const SIGN = /** @type {const} */ ({
 export const QUALITY_PRESETS = /** @type {const} */ ({
   low: {
     label: 'Низкое',
-    desc: 'Максимум FPS, без теней',
+    desc: 'Максимум FPS',
     renderer: { antialias: false, pixelRatioCap: 0.8, maxChunksPerFrame: 1 },
     props: { density: 1000, maxRenderDistance: 1000 },
     lights: { shadow: { enabled: true } },
@@ -2229,18 +2253,22 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     overlay: { enabled: false, canvasSize: 512 },
     space: { stars: { count: 800 }, spheres: { maxCount: 1024 } },
     chestBeam: { style: 'cylinder' },
+    lod: { changeAltitude: 750, changeBack: 650 },
+    fog: { far3D: 1400 },
   },
   medium: {
     label: 'Среднее',
     desc: 'Баланс качества и производительности',
     renderer: { antialias: false, pixelRatioCap: 1.5, maxChunksPerFrame: 2 },
-    props: { density: 2000, maxRenderDistance: 1500 },
+    props: { density: 2000, maxRenderDistance: 1800 },
     lights: { shadow: { enabled: true } },
     chunks: { segments: 48 },
     farTiles: { segments: 140, segmentsHigh: 48 },
     overlay: { enabled: true, canvasSize: 1024 },
     space: { stars: { count: 1500 }, spheres: { maxCount: 2560 } },
     chestBeam: { style: 'spiral', quality: 'simple' },
+    lod: { changeAltitude: 1050, changeBack: 950 },
+    fog: { far3D: 2000 },
   },
   high: {
     label: 'Высокое',
@@ -2253,6 +2281,9 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     overlay: { enabled: true, canvasSize: 1024 },
     space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
     chestBeam: { style: 'spiral', quality: 'full' },
+    // Совпадает с дефолтами в CFG.LOD / CFG.FOG (эталон).
+    lod: { changeAltitude: 850, changeBack: 750 },
+    fog: { far3D: 1950 },
   },
   ultra: {
     label: 'Ультра',
@@ -2265,6 +2296,9 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     overlay: { enabled: true, canvasSize: 1536 },
     space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
     chestBeam: { style: 'spiral', quality: 'full' },
+
+    lod: { changeAltitude: 1050, changeBack: 950 },
+    fog: { far3D: 2000 },
   },
 })
 

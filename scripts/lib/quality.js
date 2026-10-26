@@ -115,6 +115,23 @@ export function apply(presetId) {
   if (preset.chestBeam) {
     Object.assign(CFG.CHESTS.beam, preset.chestBeam)
   }
+
+  // LOD-переход в 2D: высота активации и гистерезис.
+  if (preset.lod) {
+    if (typeof preset.lod.changeAltitude === 'number') {
+      CFG.LOD.changeAltitude = preset.lod.changeAltitude
+    }
+    if (typeof preset.lod.changeBack === 'number') {
+      CFG.LOD.changeBack = preset.lod.changeBack
+    }
+  }
+
+  // Туман в 3D-режиме: дальняя плоскость.
+  if (preset.fog) {
+    if (typeof preset.fog.far3D === 'number') {
+      CFG.FOG.far3D = preset.fog.far3D
+    }
+  }
 }
 
 /* ================================================================
@@ -162,6 +179,18 @@ export function describeDiff(currentId, nextId) {
     )
   } else if (a.overlay.enabled && a.overlay.canvasSize !== b.overlay.canvasSize) {
     lines.push(`Текстура леса (2D): ${a.overlay.canvasSize}px → ${b.overlay.canvasSize}px`)
+  }
+
+  // LOD: высота перехода в 2D-режим.
+  if (a.lod && b.lod && a.lod.changeAltitude !== b.lod.changeAltitude) {
+    lines.push(
+      `Высота перехода в 2D: ${a.lod.changeAltitude} м → ${b.lod.changeAltitude} м`
+    )
+  }
+
+  // Туман в 3D: дальняя плоскость.
+  if (a.fog && b.fog && a.fog.far3D !== b.fog.far3D) {
+    lines.push(`Дальность тумана (3D): ${a.fog.far3D} м → ${b.fog.far3D} м`)
   }
 
   return lines
