@@ -66,6 +66,20 @@ export function buy(u) {
   Achievements.onBuy()
 }
 
+/** DEBUG: выставляет ВСЕ апгрейды на максимальный уровень. */
+export function giveMaxUpgrades() {
+  for (const u of CFG.UPGRADES) {
+    G.upgrades[u.key] = u.maxLevel ?? 12
+  }
+  UI.updateHUD()
+  UI.renderShop()
+  saveProgress()
+  Achievements.onBuy()
+  UI.showToast('⚡ Все апгрейды MAX', CFG.UI.toastColors.upgrade)
+  console.log('[dbg] Все апгрейды на MAX:', { ...G.upgrades })
+  return true
+}
+
 /* ================================================================
    Старт / посадка
 ================================================================ */

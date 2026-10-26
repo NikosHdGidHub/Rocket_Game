@@ -165,6 +165,7 @@ function _registerGlobalHelpers() {
     CardsModal.refresh()
     console.log(`+${n} 💎 → всего ${G.gems}`)
   }
+  window.dbgMaxUpgrades = () => Game.giveMaxUpgrades()
 }
 
 /* ================================================================
