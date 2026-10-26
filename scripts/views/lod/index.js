@@ -51,7 +51,7 @@ export function update(dt) {
   const camX = camera.position.x
   const camZ = camera.position.z
 
-  updateFogEllipse(dt)
+  updateFogEllipse()
   updateLOD(dt)
 
   // Полный космос: нижний мир уже погашен — не тратим CPU.

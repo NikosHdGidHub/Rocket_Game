@@ -90,21 +90,14 @@ export function setPhaseGetter(fn) {
 }
 const G_PHASE = () => _getPhase()
 
-export function updateFogEllipse(dt) {
+/**
+ * Обновляет ЦЕНТР эллиптического тумана под ракетой.
+ *
+ * Направление эллипса ФИКСИРОВАНО вдоль +X (fogU.dir = (1, 0) в scene.js).
+ * Вращение отключено: не зависим от скорости и направления полёта.
+ */
+export function updateFogEllipse() {
   fogU.center.value.set(rocketState.pos.x, rocketState.pos.z)
-  const v = rocketState.vel
-  const speed = Math.hypot(v.x, v.z)
-
-  if (speed >= CFG.FOG.dirMinSpeed) {
-    const tx = v.x / speed
-    const tz = v.z / speed
-    const k = 1 - Math.exp(-CFG.FOG.dirSmoothing * dt)
-    fogU.dir.value.x += (tx - fogU.dir.value.x) * k
-    fogU.dir.value.y += (tz - fogU.dir.value.y) * k
-    const l = Math.hypot(fogU.dir.value.x, fogU.dir.value.y) || 1
-    fogU.dir.value.x /= l
-    fogU.dir.value.y /= l
-  }
 }
 
 export function updateLOD(dt) {

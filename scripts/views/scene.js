@@ -41,6 +41,8 @@ export const TILE = GROUND_TILE
 */
 export const fogU = {
   center: { value: new THREE.Vector2(0, 0) },
+  // Направление эллипса ФИКСИРОВАНО вдоль +X.
+  // Вращение отключено — значение не мутируется в рантайме.
   dir: { value: new THREE.Vector2(1, 0) },
   shapeSide: { value: CFG.FOG.ellipseSide },
   shapeBack: { value: CFG.FOG.ellipseBack },
