@@ -1,0 +1,122 @@
+/* ================================================================
+   chestProgress.css — плашка «до следующего сундука».
+   ================================================================ */
+
+.chest-progress {
+  position: fixed;
+  top: 74px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  width: min(360px, 88vw);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 9;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 0.3s,
+    transform 0.3s;
+  background: rgba(12, 18, 32, 0.5);
+  backdrop-filter: blur(8px);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.chest-progress.on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.chest-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.chest-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.chest-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ffd75e, #ff9f1a);
+  border-radius: 4px;
+  transition:
+    width 0.15s linear,
+    background 0.3s;
+}
+
+.chest-dist {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffd75e;
+  min-width: 56px;
+  text-align: right;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  transition: color 0.3s;
+}
+
+.chest-progress.near .chest-icon {
+  animation: chestPulse 0.9s ease-in-out infinite;
+}
+.chest-progress.near .chest-fill {
+  background: linear-gradient(90deg, #7dffa0, #4ade80);
+}
+.chest-progress.near .chest-dist {
+  color: #7dffa0;
+}
+
+@keyframes chestPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.25);
+  }
+}
+
+.chest-progress.missed .chest-icon {
+  animation: chestPulseRed 0.9s ease-in-out infinite;
+}
+.chest-progress.missed .chest-fill {
+  background: linear-gradient(90deg, #ff5a5a, #ff2a2a);
+}
+.chest-progress.missed .chest-dist {
+  color: #ff5a5a;
+}
+
+@keyframes chestPulseRed {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 640px) {
+  .chest-progress {
+    top: 60px;
+    width: min(300px, 92vw);
+    padding: 5px 8px;
+  }
+  .chest-dist {
+    font-size: 11px;
+    min-width: 48px;
+  }
+}

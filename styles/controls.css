@@ -1,0 +1,234 @@
+/* ================================================================
+   controls.css — мобильные контролы: поворот, PUSH, FORSAGE.
+   ================================================================ */
+
+#touchControls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 30px;
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  z-index: 11;
+  pointer-events: none;
+}
+
+#touchControls.hidden {
+  display: none;
+}
+
+#rotBtns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.tbtn {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(12, 18, 32, 0.72);
+  backdrop-filter: blur(10px);
+  color: #eaf2ff;
+  font-size: 22px;
+  font-weight: 900;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: 0.1s;
+}
+
+.tbtn:active {
+  transform: scale(0.92);
+  background: rgba(255, 215, 94, 0.3);
+}
+
+/* ---------- PUSH button ---------- */
+.push-btn {
+  pointer-events: auto;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  color: #20130a;
+  background: radial-gradient(circle at 50% 35%, #ffe58a, #ffd75e 40%, #ff9f1a 100%);
+  box-shadow:
+    0 6px 0 #b96a00,
+    0 10px 24px rgba(0, 0, 0, 0.4),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.15),
+    inset 0 4px 8px rgba(255, 255, 255, 0.35);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  user-select: none;
+  touch-action: none;
+  transition: 0.08s;
+}
+
+.push-btn:active {
+  transform: translateY(5px);
+  box-shadow:
+    0 1px 0 #b96a00,
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 2px 6px rgba(255, 255, 255, 0.25);
+}
+
+.push-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.push-text {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+}
+
+/* ---------- Forsage button ---------- */
+#actionBtns {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.forsage-btn {
+  --fill: 0%;
+  --fill-color: #9b59b6;
+
+  position: relative;
+  pointer-events: auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  color: #fff;
+
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.18), transparent 60%),
+    conic-gradient(from -90deg, var(--fill-color) var(--fill), rgba(28, 16, 46, 0.78) var(--fill));
+  box-shadow:
+    0 4px 0 #4a2470,
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.15);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+  transition:
+    transform 0.08s,
+    filter 0.2s;
+  overflow: hidden;
+}
+
+.forsage-btn .forsage-letter {
+  font-size: 22px;
+  font-weight: 900;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  z-index: 1;
+  transition: opacity 0.15s;
+}
+
+.forsage-btn .forsage-lock {
+  position: absolute;
+  font-size: 22px;
+  z-index: 2;
+  display: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+.forsage-btn:active:not(.blocked) {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #4a2470,
+    0 3px 8px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.forsage-btn.blocked {
+  filter: grayscale(0.9) brightness(0.55);
+  cursor: not-allowed;
+}
+.forsage-btn.blocked .forsage-letter {
+  opacity: 0.1;
+}
+.forsage-btn.blocked .forsage-lock {
+  display: block;
+}
+
+.forsage-btn.ready {
+  --fill: 100%;
+  --fill-color: #c38bff;
+  box-shadow:
+    0 4px 0 #4a2470,
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    0 0 18px rgba(195, 139, 255, 0.55),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.15);
+}
+
+.forsage-btn.active {
+  --fill-color: #d4a4ff;
+  animation: forsagePulse 0.5s ease-in-out infinite;
+  box-shadow:
+    0 4px 0 #4a2470,
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(195, 139, 255, 0.85),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.2),
+    inset 0 3px 6px rgba(255, 255, 255, 0.15);
+}
+
+@keyframes forsagePulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.5);
+  }
+}
+
+@media (max-width: 640px) {
+  #touchControls {
+    bottom: 24px;
+    padding: 0 16px;
+  }
+  .tbtn {
+    width: 58px;
+    height: 58px;
+    font-size: 20px;
+  }
+  .push-btn {
+    width: 96px;
+    height: 96px;
+  }
+  .push-icon {
+    font-size: 26px;
+  }
+  .push-text {
+    font-size: 13px;
+  }
+  .forsage-btn {
+    width: 48px;
+    height: 48px;
+  }
+  .forsage-btn .forsage-letter,
+  .forsage-btn .forsage-lock {
+    font-size: 18px;
+  }
+}

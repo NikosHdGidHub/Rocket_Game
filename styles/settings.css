@@ -1,0 +1,406 @@
+/* ================================================================
+   settings.css — базовые стили модалок (settings-panel/card) +
+   панель настроек ⚙️ + качество + звук + GPU-hint + confirm-modal.
+   ================================================================ */
+
+/* ---------- База модалок (общая для settings/achievements/cards/confirm) ---------- */
+.settings-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 16, 0.55);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  font-family: inherit;
+}
+.settings-panel.on {
+  display: flex;
+}
+
+.settings-card {
+  position: relative;
+  width: min(400px, 86vw);
+  padding: 24px 20px 18px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #1a2440, #0f1527 70%);
+  border: 2px solid #ffd75e;
+  box-shadow:
+    0 0 40px rgba(255, 215, 94, 0.35),
+    0 20px 60px rgba(0, 0, 0, 0.55);
+  color: #eaf2ff;
+  text-align: center;
+}
+
+.settings-title {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #ffd75e;
+  margin-bottom: 16px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  user-select: none;
+}
+.settings-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: #ffd75e;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.settings-hint {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.settings-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 16px 0;
+}
+
+.settings-row + .settings-row {
+  margin-top: 8px;
+}
+
+/* ---------- Громкость ---------- */
+.settings-volume-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.settings-volume-row > span {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.settings-volume-row input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-volume-row input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  border: 2px solid #b96a00;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.settings-volume-row input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  border: 2px solid #b96a00;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- Кнопка закрытия ---------- */
+.settings-close {
+  margin-top: 16px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  color: #20130a;
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  box-shadow:
+    0 4px 0 #b96a00,
+    0 6px 14px rgba(0, 0, 0, 0.35);
+  transition: 0.08s;
+}
+.settings-close:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #b96a00,
+    0 3px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- Поддержать автора ---------- */
+.settings-support {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  color: #0b2410;
+  background: linear-gradient(180deg, #7dffa0, #3fc86a);
+  box-shadow:
+    0 4px 0 #1f7a3d,
+    0 6px 14px rgba(0, 0, 0, 0.35);
+  transition: 0.08s;
+}
+.settings-support:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+.settings-support:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #1f7a3d,
+    0 3px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- GPU-hint ---------- */
+.settings-gpu-hint {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 159, 26, 0.08);
+  border: 1px solid rgba(255, 159, 26, 0.35);
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #eaf2ff;
+  text-align: left;
+}
+
+.settings-gpu-hint-warn {
+  color: #ff9f1a;
+  font-weight: 700;
+}
+
+.settings-gpu-hint-toggle {
+  margin-top: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #ffd75e;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.settings-gpu-hint-toggle:hover {
+  filter: brightness(1.15);
+}
+
+.settings-gpu-hint-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 159, 26, 0.2);
+  opacity: 0.85;
+}
+.settings-gpu-hint-body b {
+  color: #ffd75e;
+  font-weight: 700;
+}
+
+/* ---------- Quality ---------- */
+.settings-quality {
+  text-align: left;
+}
+.settings-quality-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.75;
+  margin-bottom: 8px;
+}
+.settings-quality-auto-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+.settings-quality-auto-hint b {
+  color: #ffd75e;
+}
+.settings-quality-fps {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 159, 26, 0.08);
+  border: 1px solid rgba(255, 159, 26, 0.35);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ff9f1a;
+  text-align: left;
+  line-height: 1.4;
+}
+.settings-quality-fps b {
+  color: #fff;
+  font-weight: 800;
+}
+
+.settings-btn-group {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.settings-qbtn {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #eaf2ff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s,
+    transform 0.08s;
+}
+
+.settings-qbtn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-qbtn.active {
+  background: linear-gradient(180deg, #ffd75e, #ff9f1a);
+  color: #20130a;
+  font-weight: 800;
+  box-shadow:
+    0 2px 0 #b96a00,
+    0 3px 10px rgba(255, 159, 26, 0.35);
+}
+
+.settings-qbtn:active {
+  transform: translateY(1px);
+}
+
+.settings-qdesc {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 8px;
+  line-height: 1.4;
+  text-align: left;
+  min-height: 15px;
+}
+
+@media (max-width: 640px) {
+  .settings-qbtn {
+    font-size: 10px;
+    padding: 9px 2px;
+    letter-spacing: -0.2px;
+  }
+  .settings-qdesc {
+    font-size: 10.5px;
+  }
+}
+
+/* ---------- Confirm-modal ---------- */
+.confirm-card {
+  width: min(420px, 90vw);
+  text-align: left;
+}
+.confirm-title {
+  text-align: center;
+}
+.confirm-body {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #eaf2ff;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.confirm-body p {
+  margin: 0 0 8px;
+}
+.confirm-body p:last-child {
+  margin-bottom: 0;
+}
+.confirm-body ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.confirm-body li {
+  margin: 2px 0;
+  opacity: 0.9;
+}
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.confirm-actions .settings-close {
+  flex: 1;
+  margin-top: 0;
+}
+.confirm-cancel {
+  color: #eaf2ff;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.35),
+    0 6px 14px rgba(0, 0, 0, 0.25);
+}
+.confirm-cancel:active {
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.35),
+    0 3px 8px rgba(0, 0, 0, 0.25);
+}
+.confirm-ok.danger {
+  color: #fff;
+  background: linear-gradient(180deg, #e63946, #b3202e);
+  box-shadow:
+    0 4px 0 #7a1520,
+    0 6px 14px rgba(0, 0, 0, 0.35);
+}
+.confirm-ok.danger:active {
+  box-shadow:
+    0 1px 0 #7a1520,
+    0 3px 8px rgba(0, 0, 0, 0.35);
+}

@@ -1,0 +1,47 @@
+/* ================================================================
+   loading.css — экран загрузки с прогресс-баром.
+   ================================================================ */
+
+#loading {
+  position: fixed;
+  inset: 0;
+  background: #87c5f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  font-family: inherit;
+}
+
+#loading .loading-title {
+  font-size: 32px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  margin-bottom: 20px;
+  letter-spacing: 2px;
+}
+
+#loading .loading-bar-wrap {
+  width: min(400px, 70vw);
+  height: 12px;
+  background: rgba(12, 18, 32, 0.4);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#loadingBar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ffd75e, #ff9f1a);
+  transition: width 0.15s linear;
+}
+
+#loading .loading-text {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 10px;
+  opacity: 0.8;
+}
