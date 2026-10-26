@@ -84,7 +84,12 @@ export function updateCameraPhysics(dt) {
   const py = pos.y + vel.y * lead
   const pz = pos.z + vel.z * lead
 
-  const camX = px - hDist * cam.blend
+  // В виде сверху (cam.dive → 1) камера дополнительно смещается
+  // назад по X. Плавность сдвига совпадает со скоростью наклона,
+  // т.к. cam.dive сглаживается через blendSpeed.
+  const diveBackX = CFG.CAMERA.dive.backShiftX * cam.dive
+
+  const camX = px - hDist * cam.blend - diveBackX
   const camY = py + vDist
   const camZ = pz + hDist * (1 - cam.blend)
 
