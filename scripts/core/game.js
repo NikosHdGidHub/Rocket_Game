@@ -14,6 +14,7 @@ import {
   updateChests as updateChestsFX,
   updateGems as updateGemsFX,
   updateGhostRocket,
+  markChestGlowOpened,
 } from '../views/entities/index.js'
 import * as UI from '../ui/index.js'
 import { camera } from '../views/scene.js'
@@ -252,6 +253,7 @@ function openChest(chest) {
   chest.opened = true
   G.openedChests.add(chest.x)
   chest.group.visible = false
+  markChestGlowOpened(chest)
   Achievements.onChestOpen(G.openedChests.size)
 
   if (chest.type === 'forsage') {

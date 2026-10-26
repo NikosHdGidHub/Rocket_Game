@@ -1,5 +1,5 @@
-// fix4.mjs — починка far-tiles: throttling + перезапрос при seg-mismatch + periodic check
-// Запуск: node fix4.mjs
+// patch4.mjs — glow-точка над сундуками (THREE.Points), как у гемов
+// Запуск: node patch4.mjs
 import fs from 'node:fs'
 
 const read = (p) => {
@@ -7,18 +7,15 @@ const read = (p) => {
   const isCRLF = raw.includes('\r\n')
   return { text: raw.replace(/\r\n/g, '\n'), isCRLF }
 }
-const write = (p, text, isCRLF) =>
+const write = (p, text, isCRLF) => {
   fs.writeFileSync(p, isCRLF ? text.replace(/\n/g, '\r\n') : text, 'utf-8')
+}
 
 function replaceOrSkip(s, oldStr, newStr, label) {
-  if (s.includes(newStr)) {
-    console.log(`⏭️  ${label} — уже применено`)
-    return s
-  }
+  if (s.includes(newStr)) { console.log(`⏭️  ${label} — уже применено`); return s }
   if (!s.includes(oldStr)) {
     console.error(`\n❌ Не найден блок: ${label}`)
-    console.error('Искали (первые 300):')
-    console.error(oldStr.slice(0, 300))
+    console.error(oldStr.slice(0, 200))
     process.exit(1)
   }
   console.log(`✅ ${label}`)
@@ -26,234 +23,302 @@ function replaceOrSkip(s, oldStr, newStr, label) {
 }
 
 // ============================================================
-// 1) farTiles.js — refillFarTiles: throttling + !== + порядок unload
+// 1) config.js — блок glow в CHESTS
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/views/lod/farTiles.js')
+  const { text, isCRLF } = read('scripts/config.js')
   let s = text
 
-  const OLD = `export function refillFarTiles(camX, camZ) {
-  const fxi = Math.floor(camX / FAR_TILE_SIZE)
-  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-  const L = getFarLoadBounds()
-  const U = getFarUnloadBounds()
+  const OLD = `  /** Цвет для PointLight по умолчанию (fallback). */
+  glowColor: 0xffb300, // #ffb300`
 
-  for (let dx = -L.back; dx <= L.fwd; dx++) {
-    for (let dz = -L.side; dz <= L.side; dz++) {
-      const fx = fxi + dx
-      const fz = fzi + dz
-      const key = fx + ',' + fz
-      const loaded = state.farTiles.get(key)
-      const pending = state.pendingFarTiles.has(key)
+  const NEW = `  /** Цвет для PointLight и glow-точки по умолчанию (fallback). */
+  glowColor: 0xffb300, // #ffb300
 
-      if (loaded && loaded.seg < state.farTileSeg) {
-        if (!pending) {
-          state.pendingFarTiles.add(key)
-          state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
-        }
-        continue
-      }
+  /**
+   * Glow-точка над сундуком — THREE.Points, видна издалека.
+   * Та же техника, что у гемов: шейдер с falloff + fog.
+   * Цвета: CFG.CHESTS.glowColor (оранжевый) и types.forsage.glowColor (фиолетовый).
+   */
+  glow: {
+    size: 80,
+    opacity: 1,
+    falloff: 1.1,
+    yOffset: 3.0,
+    pulseSpeed: 2.5,
+    pulseAmount: 0.15,
+  },`
 
-      if (!loaded && !pending) {
-        state.pendingFarTiles.add(key)
-        state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
-      }
-    }
-  }
-
-  for (const key of state.pendingFarTiles) {
-    const [fxs, fzs] = key.split(',')
-    const fx = +fxs
-    const fz = +fzs
-    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
-      state.pendingFarTiles.delete(key)
-    }
-  }
-
-  const toUnload = []
-  for (const key of state.farTiles.keys()) {
-    const [fxs, fzs] = key.split(',')
-    const fx = +fxs
-    const fz = +fzs
-    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
-      toUnload.push(key)
-    }
-  }
-  for (const k of toUnload) unloadFarTile(k)
-}`
-
-  const NEW = `export function refillFarTiles(camX, camZ) {
-  const fxi = Math.floor(camX / FAR_TILE_SIZE)
-  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-  const L = getFarLoadBounds()
-  const U = getFarUnloadBounds()
-
-  // 1) Unload — сначала освобождаем место
-  const toUnload = []
-  for (const key of state.farTiles.keys()) {
-    const [fxs, fzs] = key.split(',')
-    const fx = +fxs
-    const fz = +fzs
-    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
-      toUnload.push(key)
-    }
-  }
-  for (const k of toUnload) unloadFarTile(k)
-
-  // 2) Чистим pending за unload-границей
-  for (const key of state.pendingFarTiles) {
-    const [fxs, fzs] = key.split(',')
-    const fx = +fxs
-    const fz = +fzs
-    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
-      state.pendingFarTiles.delete(key)
-    }
-  }
-
-  // 3) Собираем запросы: отсутствующие и «устаревшие по seg» (в обе стороны!)
-  const requests = []
-  for (let dx = -L.back; dx <= L.fwd; dx++) {
-    for (let dz = -L.side; dz <= L.side; dz++) {
-      const fx = fxi + dx
-      const fz = fzi + dz
-      const key = fx + ',' + fz
-      const loaded = state.farTiles.get(key)
-      const pending = state.pendingFarTiles.has(key)
-
-      if (loaded && loaded.seg !== state.farTileSeg) {
-        if (!pending) requests.push({ fx, fz })
-        continue
-      }
-      if (!loaded && !pending) requests.push({ fx, fz })
-    }
-  }
-
-  // 4) Throttling: не больше MAX_PER_CALL за вызов. Иначе mode-change
-  //    отправляет лавину в один воркер, ответы «стареют», pending
-  //    не закрывается успешно — мерцание и накопление дыр.
-  const MAX_PER_CALL = 6
-  const n = Math.min(requests.length, MAX_PER_CALL)
-  for (let i = 0; i < n; i++) {
-    const { fx, fz } = requests[i]
-    const key = fx + ',' + fz
-    state.pendingFarTiles.add(key)
-    state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
-  }
-}`
-
-  s = replaceOrSkip(s, OLD, NEW, 'farTiles.js / refillFarTiles')
-  write('scripts/views/lod/farTiles.js', s, isCRLF)
+  s = replaceOrSkip(s, OLD, NEW, 'config.js / CHESTS.glow')
+  write('scripts/config.js', s, isCRLF)
 }
 
 // ============================================================
-// 2) farTiles.js — handleFarMessage: перезапрос при seg-mismatch
+// 2) chests.js — Points + markChestGlowOpened
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/views/lod/farTiles.js')
+  const { text, isCRLF } = read('scripts/views/entities/chests.js')
   let s = text
 
-  const OLD = `  if (!state.pendingFarTiles.has(key)) return
-  state.pendingFarTiles.delete(key)
+  // --- 2a. Вставляем блок glow-точки сразу после _beamSlots ---
+  const OLD = `const _beamSlots = []
+let _beamTimeSec = 0`
 
-  if (seg !== state.farTileSeg) return
+  const NEW = `const _beamSlots = []
+let _beamTimeSec = 0
 
-  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, seg, seg)`
+/* ================================================================
+   GLOW POINTS — THREE.Points над всеми сундуками.
+   Один draw call. Цвет per-vertex (оранжевый/фиолетовый).
+   Гаснет в тумане (fogNear/fogFar из scene.fog), скрывается при открытии
+   (aOpened = 1 в шейдере).
+================================================================ */
+let _glowPoints = null
+let _glowMat = null
 
-  const NEW = `  if (!state.pendingFarTiles.has(key)) return
-  state.pendingFarTiles.delete(key)
+function buildGlowPoints() {
+  const N = chests.length
+  if (N === 0) return
 
-  if (seg !== state.farTileSeg) {
-    // Ответ пришёл со «старым» seg (режим переключился, пока воркер считал).
-    // Раньше здесь был просто \`return\` — тайл «терялся» и больше никогда
-    // не перезагружался (если камера уже стоит). Отсюда мерцание и
-    // накопление дыр со временем. Теперь сразу перезапрашиваем
-    // с актуальным seg.
-    state.pendingFarTiles.add(key)
-    state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
-    return
+  const geo = new THREE.BufferGeometry()
+  const pos = new Float32Array(N * 3)
+  const col = new Float32Array(N * 3)
+  const phase = new Float32Array(N)
+  const opened = new Float32Array(N)
+  for (let i = 0; i < N; i++) phase[i] = (i * 1.37) % 6.28
+
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1))
+  geo.setAttribute('aOpened', new THREE.BufferAttribute(opened, 1))
+
+  const G = CFG.CHESTS.glow
+
+  _glowMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uSize: { value: G.size },
+      uOpacity: { value: G.opacity },
+      uFalloff: { value: G.falloff },
+      uPixelRatio: { value: Math.min(devicePixelRatio, CFG.RENDERER.pixelRatioCap) },
+      uTime: { value: 0 },
+      uPulseSpeed: { value: G.pulseSpeed },
+      uPulseAmount: { value: G.pulseAmount },
+      fogNear: { value: 0 },
+      fogFar: { value: 1 },
+    },
+    vertexShader: \`
+      attribute vec3  aColor;
+      attribute float aPhase;
+      attribute float aOpened;
+      uniform float uSize;
+      uniform float uPixelRatio;
+      uniform float uTime;
+      uniform float uPulseSpeed;
+      uniform float uPulseAmount;
+      varying vec3  vColor;
+      varying float vAlpha;
+      varying float vFogDepth;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = aOpened > 0.5 ? 0.0
+          : uSize * uPixelRatio * (300.0 / max(1.0, -mv.z));
+        vFogDepth = -mv.z;
+        vAlpha = (aOpened > 0.5) ? 0.0 : 1.0;
+        vAlpha *= 1.0 + uPulseAmount * sin(uTime * uPulseSpeed + aPhase);
+        vColor = aColor;
+      }
+    \`,
+    fragmentShader: \`
+      uniform float uOpacity;
+      uniform float uFalloff;
+      uniform float fogNear;
+      uniform float fogFar;
+      varying vec3  vColor;
+      varying float vAlpha;
+      varying float vFogDepth;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float falloff = 1.0 - smoothstep(0.0, 0.5, d);
+        falloff = pow(falloff, uFalloff);
+        float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+        float a = uOpacity * falloff * vAlpha * (1.0 - fogFactor);
+        if (a < 0.005) discard;
+        gl_FragColor = vec4(vColor, a);
+      }
+    \`,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  })
+
+  _glowPoints = new THREE.Points(geo, _glowMat)
+  _glowPoints.frustumCulled = false
+  _glowPoints.renderOrder = 3
+  scene.add(_glowPoints)
+}
+
+function fillGlowData() {
+  if (!_glowPoints) return
+  const posAttr = _glowPoints.geometry.getAttribute('position')
+  const colAttr = _glowPoints.geometry.getAttribute('aColor')
+  const opnAttr = _glowPoints.geometry.getAttribute('aOpened')
+  const yOff = CFG.CHESTS.glow.yOffset ?? 3.0
+  const tmp = new THREE.Color()
+
+  for (let i = 0; i < chests.length; i++) {
+    const c = chests[i]
+    posAttr.array[i * 3 + 0] = c.x
+    posAttr.array[i * 3 + 1] = terrainHeight(c.x, c.z) + yOff
+    posAttr.array[i * 3 + 2] = c.z
+
+    const override = CFG.CHESTS.types[c.type] || {}
+    tmp.setHex(override.glowColor ?? CFG.CHESTS.glowColor)
+    colAttr.array[i * 3 + 0] = tmp.r
+    colAttr.array[i * 3 + 1] = tmp.g
+    colAttr.array[i * 3 + 2] = tmp.b
+
+    opnAttr.array[i] = c.opened ? 1 : 0
   }
+  posAttr.needsUpdate = true
+  colAttr.needsUpdate = true
+  opnAttr.needsUpdate = true
+}
 
-  const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, seg, seg)`
+function updateGlowUniforms() {
+  if (!_glowMat) return
+  _glowMat.uniforms.uTime.value = _beamTimeSec
+  _glowMat.uniforms.fogNear.value = scene.fog.near
+  _glowMat.uniforms.fogFar.value = scene.fog.far
+}
 
-  s = replaceOrSkip(s, OLD, NEW, 'farTiles.js / handleFarMessage')
-  write('scripts/views/lod/farTiles.js', s, isCRLF)
+export function markChestGlowOpened(chest) {
+  if (!_glowPoints) return
+  const idx = chests.indexOf(chest)
+  if (idx < 0) return
+  const opnAttr = _glowPoints.geometry.getAttribute('aOpened')
+  opnAttr.array[idx] = 1
+  opnAttr.needsUpdate = true
+}`
+
+  s = replaceOrSkip(s, OLD, NEW, 'chests.js / glow Points блок')
+
+  // --- 2b. Вызов buildGlowPoints/fillGlowData в initChests ---
+  const OLD2 = `    chestGroup.add(group)
+    chests.push({ x, z, group, opened, type })
+  }
+}`
+  const NEW2 = `    chestGroup.add(group)
+    chests.push({ x, z, group, opened, type })
+  }
+  buildGlowPoints()
+  fillGlowData()
+}`
+  s = replaceOrSkip(s, OLD2, NEW2, 'chests.js / initChests → buildGlowPoints')
+
+  // --- 2c. resyncChests — обновляем и aOpened ---
+  const OLD3 = `export function resyncChests() {
+  for (const c of chests) {
+    c.opened = G.openedChests.has(c.x)
+    c.group.visible = !c.opened
+  }
+}`
+  const NEW3 = `export function resyncChests() {
+  for (const c of chests) {
+    c.opened = G.openedChests.has(c.x)
+    c.group.visible = !c.opened
+  }
+  if (_glowPoints) {
+    const opnAttr = _glowPoints.geometry.getAttribute('aOpened')
+    for (let i = 0; i < chests.length; i++) {
+      opnAttr.array[i] = chests[i].opened ? 1 : 0
+    }
+    opnAttr.needsUpdate = true
+  }
+}`
+  s = replaceOrSkip(s, OLD3, NEW3, 'chests.js / resyncChests → aOpened')
+
+  // --- 2d. updateChests — обновляем uniforms ---
+  const OLD4 = `export function updateChests(dt, rx, rz) {
+  _beamTimeSec += dt
+  updateBeams(rx, rz)
+  updateChestLights(dt, rx, rz)
+}`
+  const NEW4 = `export function updateChests(dt, rx, rz) {
+  _beamTimeSec += dt
+  updateBeams(rx, rz)
+  updateChestLights(dt, rx, rz)
+  updateGlowUniforms()
+}`
+  s = replaceOrSkip(s, OLD4, NEW4, 'chests.js / updateChests → updateGlowUniforms')
+
+  write('scripts/views/entities/chests.js', s, isCRLF)
 }
 
 // ============================================================
-// 3) lod/index.js — periodic check + getStats: диагностика
+// 3) entities/index.js — экспорт markChestGlowOpened
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/views/lod/index.js')
+  const { text, isCRLF } = read('scripts/views/entities/index.js')
   let s = text
 
-  // 3a) Периодический refill
-  const OLD1 = `let _lastFar = { x: NaN, z: NaN }
-let _lastOverlay = { x: NaN, z: NaN }
-
-export function update(dt) {`
-  const NEW1 = `let _lastFar = { x: NaN, z: NaN }
-let _lastOverlay = { x: NaN, z: NaN }
-let _farCheckTimer = 0
-const FAR_PERIODIC_CHECK = 0.4 // сек
-
-export function update(dt) {`
-  s = replaceOrSkip(s, OLD1, NEW1, 'lod/index.js / timer vars')
-
-  const OLD2 = `  const modeChanged = updateFarMode(lod.altSmooth)
-  const fxi = Math.floor(camX / FAR_TILE_SIZE)
-  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-
-  if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
-    refillFarTiles(camX, camZ)
-    _lastFar.x = fxi
-    _lastFar.z = fzi
-  }`
-  const NEW2 = `  const modeChanged = updateFarMode(lod.altSmooth)
-  const fxi = Math.floor(camX / FAR_TILE_SIZE)
-  const fzi = Math.floor(camZ / FAR_TILE_SIZE)
-
-  // Периодическая «зачистка дыр»: даже когда камера стоит и режим стабилен,
-  // раз в FAR_PERIODIC_CHECK секунд дозапрашиваем недостающие / устаревшие
-  // тайлы. Нужно из-за throttling в refillFarTiles: за один вызов
-  // отправляется только MAX_PER_CALL запросов, остальные должны
-  // «дозаполняться» в следующих вызовах, а не ждать движения камеры.
-  _farCheckTimer += dt
-  const periodicCheck = _farCheckTimer >= FAR_PERIODIC_CHECK
-  if (periodicCheck) _farCheckTimer = 0
-
-  if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z || periodicCheck) {
-    refillFarTiles(camX, camZ)
-    _lastFar.x = fxi
-    _lastFar.z = fzi
-  }`
-  s = replaceOrSkip(s, OLD2, NEW2, 'lod/index.js / periodic check')
-
-  // 3b) getStats — диагностика
-  const OLD3 = `export function getStats() {
-  return {
-    farTiles: state.farTiles.size,
-    overlayChunks: state.overlayChunks.size,
-    pendingFar: state.pendingFarTiles.size,
-    pendingOverlays: state.pendingOverlays.size,
-  }
-}`
-  const NEW3 = `export function getStats() {
-  let stale = 0
-  for (const [, c] of state.farTiles) {
-    if (c.seg !== state.farTileSeg) stale++
-  }
-  return {
-    farTiles: state.farTiles.size,
-    overlayChunks: state.overlayChunks.size,
-    pendingFar: state.pendingFarTiles.size,
-    pendingOverlays: state.pendingOverlays.size,
-    farSeg: state.farTileSeg,
-    farHighMode: state.farHighMode,
-    farStale: stale, // сколько загруженных тайлов с устаревшим seg
-  }
-}`
-  s = replaceOrSkip(s, OLD3, NEW3, 'lod/index.js / getStats')
-  write('scripts/views/lod/index.js', s, isCRLF)
+  const OLD = `export { chestGroup, chests, initChests, resyncChests, updateChests } from './chests.js'`
+  const NEW = `export {
+  chestGroup,
+  chests,
+  initChests,
+  resyncChests,
+  updateChests,
+  markChestGlowOpened,
+} from './chests.js'`
+  s = replaceOrSkip(s, OLD, NEW, 'entities/index.js / export markChestGlowOpened')
+  write('scripts/views/entities/index.js', s, isCRLF)
 }
 
-console.log('\n🎉 Готово. Перезапусти dev-сервер и проверь взлёт.')
+// ============================================================
+// 4) game.js — вызов при открытии сундука
+// ============================================================
+{
+  const { text, isCRLF } = read('scripts/core/game.js')
+  let s = text
+
+  // --- 4a. Импорт ---
+  const OLD = `import {
+  rocket,
+  chests,
+  updateChests as updateChestsFX,
+  updateGems as updateGemsFX,
+  updateGhostRocket,
+} from '../views/entities/index.js'`
+  const NEW = `import {
+  rocket,
+  chests,
+  updateChests as updateChestsFX,
+  updateGems as updateGemsFX,
+  updateGhostRocket,
+  markChestGlowOpened,
+} from '../views/entities/index.js'`
+  s = replaceOrSkip(s, OLD, NEW, 'game.js / import markChestGlowOpened')
+
+  // --- 4b. Вызов в openChest ---
+  const OLD2 = `function openChest(chest) {
+  chest.opened = true
+  G.openedChests.add(chest.x)
+  chest.group.visible = false
+  Achievements.onChestOpen(G.openedChests.size)`
+  const NEW2 = `function openChest(chest) {
+  chest.opened = true
+  G.openedChests.add(chest.x)
+  chest.group.visible = false
+  markChestGlowOpened(chest)
+  Achievements.onChestOpen(G.openedChests.size)`
+  s = replaceOrSkip(s, OLD2, NEW2, 'game.js / openChest → markChestGlowOpened')
+
+  write('scripts/core/game.js', s, isCRLF)
+}
+
+console.log('\n🎉 Готово. Перезапусти npm run dev и проверь.')
