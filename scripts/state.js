@@ -61,8 +61,17 @@ export const lod = {
 export const cam = {
   blend: 0, // 0 = сбоку, 1 = сзади
   shake: 0, // амплитуда тряски
-  look: new THREE.Vector3(0, 3, 0),
+  look: new THREE.Vector3(0, 3, 0), // текущий сглаженный look (последний physics-тик)
   target: new THREE.Vector3(), // куда стремится (для prekick-детекта)
+
+  // --- FIX: fixed-step smoothing + render interpolation ---
+  // Сглаживание камеры выполняется в физическом шаге (120 Гц),
+  // а на рендере позиция интерполируется по тому же alpha, что и ракета.
+  // Старое поведение (углы, скорости, blend, shake) сохранено полностью.
+  pos: new THREE.Vector3(), // сглаженная позиция камеры (текущий physics-тик)
+  prevPos: new THREE.Vector3(), // позиция на предыдущем physics-тике
+  prevLook: new THREE.Vector3(0, 3, 0), // look на предыдущем physics-тике
+  inited: false,
 }
 
 /** Ввод — объединённые клавиши/тач/boost. */

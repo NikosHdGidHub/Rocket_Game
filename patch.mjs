@@ -1,5 +1,5 @@
-// fix7.mjs — physicsHz + swept collision + MAX_STEPS auto + calculator sync
-// Запуск: node fix7.mjs
+// patch3.mjs — fixed-step camera smoothing + render interpolation
+// Запуск: node patch3.mjs
 import fs from 'node:fs'
 
 const read = (p) => {
@@ -17,8 +17,8 @@ function replaceOrSkip(s, oldStr, newStr, label) {
   }
   if (!s.includes(oldStr)) {
     console.error(`\n❌ Не найден блок: ${label}`)
-    console.error('Искали (первые 300):')
-    console.error(oldStr.slice(0, 300))
+    console.error('Искали (первые 400):')
+    console.error(oldStr.slice(0, 400))
     process.exit(1)
   }
   console.log(`✅ ${label}`)
@@ -26,169 +26,220 @@ function replaceOrSkip(s, oldStr, newStr, label) {
 }
 
 // ============================================================
-// 1) config.js — GAME: physicsHz, maxFrameDt, maxPhysicsSteps, collision
+// 1) state.js — добавляем поля для fixed-step камеры
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/config.js')
+  const { text, isCRLF } = read('scripts/state.js')
   let s = text
 
-  const OLD = `  /** Высота ракеты над землёй в состоянии покоя (м). */
-  restY: 0.95,
+  const OLD = `/** Камера (сглаженные значения + цель). */
+export const cam = {
+  blend: 0, // 0 = сбоку, 1 = сзади
+  shake: 0, // амплитуда тряски
+  look: new THREE.Vector3(0, 3, 0),
+  target: new THREE.Vector3(), // куда стремится (для prekick-детекта)
+}`
 
-  /** Пауза (с) между «камера вернулась к стартовой позиции»*/`
+  const NEW = `/** Камера (сглаженные значения + цель). */
+export const cam = {
+  blend: 0, // 0 = сбоку, 1 = сзади
+  shake: 0, // амплитуда тряски
+  look: new THREE.Vector3(0, 3, 0), // текущий сглаженный look (последний physics-тик)
+  target: new THREE.Vector3(), // куда стремится (для prekick-детекта)
 
-  const NEW = `  /** Высота ракеты над землёй в состоянии покоя (м). */
-  restY: 0.95,
+  // --- FIX: fixed-step smoothing + render interpolation ---
+  // Сглаживание камеры выполняется в физическом шаге (120 Гц),
+  // а на рендере позиция интерполируется по тому же alpha, что и ракета.
+  // Старое поведение (углы, скорости, blend, shake) сохранено полностью.
+  pos: new THREE.Vector3(), // сглаженная позиция камеры (текущий physics-тик)
+  prevPos: new THREE.Vector3(), // позиция на предыдущем physics-тике
+  prevLook: new THREE.Vector3(0, 3, 0), // look на предыдущем physics-тике
+  inited: false,
+}`
 
-  /**
-   * Частота шага физики (Гц).
-   * 60 — быстро, но при 400+ м/с Euler-интеграция даёт заметную ошибку.
-   * 120 — компромисс (рекомендуется).
-   * 240 — максимальная точность, ×2 CPU к физике.
-   * ВАЖНО: калькулятор (calculator/simulation.js) берёт dt отсюда же.
-   */
-  physicsHz: 120,
-
-  /**
-   * Максимальный dt кадра (сек). Верхний предел accumulator —
-   * защита от «спирали смерти» при долгих фризах.
-   * Реальный dt кадра всегда clamp'ится этим значением.
-   */
-  maxFrameDt: 0.1,
-
-  /**
-   * Потолок шагов физики за кадр. 0 = авто из maxFrameDt × physicsHz + 2.
-   * При physicsHz = 120 и maxFrameDt = 0.1: 14 шагов.
-   * При physicsHz = 240 и maxFrameDt = 0.1: 26 шагов.
-   * Менять нужно только если хочешь свой жёсткий лимит.
-   */
-  maxPhysicsSteps: 0,
-
-  /**
-   * Swept-коллизия: сэмплируем отрезок prevPos → pos и ловим
-   * «пролёт сквозь гору» на высокой горизонтальной скорости.
-   * Также исправляет «прыжок» на склон при обычной посадке.
-   */
-  collision: {
-    swept: true,
-    /** Сколько подшагов на отрезок. 4 — баланс между точностью и CPU. */
-    sweptSamples: 4,
-  },
-
-  /** Пауза (с) между «камера вернулась к стартовой позиции»*/`
-
-  s = replaceOrSkip(s, OLD, NEW, 'config.js / GAME physics + collision')
-  write('scripts/config.js', s, isCRLF)
+  s = replaceOrSkip(s, OLD, NEW, 'state.js / cam fixed-step fields')
+  write('scripts/state.js', s, isCRLF)
 }
 
 // ============================================================
-// 2) main.js — FIXED_DT / MAX_FRAME_DT / MAX_STEPS из конфига
+// 2) camera.js — полностью переписываем под fixed-step + interpolate
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/main.js')
-  let s = text
+  const { text, isCRLF } = read('scripts/core/camera.js')
 
-  const OLD = `const FIXED_DT = 1 / 60 // фиксированный шаг физики
-const MAX_FRAME_DT = 0.1 // защита от «спирали смерти» при лагах
-const MAX_STEPS = 10 // до 10 шагов за кадр (~166 мс)`
+  const NEW_CAMERA = `/* ================================================================
+   camera.js — следование камеры за ракетой.
 
-  const NEW = `const FIXED_DT = 1 / CFG.GAME.physicsHz // фиксированный шаг физики
-const MAX_FRAME_DT = CFG.GAME.maxFrameDt // верхний предел dt кадра
-// Потолок шагов физики за кадр. 0 в конфиге = авто (maxFrameDt × physicsHz + запас 2).
-// Авто гарантирует, что при смене physicsHz лимит не отстанет от реальности.
-const MAX_STEPS =
-  CFG.GAME.maxPhysicsSteps > 0
-    ? CFG.GAME.maxPhysicsSteps
-    : Math.ceil(MAX_FRAME_DT / FIXED_DT) + 2`
+   FIX джиттера при просадках FPS:
+   — Сглаживание камеры вынесено в ФИКСИРОВАННЫЙ шаг физики (120 Гц).
+     Раньше s = 1 - exp(-follow * realDt) зависел от времени кадра:
+     при просадке FPS realDt «гулял» → камера то отставала, то догоняла
+     по-разному на каждом кадре → ракета дёргалась ОТНОСИТЕЛЬНО камеры.
+   — На рендере позиция/look камеры интерполируются по тому же alpha,
+     что и ракета. Камера и ракета теперь всегда идут синхронно.
 
-  s = replaceOrSkip(s, OLD, NEW, 'main.js / fixed timestep from config')
-  write('scripts/main.js', s, isCRLF)
+   Старое поведение камеры (углы от высоты, отъезд по скорости,
+   leadTime, followBase/followSpeedK/followMaxSpeed, blend, shake)
+   сохранено полностью — изменилось только ВРЕМЯ применения.
+================================================================ */
+import * as THREE from 'three'
+import * as CFG from '../config.js'
+import { G, cam, rocketState } from '../state.js'
+import { camera } from '../views/scene.js'
+import { terrainHeight } from '../world/world.js'
+
+const _tmpLook = new THREE.Vector3()
+
+/* ================================================================
+   PHYSICS STEP — вызывать из Game.updatePhysics (фикс. dt)
+================================================================ */
+export function updateCameraPhysics(dt) {
+  if (!cam.inited) {
+    cam.pos.copy(camera.position)
+    cam.prevPos.copy(camera.position)
+    cam.inited = true
+  }
+
+  const pos = rocketState.pos
+  const vel = rocketState.vel
+
+  const gY = terrainHeight(pos.x, 0)
+  const speed = vel.length()
+
+  const wantBehind = G.phase === 'fly' ? 1 : 0
+  const blendSpeed = wantBehind > cam.blend ? CFG.CAMERA.blendIn : CFG.CAMERA.blendOut
+  cam.blend += (wantBehind - cam.blend) * Math.min(1, dt * blendSpeed)
+  if (cam.blend < 0.001) cam.blend = 0
+  if (cam.blend > 0.999) cam.blend = 1
+
+  const alt = Math.max(0, pos.y - gY)
+  const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
+  const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
+  const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
+
+  const R =
+    CFG.CAMERA.baseRadius + Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)
+  const hDist = R * Math.cos(elev)
+  const vDist = R * Math.sin(elev)
+
+  const lead = CFG.CAMERA.leadTime
+  const px = pos.x + vel.x * lead
+  const py = pos.y + vel.y * lead
+  const pz = pos.z + vel.z * lead
+
+  const camX = px - hDist * cam.blend
+  const camY = py + vDist
+  const camZ = pz + hDist * (1 - cam.blend)
+
+  cam.target.set(camX, camY, camZ)
+
+  const follow =
+    CFG.CAMERA.followBase + Math.min(CFG.CAMERA.followMaxSpeed, speed * CFG.CAMERA.followSpeedK)
+  // dt здесь ФИКСИРОВАННЫЙ (= FIXED_DT физики) — коэффициент сглаживания
+  // больше не зависит от времени кадра. Именно это убирает джиттер.
+  const s = 1 - Math.exp(-follow * dt)
+
+  // Сохраняем предыдущее состояние для интерполяции на рендере
+  cam.prevPos.copy(cam.pos)
+  cam.pos.x += (camX - cam.pos.x) * s
+  cam.pos.y += (camY - cam.pos.y) * s
+  cam.pos.z += (camZ - cam.pos.z) * s
+
+  const lookAhead =
+    (CFG.CAMERA.lookAheadBase + CFG.CAMERA.lookAheadBehind * cam.blend) *
+    (1 - altT * CFG.CAMERA.lookAheadAltK)
+  const lookX = px + lookAhead
+  const lookY = py
+
+  cam.prevLook.copy(cam.look)
+  cam.look.x += (lookX - cam.look.x) * s
+  cam.look.y += (lookY - cam.look.y) * s
+  cam.look.z += (pz - cam.look.z) * s
+
+  if (cam.shake > 0) {
+    cam.shake = Math.max(0, cam.shake - dt * CFG.CAMERA.shakeDecayK)
+  }
+}
+
+/* ================================================================
+   VISUAL — вызывать из Game.updateVisuals (раз в кадр, с alpha)
+================================================================ */
+export function updateCameraVisual(alpha) {
+  camera.position.lerpVectors(cam.prevPos, cam.pos, alpha)
+  _tmpLook.lerpVectors(cam.prevLook, cam.look, alpha)
+
+  if (cam.shake > 0) {
+    const a = cam.shake * cam.shake * CFG.CAMERA.shakeAmpK
+    camera.position.x += (Math.random() - 0.5) * a
+    camera.position.y += (Math.random() - 0.5) * a
+  }
+
+  camera.lookAt(_tmpLook)
+}
+`
+
+  if (text === NEW_CAMERA) {
+    console.log('⏭️  camera.js — уже применено')
+  } else {
+    write('scripts/core/camera.js', NEW_CAMERA, isCRLF)
+    console.log('✅ camera.js / fixed-step + interpolation')
+  }
 }
 
 // ============================================================
-// 3) physics.js — swept collision + restY от новой позиции
+// 3) game.js — переключаем вызовы
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/core/physics.js')
+  const { text, isCRLF } = read('scripts/core/game.js')
   let s = text
 
-  // 3a) убираем вычисление restY в старом месте
-  const OLD1 = `  const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
-  const forsageActive = Abilities.isActive('forsage')`
-  const NEW1 = `  const forsageActive = Abilities.isActive('forsage')`
-  s = replaceOrSkip(s, OLD1, NEW1, 'physics.js / remove old restY')
+  s = replaceOrSkip(
+    s,
+    `import { updateCamera } from './camera.js'`,
+    `import { updateCameraPhysics, updateCameraVisual } from './camera.js'`,
+    'game.js / import camera'
+  )
 
-  // 3b) заменяем блок посадки на swept + fallback
-  const OLD2 = `    p.pos.addScaledVector(p.vel, dt)
+  s = replaceOrSkip(
+    s,
+    `export function updatePhysics(dt) {
+  Abilities.update(dt)
+  updateBossPhase(dt)
+  updateRocketPhysics(dt)
+  checkGemPickup()
+}`,
+    `export function updatePhysics(dt) {
+  Abilities.update(dt)
+  updateBossPhase(dt)
+  updateRocketPhysics(dt)
+  // FIX: камера сглаживается в ФИКСИРОВАННОМ шаге — теперь не зависит от FPS.
+  updateCameraPhysics(dt)
+  checkGemPickup()
+}`,
+    'game.js / updatePhysics + camera physics'
+  )
 
-    if (p.pos.y <= restY && p.vel.y < 0) {
-      p.pos.y = restY
-      if (_onLand) _onLand()
-    }
-    recordGhostSample()`
+  s = replaceOrSkip(
+    s,
+    `  updateRocketVisuals(dt, _irotZ, _ipos, _ivel)
+  updateCamera(dt, _ipos, _ivel)`,
+    `  updateRocketVisuals(dt, _irotZ, _ipos, _ivel)
+  // FIX: интерполируем позицию/look камеры по тому же alpha, что и ракету.
+  updateCameraVisual(alpha)`,
+    'game.js / updateVisuals + camera visual'
+  )
 
-  const NEW2 = `    p.pos.addScaledVector(p.vel, dt)
-
-    // --- Коллизия с рельефом ---
-    // Проверяем только при снижении (vel.y < 0): восходящий пролёт
-    // над горами — это нормальное поведение, не трогаем.
-    if (p.vel.y < 0) {
-      const CS = CFG.GAME.collision
-      let landed = false
-
-      // Swept: сэмплируем отрезок prevPos → pos. Ловит «туннель» сквозь
-      // пик, когда между старой и новой позицией есть гора, а в новой
-      // позиции уже низина. Без swept на 400+ м/с такие пролёты — реал.
-      if (CS.swept) {
-        const from = p.prevPos
-        const to = p.pos
-        const N = Math.max(2, CS.sweptSamples | 0)
-        for (let i = 1; i <= N; i++) {
-          const k = i / N
-          const sx = from.x + (to.x - from.x) * k
-          const sy = from.y + (to.y - from.y) * k
-          const sz = from.z + (to.z - from.z) * k
-          const sRestY = terrainHeight(sx, sz) + REST_Y
-          if (sy <= sRestY) {
-            p.pos.set(sx, sRestY, sz)
-            if (_onLand) _onLand()
-            landed = true
-            break
-          }
-        }
-      }
-
-      // Fallback: обычная вертикальная посадка. Считаем restY от НОВОЙ
-      // позиции — корректнее на склонах (старый код брал от старой).
-      if (!landed) {
-        const newRestY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
-        if (p.pos.y <= newRestY) {
-          p.pos.y = newRestY
-          if (_onLand) _onLand()
-        }
-      }
-    }
-    recordGhostSample()`
-
-  s = replaceOrSkip(s, OLD2, NEW2, 'physics.js / swept + fallback collision')
-  write('scripts/core/physics.js', s, isCRLF)
+  write('scripts/core/game.js', s, isCRLF)
 }
 
-// ============================================================
-// 4) calculator/simulation.js — dt из CFG
-// ============================================================
-{
-  const { text, isCRLF } = read('calculator/simulation.js')
-  let s = text
-
-  const OLD = `    dt = 1 / 60,`
-  const NEW = `    dt = 1 / CFG.GAME.physicsHz,`
-  s = replaceOrSkip(s, OLD, NEW, 'calculator/simulation.js / dt sync')
-  write('calculator/simulation.js', s, isCRLF)
-}
-
-console.log('\n🎉 Готово.')
+console.log('\\n🎉 Готово.')
+console.log('   Что изменилось:')
+console.log('   • Сглаживание камеры теперь идёт в фиксированном шаге 120 Гц')
+console.log('   • На рендере камера интерполируется по alpha (как ракета)')
+console.log('   • Все старые параметры (leadTime, followBase, followSpeedK,')
+console.log('     followMaxSpeed, blend, shake) сохранены — изменилось')
+console.log('     только ВРЕМЯ применения.')
 console.log('   Проверь:')
-console.log('   1. Полёт на высокой скорости в сторону гор — не пролетает сквозь.')
-console.log('   2. Калькулятор даёт те же цифры, что игра (примерно).')
-console.log('   3. При FPS=20 нет спирали смерти (не залипает).')
+console.log('   1. Просадка до 20–30 FPS → ракета плавно в центре кадра.')
+console.log('   2. Посадка → тряска работает как раньше.')
+console.log('   3. Прекик → камера подъезжает сбоку и ждёт 0.3 с (как было).')

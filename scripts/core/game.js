@@ -28,7 +28,7 @@ import {
   checkGemPickup,
   setLandCallback,
 } from './physics.js'
-import { updateCamera } from './camera.js'
+import { updateCameraPhysics, updateCameraVisual } from './camera.js'
 import { updateBossAnim } from './boss.js'
 import { startGhostRecording } from './ghostRecorder.js'
 import {
@@ -483,6 +483,8 @@ export function updatePhysics(dt) {
   Abilities.update(dt)
   updateBossPhase(dt)
   updateRocketPhysics(dt)
+  // FIX: камера сглаживается в ФИКСИРОВАННОМ шаге — теперь не зависит от FPS.
+  updateCameraPhysics(dt)
   checkGemPickup()
 }
 
@@ -493,7 +495,8 @@ export function updateVisuals(dt, alpha, visualTime = time.gameTime) {
 
   updateBossAnim(dt)
   updateRocketVisuals(dt, _irotZ, _ipos, _ivel)
-  updateCamera(dt, _ipos, _ivel)
+  // FIX: интерполируем позицию/look камеры по тому же alpha, что и ракету.
+  updateCameraVisual(alpha)
   updateChestsFX(dt, _ipos.x, _ipos.z)
   updateGemsFX(dt)
 
