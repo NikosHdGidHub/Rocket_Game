@@ -2,9 +2,9 @@
    fade.js — плавный переход 3D ⇄ 2D, туман, видимость слоёв.
 ================================================================ */
 import * as CFG from '../../config.js'
-import { scene, fogU } from '../scene.js'
+import { scene, fogU, camera } from '../scene.js'
 import { lod, rocketState } from '../../state.js'
-import { chunks, PERSISTENT_CHUNKS } from '../chunks/index.js'
+import { chunks, PERSISTENT_CHUNKS, unloadChunk } from '../chunks/index.js'
 import { boss } from '../entities/index.js'
 import { terrainHeight } from '../../world/world.js'
 import { state } from './state.js'
@@ -15,6 +15,72 @@ function smoothstep(a, b, x) {
   if (x >= b) return 1
   const t = (x - a) / (b - a)
   return t * t * (3 - 2 * t)
+}
+
+/* ================================================================
+   STAGGERED REVEAL / UNLOAD
+
+   Система БЕЗ состояния: каждый кадр сравниваем «видимо / целевое»
+   и шагаем на batch к цели. При инверсии направления target просто
+   меняется — всё сходится само, без отмен и без рассинхрона.
+================================================================ */
+
+/** Включить/выключить до batch элементов collection в сторону target. */
+function stepReveal(collection, target, batch) {
+  let flipped = 0
+  for (const c of collection.values()) {
+    if (c.mesh.visible !== target) {
+      c.mesh.visible = target
+      if (++flipped >= batch) break
+    }
+  }
+}
+
+/** Все ли элементы collection в состоянии target. */
+function isConverged(collection, target) {
+  for (const c of collection.values()) {
+    if (c.mesh.visible !== target) return false
+  }
+  return true
+}
+
+/**
+ * Выгрузить до batch 3D-чанков, которые сейчас вне preload-границ.
+ * Возвращает true, если остались ещё кандидаты (нужен ещё кадр).
+ *
+ * ВАЖНО: каждый вызов пересчитывает bounds из ТЕКУЩЕГО положения камеры.
+ * Поэтому если камера пошла обратно вниз, чанк, который уже в границах,
+ * просто не будет выгружен (никаких «зависших» кандидатов в очереди).
+ */
+function stepUnload(batch) {
+  const camX = camera.position.x
+  const camZ = camera.position.z
+  const CS = CFG.CHUNKS.size
+  const cxi = Math.floor(camX / CS)
+  const czi = Math.floor(camZ / CS)
+
+  const LF = CFG.CHUNKS.loadForwardFar
+  const LB = CFG.CHUNKS.loadBackFar
+  const LS = CFG.CHUNKS.loadSideFar
+  const M = CFG.CHUNKS.unloadMargin
+
+  let unloaded = 0
+  let more = false
+  for (const [key, c] of chunks) {
+    if (PERSISTENT_CHUNKS.has(key)) continue
+    const dx = c.cx - cxi
+    const dz = c.cz - czi
+    if (dx < -(LB + M) || dx > LF + M || Math.abs(dz) > LS + M) {
+      if (unloaded < batch) {
+        unloadChunk(key)
+        unloaded++
+      } else {
+        more = true
+        break
+      }
+    }
+  }
+  return more
 }
 
 /* Локальный доступ к фазе без импорта game.js (избегаем циклов). */
@@ -102,20 +168,41 @@ export function updateLOD(dt) {
   const farOpacity = lod.fade * groundFade
   const overlayOpacity = getOverlayOpacity()
 
-  if (overlayOpacity !== state.lastOverlayOpacity) {
-    for (const c of state.overlayChunks.values()) {
-      c.mat.opacity = overlayOpacity
-      c.mesh.visible = overlayOpacity > 0.005
-    }
-    state.lastOverlayOpacity = overlayOpacity
+  // ═══════════════════════════════════════════════════════════════
+  // ФАЗОВЫЙ ПЕРЕХОД: far reveal → unload 3D → overlay reveal
+  //
+  // Три тяжёлые GPU-операции, каждая сериализована в свою фазу.
+  // Только вперёд (в 2D): при спуске порядок не важен, всё
+  // сходится параллельно и без пиков (3D-чанки грузятся асинхронно
+  // через воркеры, скрытие far/overlay — дешёвое).
+  // ═══════════════════════════════════════════════════════════════
+  const reveal = CFG.LOD.reveal
+
+  // --- Фаза 1: far tiles ---
+  if (state.farGroundMat) state.farGroundMat.opacity = farOpacity
+  const farTarget = farOpacity > 0.005
+  stepReveal(state.farTiles, farTarget, reveal.farBatch)
+  const farConverged = isConverged(state.farTiles, farTarget)
+
+  // --- Фаза 2: unload 3D-чанков ---
+  // Только в 2D (внизу 3D-чанки нужны) и только после far reveal.
+  let unloadDone = true
+  if (farConverged && lod.in2D) {
+    unloadDone = !stepUnload(reveal.unloadBatch)
   }
 
-  if (farOpacity !== state.lastFarOpacity) {
-    if (state.farGroundMat) state.farGroundMat.opacity = farOpacity
-    const farVisible = farOpacity > 0.005
-    for (const c of state.farTiles.values()) c.mesh.visible = farVisible
-    state.lastFarOpacity = farOpacity
+  // --- Фаза 3: overlay reveal ---
+  // Скрывать — можно всегда (opacity уже 0).
+  // Показывать — только когда far и unload сошлись.
+  for (const c of state.overlayChunks.values()) c.mat.opacity = overlayOpacity
+  const overlayTarget = overlayOpacity > 0.005
+  const canRevealOverlay = farConverged && unloadDone
+  if (!overlayTarget || canRevealOverlay) {
+    stepReveal(state.overlayChunks, overlayTarget, reveal.overlayBatch)
   }
+
+  state.lastFarOpacity = farOpacity
+  state.lastOverlayOpacity = overlayOpacity
 
   const showFine = lod.fade < 0.95
   if (showFine !== state.lastShowFineChunks) {

@@ -11,9 +11,8 @@ import {
   LOAD_FWD_CHUNKS,
   LOAD_BACK_CHUNKS,
   LOAD_SIDE_CHUNKS,
-  UNLOAD_MARGIN,
 } from './constants.js'
-import { chunks, PERSISTENT_CHUNKS, loadChunk, unloadChunk } from './store.js'
+import { chunks, PERSISTENT_CHUNKS, loadChunk } from './store.js'
 import { propsCache } from './props.js'
 import { pendingChunks, readyChunksKeys, dispatchChunk, workerPool } from './workers.js'
 
@@ -37,15 +36,9 @@ export function refillChunkQueue(camX, camZ) {
     LS = LOAD_SIDE_CHUNKS
   }
 
-  const toUnload = []
-  for (const key of chunks.keys()) {
-    const [cs, czs] = key.split(',')
-    const dx = +cs - cxi,
-      dz = +czs - czi
-    if (dx < -(LB + UNLOAD_MARGIN) || dx > LF + UNLOAD_MARGIN || Math.abs(dz) > LS + UNLOAD_MARGIN)
-      toUnload.push(key)
-  }
-  for (const k of toUnload) unloadChunk(k)
+  // NOTE: unload больше не делаем здесь — выгрузка 3D-чанков
+  // вынесена в fade.js как порционная фаза (см. CFG.LOD.reveal.unloadBatch).
+  // Так пик dispose не приходится на один кадр при пересечении changeAltitude.
 
   const padXf = LF + 1
   const padXb = LB + 1
