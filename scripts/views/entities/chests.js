@@ -1,17 +1,16 @@
 /* ================================================================
-   chests.js — сундуки: меши, beam/glow по типам, пул PointLight,
+   chests.js — сундуки: меши, пул лучей (cylinder/spiral), пул PointLight,
    анимация и синхронизация с G.openedChests.
 ================================================================ */
 import * as THREE from 'three'
 import * as CFG from '../../config.js'
-import { scene } from '../scene.js'
+import { scene, applySkyFog } from '../scene.js'
 import { G } from '../../state.js'
 import { terrainHeight, hash2i } from '../../world/world.js'
 
 export const chestGroup = new THREE.Group()
 scene.add(chestGroup)
 
-/** @type {{ x:number, z:number, group:THREE.Group, beam:any, glow:any, opened:boolean, type:string }[]} */
 export const chests = []
 
 /* ---------- Общие материалы корпуса и окантовки (один раз на всех) ---------- */
@@ -28,40 +27,6 @@ const chestTrimMat = new THREE.MeshStandardMaterial({
   emissiveIntensity: 0.6,
 })
 
-/* ---------- Материалы beam/glow по типам (лениво) ---------- */
-const chestMats = {} // type → { beam, glow, beamOpacityBase, glowOpacityBase }
-
-function getChestMats(type) {
-  if (chestMats[type]) return chestMats[type]
-  const override = CFG.CHESTS.types[type] || {}
-  const beamColor = override.beamColor ?? CFG.CHESTS.beamColor
-  const glowColor = override.glowColor ?? CFG.CHESTS.glowColor
-  const beamOpacityBase = override.beamOpacity ?? CFG.CHESTS.beamOpacity
-  const glowOpacityBase = override.glowOpacity ?? CFG.CHESTS.glowOpacity
-
-  const beam = new THREE.MeshBasicMaterial({
-    color: beamColor,
-    transparent: true,
-    opacity: beamOpacityBase,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-    side: THREE.DoubleSide,
-  })
-  const glow = new THREE.MeshBasicMaterial({
-    color: glowColor,
-    transparent: true,
-    opacity: glowOpacityBase,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-  })
-
-  chestMats[type] = { beam, glow, beamOpacityBase, glowOpacityBase }
-  return chestMats[type]
-}
-
-/* ---------- Пул PointLight'ов: N всегда в сцене, гаснут через intensity ---------- */
 const _chestLightPool = []
 {
   const L = CFG.CHESTS.lights
@@ -77,19 +42,169 @@ const bodyGeo = new THREE.BoxGeometry(2.4, 1.4, 1.6)
 const trimGeo = new THREE.BoxGeometry(2.5, 1.5, 0.12)
 const lidGeo = new THREE.BoxGeometry(2.5, 0.5, 1.7)
 const lockGeo = new THREE.BoxGeometry(0.4, 0.5, 0.15)
-const beamGeo = new THREE.CylinderGeometry(
-  CFG.CHESTS.beamRadius,
-  CFG.CHESTS.beamRadius * 1.8,
-  CFG.CHESTS.beamHeight,
-  12,
-  1,
-  true
-)
-const glowGeo = new THREE.SphereGeometry(2.2, 12, 10)
+
+const _beamSlots = []
+let _beamTimeSec = 0
+
+function createSpiralMaterial(cfg) {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 1,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: true,
+    toneMapped: false,
+  })
+
+  const uniforms = {
+    uTime: { value: 0 },
+    uTwist: { value: cfg.twist },
+    uArms: { value: cfg.arms },
+    uSharpness: { value: cfg.sharpness },
+    uNoiseAmount: { value: cfg.noiseAmount },
+    uNoiseScale: { value: cfg.noiseScale },
+    uColorInner: { value: new THREE.Color(cfg.colorInner) },
+    uColorOuter: { value: new THREE.Color(cfg.colorOuter) },
+    uOpacity: { value: 1.0 },
+    uPulseSpeed: { value: cfg.pulseSpeed },
+    uPulseAmount: { value: cfg.pulseAmount },
+  }
+
+  mat.userData.spiralUniforms = uniforms
+
+  applySkyFog(mat, (shader) => {
+    Object.assign(shader.uniforms, uniforms)
+
+    shader.vertexShader = shader.vertexShader.replace(
+      'void main() {',
+      `varying vec2 vSpiralUv;
+void main() {
+  vSpiralUv = uv;`
+    )
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>
+uniform float uTime;
+uniform float uTwist;
+uniform float uArms;
+uniform float uSharpness;
+uniform float uNoiseAmount;
+uniform float uNoiseScale;
+uniform vec3  uColorInner;
+uniform vec3  uColorOuter;
+uniform float uOpacity;
+uniform float uPulseSpeed;
+uniform float uPulseAmount;
+varying vec2 vSpiralUv;`
+    )
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <fog_fragment>',
+      `
+      float su = vSpiralUv.x;
+      float sv = vSpiralUv.y;
+      float sAngle = su * 6.28318 * uArms;
+      float sTwist = sv * uTwist + uTime;
+      float sSin = sin(sAngle + sTwist);
+      float spiral = pow(max(0.0, 0.5 + 0.5 * sSin), uSharpness);
+
+      if (uNoiseAmount > 0.001) {
+        vec2 np = vSpiralUv * uNoiseScale;
+        float n1 = sin(np.x * 3.1 + uTime * 1.5);
+        float n2 = cos(np.y * 2.7 + uTime * 0.9);
+        float noise = n1 * n2 * 0.5 + 0.5;
+        spiral *= mix(1.0 - uNoiseAmount, 1.0, noise);
+      }
+
+      float vfade = smoothstep(0.0, 0.08, sv) * (1.0 - smoothstep(0.6, 1.0, sv));
+      float pulse = 1.0 + uPulseAmount * sin(uTime * uPulseSpeed);
+
+      float alpha = spiral * vfade * uOpacity * pulse;
+      vec3 col = mix(uColorOuter, uColorInner, spiral);
+
+      gl_FragColor = vec4(col, alpha);
+      #include <fog_fragment>
+      `
+    )
+  })
+
+  return mat
+}
+
+function createBeamSlot() {
+  const B = CFG.CHESTS.beam
+  const height = CFG.CHESTS.beamHeight
+
+  let geo
+  let mat
+  let isSpiral = false
+  let uniforms = null
+  let animate = false
+  let rotationSpeed = 1
+
+  if (B.style === 'cylinder') {
+    const c = B.cylinder
+    geo = new THREE.CylinderGeometry(
+      CFG.CHESTS.beamRadius,
+      CFG.CHESTS.beamRadius * c.radiusTopRatio,
+      height,
+      c.radialSegments,
+      1,
+      true
+    )
+    geo.translate(0, height / 2, 0)
+    mat = new THREE.MeshBasicMaterial({
+      color: CFG.CHESTS.beamColor,
+      transparent: true,
+      opacity: CFG.CHESTS.beamOpacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: true,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    })
+    applySkyFog(mat)
+  } else {
+    const sp = B.spiral
+    const simple = B.quality === 'simple'
+    const cfg = simple ? { ...sp, ...sp.simple } : sp
+
+    geo = new THREE.CylinderGeometry(
+      cfg.radiusTop,
+      cfg.radiusBottom,
+      height,
+      cfg.radialSegments,
+      cfg.heightSegments,
+      true
+    )
+    geo.translate(0, height / 2, 0)
+    mat = createSpiralMaterial(cfg)
+    isSpiral = true
+    uniforms = mat.userData.spiralUniforms
+    animate = !!cfg.animate
+    rotationSpeed = cfg.rotationSpeed
+  }
+
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.renderOrder = 5
+  mesh.visible = false
+  mesh.frustumCulled = false
+  scene.add(mesh)
+
+  return { mesh, mat, isSpiral, uniforms, animate, rotationSpeed }
+}
+
+function initBeamPool() {
+  for (let i = 0; i < CFG.CHESTS.beam.poolSize; i++) {
+    _beamSlots.push(createBeamSlot())
+  }
+}
 
 function buildChestMesh(x, z, type) {
   const g = new THREE.Group()
-  const mats = getChestMats(type)
 
   const body = new THREE.Mesh(bodyGeo, chestBodyMat)
   body.position.y = 0.7
@@ -111,18 +226,8 @@ function buildChestMesh(x, z, type) {
   lock.position.set(0, 0.85, 0.85)
   g.add(lock)
 
-  const beam = new THREE.Mesh(beamGeo, mats.beam)
-  beam.position.y = CFG.CHESTS.beamHeight / 2
-  beam.renderOrder = 5
-  g.add(beam)
-
-  const glow = new THREE.Mesh(glowGeo, mats.glow)
-  glow.position.y = 1.2
-  glow.renderOrder = 4
-  g.add(glow)
-
   g.position.set(x, terrainHeight(x, z), z)
-  return { group: g, beam, glow }
+  return { group: g }
 }
 
 /** Z-координата сундука — детерминированная (стабильна между сессиями). */
@@ -134,14 +239,15 @@ function chestZ(x) {
 }
 
 export function initChests() {
+  initBeamPool()
   for (const x of CFG.CHESTS.allPositions) {
     const z = chestZ(x)
     const type = CFG.CHESTS.specialChests[x] || 'random'
     const opened = G.openedChests.has(x)
-    const { group, beam, glow } = buildChestMesh(x, z, type)
+    const { group } = buildChestMesh(x, z, type)
     group.visible = !opened
     chestGroup.add(group)
-    chests.push({ x, z, group, beam, glow, opened, type })
+    chests.push({ x, z, group, opened, type })
   }
 }
 
@@ -153,32 +259,74 @@ export function resyncChests() {
 }
 
 export function updateChests(dt, rx, rz) {
-  const t = performance.now() * 0.001
+  _beamTimeSec += dt
+  updateBeams(rx, rz)
+  updateChestLights(dt, rx, rz)
+}
 
-  const pulse = 0.75 + Math.sin(t * 2) * 0.25
-  for (const mats of Object.values(chestMats)) {
-    mats.beam.opacity = mats.beamOpacityBase * pulse
-  }
+function updateBeams(rx, rz) {
+  const B = CFG.CHESTS.beam
 
+  const candidates = []
   for (const c of chests) {
     if (c.opened) continue
     const dx = rx - c.x
     const dz = rz - c.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-    const near = Math.max(0, 1 - dist / CFG.CHESTS.nearRadius)
-    c.glow.scale.setScalar(1 + near * 0.6)
+    const d2 = dx * dx + dz * dz
+    candidates.push({ chest: c, dist: Math.sqrt(d2) })
   }
+  candidates.sort((a, b) => a.dist - b.dist)
 
-  updateChestLights(dt, rx, rz)
+  for (let i = 0; i < _beamSlots.length; i++) {
+    const slot = _beamSlots[i]
+    const cand = candidates[i]
+
+    if (!cand || cand.dist > B.maxDistance) {
+      slot.mesh.visible = false
+      continue
+    }
+
+    const c = cand.chest
+    const gy = terrainHeight(c.x, c.z)
+    slot.mesh.position.set(c.x, gy, c.z)
+    slot.mesh.visible = true
+
+    let fade = 1
+    if (cand.dist > B.fadeStart) {
+      const span = Math.max(1, B.fadeEnd - B.fadeStart)
+      fade = Math.max(0, 1 - (cand.dist - B.fadeStart) / span)
+    }
+
+    const override = CFG.CHESTS.types[c.type] || {}
+    const baseOpacity = override.beamOpacity ?? CFG.CHESTS.beamOpacity
+    const finalOpacity = baseOpacity * fade
+
+    if (slot.isSpiral) {
+      const sp = B.spiral
+      const isForsage = c.type === 'forsage' && sp.forsage
+      const colorInner = isForsage ? sp.forsage.colorInner : sp.colorInner
+      const colorOuter = isForsage ? sp.forsage.colorOuter : sp.colorOuter
+
+      slot.uniforms.uColorInner.value.setHex(colorInner)
+      slot.uniforms.uColorOuter.value.setHex(colorOuter)
+      slot.uniforms.uOpacity.value = finalOpacity
+
+      if (slot.animate) {
+        slot.uniforms.uTime.value = _beamTimeSec * slot.rotationSpeed
+      } else {
+        slot.uniforms.uTime.value = 0
+      }
+    } else {
+      const color = override.beamColor ?? CFG.CHESTS.beamColor
+      slot.mat.color.setHex(color)
+      const pulse = 0.75 + Math.sin(_beamTimeSec * 2.0) * 0.25
+      slot.mat.opacity = finalOpacity * pulse
+    }
+  }
 }
 
 function updateChestLights(dt, rx, rz) {
   const L = CFG.CHESTS.lights
-
-  let maxRange = L.range
-  for (const t of Object.values(CFG.CHESTS.types)) {
-    if (t.lightRange && t.lightRange > maxRange) maxRange = t.lightRange
-  }
 
   const candidates = []
   for (const c of chests) {

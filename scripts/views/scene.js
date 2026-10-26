@@ -51,8 +51,10 @@ export const fogU = {
      1) sky-matching цвет тумана (совпадает с шейдером неба),
      2) эллиптическую форму тумана (вытянут вдоль полёта).
 ================================================================ */
-export function applySkyFog(mat) {
+export function applySkyFog(mat, customPreInject = null) {
   mat.onBeforeCompile = (shader) => {
+    if (customPreInject) customPreInject(shader)
+
     // --- Sky-matching ---
     shader.uniforms.skyTop = { value: SKY_ZENITH }
     shader.uniforms.skyBottom = { value: SKY_HORIZON }

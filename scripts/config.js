@@ -1441,18 +1441,69 @@ export const CHESTS = /** @type {const} */ ({
   /** м — сколько ещё показываем пройденный сундук. */
   overRadius: 500,
 
-  /** Высота столба света (м). */
+  /** Высота столба света (м). Общая для цилиндра и спирали. */
   beamHeight: 400,
+
+  /** Радиус цилиндра (низ) — старый стиль (LOW). */
   beamRadius: 2.0,
+
+  /** Цвет цилиндра. */
   beamColor: 0xffd75e, // #ffd75e
+
+  /** Базовая непрозрачность луча (общая для обоих стилей). */
   beamOpacity: 0.4,
 
-  /** Базовая непрозрачность glow-сферы вокруг сундука (0..1). */
-  glowOpacity: 0.5,
-
-  /** Яркость и цвет ядра сундука (default). */
+  /** Цвет для PointLight по умолчанию (fallback). */
   glowColor: 0xffb300, // #ffb300
-  glowIntensity: 5.0,
+
+  /**
+   * Пул лучей: N ближайших сундуков светятся, остальные невидимы.
+   * Гаснут по расстоянию (opacity *= fade) и в тумане (applySkyFog).
+   * Стиль переопределяется пресетом качества (low — cylinder, rest — spiral).
+   */
+  beam: {
+    poolSize: 4,
+    maxDistance: 3000,
+    fadeStart: 700,
+    fadeEnd: 2200,
+    style: 'spiral',
+    quality: 'full',
+
+    cylinder: {
+      radialSegments: 12,
+      radiusTopRatio: 1.8,
+    },
+
+    spiral: {
+      radialSegments: 32,
+      heightSegments: 48,
+      radiusTop: 6.0,
+      radiusBottom: 1.5,
+      arms: 3.0,
+      twist: 5.0,
+      sharpness: 2.0,
+      noiseAmount: 0.35,
+      noiseScale: 6.0,
+      colorInner: 0xfff6d0,
+      colorOuter: 0xffb300,
+      animate: true,
+      rotationSpeed: 1.2,
+      pulseSpeed: 2.0,
+      pulseAmount: 0.2,
+
+      simple: {
+        radialSegments: 16,
+        heightSegments: 20,
+        noiseAmount: 0.0,
+        animate: false,
+      },
+
+      forsage: {
+        colorInner: 0xe0c0ff,
+        colorOuter: 0x9100ff,
+      },
+    },
+  },
 
   /* ---------- Пул источников света ----------*/
   lights: {
@@ -1475,7 +1526,6 @@ export const CHESTS = /** @type {const} */ ({
       glowColor: 0xb9100ff, // #9100ff
 
       beamOpacity: 0.65, // плотнее обычного (root: 0.4)
-      glowOpacity: 0.75, // плотнее обычного (root: 0.5)
 
       lightIntensity: 420, // ярче обычного (root: 30)
       lightRange: 280, // дальше обычного (root: 80)
@@ -2058,6 +2108,7 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     farTiles: { segments: 100, segmentsHigh: 40 },
     overlay: { enabled: false, canvasSize: 512 },
     space: { stars: { count: 800 }, spheres: { maxCount: 1024 } },
+    chestBeam: { style: 'cylinder' },
   },
   medium: {
     label: 'Среднее',
@@ -2069,6 +2120,7 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     farTiles: { segments: 140, segmentsHigh: 48 },
     overlay: { enabled: true, canvasSize: 1024 },
     space: { stars: { count: 1500 }, spheres: { maxCount: 2560 } },
+    chestBeam: { style: 'spiral', quality: 'simple' },
   },
   high: {
     label: 'Высокое',
@@ -2080,6 +2132,7 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     farTiles: { segments: 190, segmentsHigh: 53 },
     overlay: { enabled: true, canvasSize: 1024 },
     space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
+    chestBeam: { style: 'spiral', quality: 'full' },
   },
   ultra: {
     label: 'Ультра',
@@ -2091,6 +2144,7 @@ export const QUALITY_PRESETS = /** @type {const} */ ({
     farTiles: { segments: 220, segmentsHigh: 64 },
     overlay: { enabled: true, canvasSize: 1536 },
     space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
+    chestBeam: { style: 'spiral', quality: 'full' },
   },
 })
 

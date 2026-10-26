@@ -111,6 +111,10 @@ export function apply(presetId) {
 
   CFG.SPACE.stars.count = preset.space.stars.count
   CFG.SPACE.spheres.maxCount = preset.space.spheres.maxCount
+
+  if (preset.chestBeam) {
+    Object.assign(CFG.CHESTS.beam, preset.chestBeam)
+  }
 }
 
 /* ================================================================
