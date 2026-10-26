@@ -1,5 +1,5 @@
-// fix6.mjs — пофазный переход в 2D: staggered far reveal → staggered unload → staggered overlay.
-// Запуск: node fix6.mjs
+// fix7.mjs — physicsHz + swept collision + MAX_STEPS auto + calculator sync
+// Запуск: node fix7.mjs
 import fs from 'node:fs'
 
 const read = (p) => {
@@ -26,268 +26,169 @@ function replaceOrSkip(s, oldStr, newStr, label) {
 }
 
 // ============================================================
-// 1) config.js — LOD.reveal
+// 1) config.js — GAME: physicsHz, maxFrameDt, maxPhysicsSteps, collision
 // ============================================================
 {
   const { text, isCRLF } = read('scripts/config.js')
   let s = text
 
-  const OLD = `  /** Скорость «затухания» при переходе в 2D (1/с). */
-  fadeIn: 6.4,
+  const OLD = `  /** Высота ракеты над землёй в состоянии покоя (м). */
+  restY: 0.95,
 
-  /** Скорость «проявления» при переходе обратно в 3D (1/с). */
-  fadeOut: 4.5,
-})`
+  /** Пауза (с) между «камера вернулась к стартовой позиции»*/`
 
-  const NEW = `  /** Скорость «затухания» при переходе в 2D (1/с). */
-  fadeIn: 6.4,
-
-  /** Скорость «проявления» при переходе обратно в 3D (1/с). */
-  fadeOut: 4.5,
+  const NEW = `  /** Высота ракеты над землёй в состоянии покоя (м). */
+  restY: 0.95,
 
   /**
-   * Порционные батчи для плавного перехода 3D ⇄ 2D.
-   * Решают лаг при пересечении changeAltitude вверх: раньше все
-   * 25 far-тайлов включались и все 76 3D-чанков выгружались в один
-   * кадр. Теперь размазано на несколько кадров по фазам:
-   *   far reveal  → unload 3D  →  overlay reveal
+   * Частота шага физики (Гц).
+   * 60 — быстро, но при 400+ м/с Euler-интеграция даёт заметную ошибку.
+   * 120 — компромисс (рекомендуется).
+   * 240 — максимальная точность, ×2 CPU к физике.
+   * ВАЖНО: калькулятор (calculator/simulation.js) берёт dt отсюда же.
    */
-  reveal: {
-    farBatch: 5,
-    overlayBatch: 6,
-    unloadBatch: 10,
-  },
-})`
+  physicsHz: 120,
 
-  s = replaceOrSkip(s, OLD, NEW, 'config.js / LOD.reveal')
+  /**
+   * Максимальный dt кадра (сек). Верхний предел accumulator —
+   * защита от «спирали смерти» при долгих фризах.
+   * Реальный dt кадра всегда clamp'ится этим значением.
+   */
+  maxFrameDt: 0.1,
+
+  /**
+   * Потолок шагов физики за кадр. 0 = авто из maxFrameDt × physicsHz + 2.
+   * При physicsHz = 120 и maxFrameDt = 0.1: 14 шагов.
+   * При physicsHz = 240 и maxFrameDt = 0.1: 26 шагов.
+   * Менять нужно только если хочешь свой жёсткий лимит.
+   */
+  maxPhysicsSteps: 0,
+
+  /**
+   * Swept-коллизия: сэмплируем отрезок prevPos → pos и ловим
+   * «пролёт сквозь гору» на высокой горизонтальной скорости.
+   * Также исправляет «прыжок» на склон при обычной посадке.
+   */
+  collision: {
+    swept: true,
+    /** Сколько подшагов на отрезок. 4 — баланс между точностью и CPU. */
+    sweptSamples: 4,
+  },
+
+  /** Пауза (с) между «камера вернулась к стартовой позиции»*/`
+
+  s = replaceOrSkip(s, OLD, NEW, 'config.js / GAME physics + collision')
   write('scripts/config.js', s, isCRLF)
 }
 
 // ============================================================
-// 2) chunks/queue.js — убираем unload из refillChunkQueue
+// 2) main.js — FIXED_DT / MAX_FRAME_DT / MAX_STEPS из конфига
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/views/chunks/queue.js')
+  const { text, isCRLF } = read('scripts/main.js')
   let s = text
 
-  // 2a) импорты — убираем unloadChunk и UNLOAD_MARGIN
-  s = replaceOrSkip(
-    s,
-    `import {
-  CHUNK_SIZE,
-  LOAD_FWD_CHUNKS,
-  LOAD_BACK_CHUNKS,
-  LOAD_SIDE_CHUNKS,
-  UNLOAD_MARGIN,
-} from './constants.js'
-import { chunks, PERSISTENT_CHUNKS, loadChunk, unloadChunk } from './store.js'`,
-    `import {
-  CHUNK_SIZE,
-  LOAD_FWD_CHUNKS,
-  LOAD_BACK_CHUNKS,
-  LOAD_SIDE_CHUNKS,
-} from './constants.js'
-import { chunks, PERSISTENT_CHUNKS, loadChunk } from './store.js'`,
-    'queue.js / imports'
-  )
+  const OLD = `const FIXED_DT = 1 / 60 // фиксированный шаг физики
+const MAX_FRAME_DT = 0.1 // защита от «спирали смерти» при лагах
+const MAX_STEPS = 10 // до 10 шагов за кадр (~166 мс)`
 
-  // 2b) удаляем блок unload
-  s = replaceOrSkip(
-    s,
-    `  const toUnload = []
-  for (const key of chunks.keys()) {
-    const [cs, czs] = key.split(',')
-    const dx = +cs - cxi,
-      dz = +czs - czi
-    if (dx < -(LB + UNLOAD_MARGIN) || dx > LF + UNLOAD_MARGIN || Math.abs(dz) > LS + UNLOAD_MARGIN)
-      toUnload.push(key)
-  }
-  for (const k of toUnload) unloadChunk(k)
+  const NEW = `const FIXED_DT = 1 / CFG.GAME.physicsHz // фиксированный шаг физики
+const MAX_FRAME_DT = CFG.GAME.maxFrameDt // верхний предел dt кадра
+// Потолок шагов физики за кадр. 0 в конфиге = авто (maxFrameDt × physicsHz + запас 2).
+// Авто гарантирует, что при смене physicsHz лимит не отстанет от реальности.
+const MAX_STEPS =
+  CFG.GAME.maxPhysicsSteps > 0
+    ? CFG.GAME.maxPhysicsSteps
+    : Math.ceil(MAX_FRAME_DT / FIXED_DT) + 2`
 
-  const padXf = LF + 1`,
-    `  // NOTE: unload больше не делаем здесь — выгрузка 3D-чанков
-  // вынесена в fade.js как порционная фаза (см. CFG.LOD.reveal.unloadBatch).
-  // Так пик dispose не приходится на один кадр при пересечении changeAltitude.
-
-  const padXf = LF + 1`,
-    'queue.js / remove unload block'
-  )
-
-  write('scripts/views/chunks/queue.js', s, isCRLF)
+  s = replaceOrSkip(s, OLD, NEW, 'main.js / fixed timestep from config')
+  write('scripts/main.js', s, isCRLF)
 }
 
 // ============================================================
-// 3) lod/fade.js — импорты + хелперы + фазовая логика
+// 3) physics.js — swept collision + restY от новой позиции
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/views/lod/fade.js')
+  const { text, isCRLF } = read('scripts/core/physics.js')
   let s = text
 
-  // 3a) импорты
-  s = replaceOrSkip(
-    s,
-    `import { scene, fogU } from '../scene.js'`,
-    `import { scene, fogU, camera } from '../scene.js'`,
-    'fade.js / import camera'
-  )
-  s = replaceOrSkip(
-    s,
-    `import { chunks, PERSISTENT_CHUNKS } from '../chunks/index.js'`,
-    `import { chunks, PERSISTENT_CHUNKS, unloadChunk } from '../chunks/index.js'`,
-    'fade.js / import unloadChunk'
-  )
+  // 3a) убираем вычисление restY в старом месте
+  const OLD1 = `  const restY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
+  const forsageActive = Abilities.isActive('forsage')`
+  const NEW1 = `  const forsageActive = Abilities.isActive('forsage')`
+  s = replaceOrSkip(s, OLD1, NEW1, 'physics.js / remove old restY')
 
-  // 3b) хелперы после smoothstep
-  s = replaceOrSkip(
-    s,
-    `function smoothstep(a, b, x) {
-  if (x <= a) return 0
-  if (x >= b) return 1
-  const t = (x - a) / (b - a)
-  return t * t * (3 - 2 * t)
-}`,
-    `function smoothstep(a, b, x) {
-  if (x <= a) return 0
-  if (x >= b) return 1
-  const t = (x - a) / (b - a)
-  return t * t * (3 - 2 * t)
-}
+  // 3b) заменяем блок посадки на swept + fallback
+  const OLD2 = `    p.pos.addScaledVector(p.vel, dt)
 
-/* ================================================================
-   STAGGERED REVEAL / UNLOAD
-
-   Система БЕЗ состояния: каждый кадр сравниваем «видимо / целевое»
-   и шагаем на batch к цели. При инверсии направления target просто
-   меняется — всё сходится само, без отмен и без рассинхрона.
-================================================================ */
-
-/** Включить/выключить до batch элементов collection в сторону target. */
-function stepReveal(collection, target, batch) {
-  let flipped = 0
-  for (const c of collection.values()) {
-    if (c.mesh.visible !== target) {
-      c.mesh.visible = target
-      if (++flipped >= batch) break
+    if (p.pos.y <= restY && p.vel.y < 0) {
+      p.pos.y = restY
+      if (_onLand) _onLand()
     }
-  }
-}
+    recordGhostSample()`
 
-/** Все ли элементы collection в состоянии target. */
-function isConverged(collection, target) {
-  for (const c of collection.values()) {
-    if (c.mesh.visible !== target) return false
-  }
-  return true
-}
+  const NEW2 = `    p.pos.addScaledVector(p.vel, dt)
 
-/**
- * Выгрузить до batch 3D-чанков, которые сейчас вне preload-границ.
- * Возвращает true, если остались ещё кандидаты (нужен ещё кадр).
- *
- * ВАЖНО: каждый вызов пересчитывает bounds из ТЕКУЩЕГО положения камеры.
- * Поэтому если камера пошла обратно вниз, чанк, который уже в границах,
- * просто не будет выгружен (никаких «зависших» кандидатов в очереди).
- */
-function stepUnload(batch) {
-  const camX = camera.position.x
-  const camZ = camera.position.z
-  const CS = CFG.CHUNKS.size
-  const cxi = Math.floor(camX / CS)
-  const czi = Math.floor(camZ / CS)
+    // --- Коллизия с рельефом ---
+    // Проверяем только при снижении (vel.y < 0): восходящий пролёт
+    // над горами — это нормальное поведение, не трогаем.
+    if (p.vel.y < 0) {
+      const CS = CFG.GAME.collision
+      let landed = false
 
-  const LF = CFG.CHUNKS.loadForwardFar
-  const LB = CFG.CHUNKS.loadBackFar
-  const LS = CFG.CHUNKS.loadSideFar
-  const M = CFG.CHUNKS.unloadMargin
+      // Swept: сэмплируем отрезок prevPos → pos. Ловит «туннель» сквозь
+      // пик, когда между старой и новой позицией есть гора, а в новой
+      // позиции уже низина. Без swept на 400+ м/с такие пролёты — реал.
+      if (CS.swept) {
+        const from = p.prevPos
+        const to = p.pos
+        const N = Math.max(2, CS.sweptSamples | 0)
+        for (let i = 1; i <= N; i++) {
+          const k = i / N
+          const sx = from.x + (to.x - from.x) * k
+          const sy = from.y + (to.y - from.y) * k
+          const sz = from.z + (to.z - from.z) * k
+          const sRestY = terrainHeight(sx, sz) + REST_Y
+          if (sy <= sRestY) {
+            p.pos.set(sx, sRestY, sz)
+            if (_onLand) _onLand()
+            landed = true
+            break
+          }
+        }
+      }
 
-  let unloaded = 0
-  let more = false
-  for (const [key, c] of chunks) {
-    if (PERSISTENT_CHUNKS.has(key)) continue
-    const dx = c.cx - cxi
-    const dz = c.cz - czi
-    if (dx < -(LB + M) || dx > LF + M || Math.abs(dz) > LS + M) {
-      if (unloaded < batch) {
-        unloadChunk(key)
-        unloaded++
-      } else {
-        more = true
-        break
+      // Fallback: обычная вертикальная посадка. Считаем restY от НОВОЙ
+      // позиции — корректнее на склонах (старый код брал от старой).
+      if (!landed) {
+        const newRestY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
+        if (p.pos.y <= newRestY) {
+          p.pos.y = newRestY
+          if (_onLand) _onLand()
+        }
       }
     }
-  }
-  return more
-}`,
-    'fade.js / reveal helpers'
-  )
+    recordGhostSample()`
 
-  // 3c) главный блок — заменяем bulk-toggle на фазовую логику
-  const OLD_BLOCK = `  // ─── Ground fade у дальней плоскости ───
-  const groundFade =
-    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
-  const farOpacity = lod.fade * groundFade
-  const overlayOpacity = getOverlayOpacity()
-
-  if (overlayOpacity !== state.lastOverlayOpacity) {
-    for (const c of state.overlayChunks.values()) {
-      c.mat.opacity = overlayOpacity
-      c.mesh.visible = overlayOpacity > 0.005
-    }
-    state.lastOverlayOpacity = overlayOpacity
-  }
-
-  if (farOpacity !== state.lastFarOpacity) {
-    if (state.farGroundMat) state.farGroundMat.opacity = farOpacity
-    const farVisible = farOpacity > 0.005
-    for (const c of state.farTiles.values()) c.mesh.visible = farVisible
-    state.lastFarOpacity = farOpacity
-  }`
-
-  const NEW_BLOCK = `  // ─── Ground fade у дальней плоскости ───
-  const groundFade =
-    1 - smoothstep(CFG.SPACE.groundFadeStart, CFG.SPACE.groundFadeEnd, rocketState.pos.y)
-  const farOpacity = lod.fade * groundFade
-  const overlayOpacity = getOverlayOpacity()
-
-  // ═══════════════════════════════════════════════════════════════
-  // ФАЗОВЫЙ ПЕРЕХОД: far reveal → unload 3D → overlay reveal
-  //
-  // Три тяжёлые GPU-операции, каждая сериализована в свою фазу.
-  // Только вперёд (в 2D): при спуске порядок не важен, всё
-  // сходится параллельно и без пиков (3D-чанки грузятся асинхронно
-  // через воркеры, скрытие far/overlay — дешёвое).
-  // ═══════════════════════════════════════════════════════════════
-  const reveal = CFG.LOD.reveal
-
-  // --- Фаза 1: far tiles ---
-  if (state.farGroundMat) state.farGroundMat.opacity = farOpacity
-  const farTarget = farOpacity > 0.005
-  stepReveal(state.farTiles, farTarget, reveal.farBatch)
-  const farConverged = isConverged(state.farTiles, farTarget)
-
-  // --- Фаза 2: unload 3D-чанков ---
-  // Только в 2D (внизу 3D-чанки нужны) и только после far reveal.
-  let unloadDone = true
-  if (farConverged && lod.in2D) {
-    unloadDone = !stepUnload(reveal.unloadBatch)
-  }
-
-  // --- Фаза 3: overlay reveal ---
-  // Скрывать — можно всегда (opacity уже 0).
-  // Показывать — только когда far и unload сошлись.
-  for (const c of state.overlayChunks.values()) c.mat.opacity = overlayOpacity
-  const overlayTarget = overlayOpacity > 0.005
-  const canRevealOverlay = farConverged && unloadDone
-  if (!overlayTarget || canRevealOverlay) {
-    stepReveal(state.overlayChunks, overlayTarget, reveal.overlayBatch)
-  }
-
-  state.lastFarOpacity = farOpacity
-  state.lastOverlayOpacity = overlayOpacity`
-
-  s = replaceOrSkip(s, OLD_BLOCK, NEW_BLOCK, 'fade.js / phased transition')
-
-  write('scripts/views/lod/fade.js', s, isCRLF)
+  s = replaceOrSkip(s, OLD2, NEW2, 'physics.js / swept + fallback collision')
+  write('scripts/core/physics.js', s, isCRLF)
 }
 
-console.log('\n🎉 Готово. Проверь взлёт через changeAltitude.')
+// ============================================================
+// 4) calculator/simulation.js — dt из CFG
+// ============================================================
+{
+  const { text, isCRLF } = read('calculator/simulation.js')
+  let s = text
+
+  const OLD = `    dt = 1 / 60,`
+  const NEW = `    dt = 1 / CFG.GAME.physicsHz,`
+  s = replaceOrSkip(s, OLD, NEW, 'calculator/simulation.js / dt sync')
+  write('calculator/simulation.js', s, isCRLF)
+}
+
+console.log('\n🎉 Готово.')
+console.log('   Проверь:')
+console.log('   1. Полёт на высокой скорости в сторону гор — не пролетает сквозь.')
+console.log('   2. Калькулятор даёт те же цифры, что игра (примерно).')
+console.log('   3. При FPS=20 нет спирали смерти (не залипает).')

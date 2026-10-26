@@ -89,9 +89,44 @@ export function updateRocketPhysics(dt) {
 
     p.pos.addScaledVector(p.vel, dt)
 
-    if (p.pos.y <= restY && p.vel.y < 0) {
-      p.pos.y = restY
-      if (_onLand) _onLand()
+    // --- Коллизия с рельефом ---
+    // Проверяем только при снижении (vel.y < 0): восходящий пролёт
+    // над горами — это нормальное поведение, не трогаем.
+    if (p.vel.y < 0) {
+      const CS = CFG.GAME.collision
+      let landed = false
+
+      // Swept: сэмплируем отрезок prevPos → pos. Ловит «туннель» сквозь
+      // пик, когда между старой и новой позицией есть гора, а в новой
+      // позиции уже низина. Без swept на 400+ м/с такие пролёты — реал.
+      if (CS.swept) {
+        const from = p.prevPos
+        const to = p.pos
+        const N = Math.max(2, CS.sweptSamples | 0)
+        for (let i = 1; i <= N; i++) {
+          const k = i / N
+          const sx = from.x + (to.x - from.x) * k
+          const sy = from.y + (to.y - from.y) * k
+          const sz = from.z + (to.z - from.z) * k
+          const sRestY = terrainHeight(sx, sz) + REST_Y
+          if (sy <= sRestY) {
+            p.pos.set(sx, sRestY, sz)
+            if (_onLand) _onLand()
+            landed = true
+            break
+          }
+        }
+      }
+
+      // Fallback: обычная вертикальная посадка. Считаем restY от НОВОЙ
+      // позиции — корректнее на склонах (старый код брал от старой).
+      if (!landed) {
+        const newRestY = terrainHeight(p.pos.x, p.pos.z) + REST_Y
+        if (p.pos.y <= newRestY) {
+          p.pos.y = newRestY
+          if (_onLand) _onLand()
+        }
+      }
     }
     recordGhostSample()
 

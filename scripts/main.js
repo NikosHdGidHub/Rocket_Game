@@ -162,9 +162,14 @@ async function initialLoad() {
    Рендер и «плавные» модули (LOD, туман, HUD) — раз в кадр по realDt.
    Так траектория полёта ОДИНАКОВА на 30, 60 и 144 fps.
 ================================================================ */
-const FIXED_DT = 1 / 60 // фиксированный шаг физики
-const MAX_FRAME_DT = 0.1 // защита от «спирали смерти» при лагах
-const MAX_STEPS = 10 // до 10 шагов за кадр (~166 мс)
+const FIXED_DT = 1 / CFG.GAME.physicsHz // фиксированный шаг физики
+const MAX_FRAME_DT = CFG.GAME.maxFrameDt // верхний предел dt кадра
+// Потолок шагов физики за кадр. 0 в конфиге = авто (maxFrameDt × physicsHz + запас 2).
+// Авто гарантирует, что при смене physicsHz лимит не отстанет от реальности.
+const MAX_STEPS =
+  CFG.GAME.maxPhysicsSteps > 0
+    ? CFG.GAME.maxPhysicsSteps
+    : Math.ceil(MAX_FRAME_DT / FIXED_DT) + 2
 
 let last = performance.now()
 let accumulator = 0

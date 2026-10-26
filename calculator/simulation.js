@@ -46,7 +46,7 @@ export function simulate(upgrades, cards, opts = {}) {
     forsageLevel = 0,
     noseLiftEnabled = false,
     noseLiftAngle = 45,
-    dt = 1 / 60,
+    dt = 1 / CFG.GAME.physicsHz,
     maxTime = 3600,
   } = opts
 
