@@ -1126,17 +1126,24 @@ export const CAMERA = /** @type {const} */ ({
 
   /** Lead-time для feed-forward (сек). Отрицательное = «смотрим в прошлое». */
   leadTime: -0.02,
-  followBase: 6,
-  followSpeedK: 0.15,
-  followMaxSpeed: 18,
+  /** Базовый коэффициент сглаживания (1/с). Это «пол» скорости, с которой камера догоняет цель — не зависит от скорости ракеты.
+   * Меньше - плавнее
+   */
+  followBase: 2,
+  /** Скорость добавки к followBase на каждую единицу скорости ракеты (1/с на 1 м/с).
+   * При скорости speed м/с: добавка = speed * followSpeedK.
+   * followBase + min(followMaxSpeed, speed * followSpeedK)
+   */
+  followSpeedK: 0.08,
+  followMaxSpeed: 25,
 
   /** Скорость перехода «сбоку → сзади» (в полёте). */
-  blendIn: 0.7,
+  blendIn: 0.4,
 
   /** Скорость перехода «сзади → сбоку» (после посадки). */
   blendOut: 1.4,
 
-  lookAheadBase: 5,
+  lookAheadBase: 2,
   lookAheadBehind: 10,
   lookAheadAltK: 0.8,
 
