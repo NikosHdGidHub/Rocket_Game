@@ -18,11 +18,12 @@ export default defineConfig({
   },
 
   build: {
+    chunkSizeWarningLimit: 900,
     rollupOptions: {
       // Две страницы: игра + калькулятор
       input: {
         main: resolve(ROOT, 'index.html'),
-        calculator: resolve(ROOT, 'calculator.html'),
+        calculator: resolve(ROOT, 'calculator/index.html'),
       },
     },
   },

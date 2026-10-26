@@ -12,6 +12,7 @@ import { G, lod, rocketState } from '../state.js'
 import { settings } from './settings.js'
 import * as Quality from './quality.js'
 import { debugTerrainProfile } from '../world/world.js'
+import * as CardsModal from '../ui/cardsModal.js'
 
 let _on = false
 let _root = null
@@ -159,7 +160,7 @@ function _registerGlobalHelpers() {
   window.dbgGiveGems = (n = 10) => {
     G.gems += n
     Game.saveProgress()
-    import('../ui/cardsModal.js').then((CM) => CM.refresh())
+    CardsModal.refresh()
     console.log(`+${n} 💎 → всего ${G.gems}`)
   }
 }
