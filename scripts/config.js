@@ -1442,7 +1442,7 @@ export const CHESTS = /** @type {const} */ ({
   overRadius: 500,
 
   /** Высота столба света (м). Общая для цилиндра и спирали. */
-  beamHeight: 400,
+  beamHeight: 450,
 
   /** Радиус цилиндра (низ) — старый стиль (LOW). */
   beamRadius: 2.0,
@@ -1477,18 +1477,25 @@ export const CHESTS = /** @type {const} */ ({
     spiral: {
       radialSegments: 32,
       heightSegments: 48,
-      radiusTop: 6.0,
-      radiusBottom: 1.5,
-      arms: 3.0,
-      twist: 5.0,
-      sharpness: 2.0,
-      noiseAmount: 0.35,
+      radiusTop: 1.7,
+      radiusBottom: 6,
+      /**Количество спиральных «рукавов» */
+      arms: 2.0,
+      /**Насколько сильно закручивается по высоте (рад на всю высоту) */
+      twist: 78.0,
+      /**	Резкость рукавов. 1 — мягко/широко, 3+ — тонкие жилы */
+      sharpness: 2,
+      /** Сколько «огоньков»-шума на рукавах (только high/ultra) */
+      noiseAmount: 1.35,
+      /**Частота этих огоньков */
       noiseScale: 6.0,
-      colorInner: 0xfff6d0,
-      colorOuter: 0xffb300,
+      colorInner: 0xffc8c8, // #ffc8c8
+      colorOuter: 0xffb300, // #ffb300
       animate: true,
-      rotationSpeed: 1.2,
-      pulseSpeed: 2.0,
+      /**Скорость вращения (только high/ultra) */
+      rotationSpeed: 2.2,
+      pulseSpeed: 1.5,
+      /**Пульсация яркости */
       pulseAmount: 0.2,
 
       simple: {
@@ -1499,15 +1506,15 @@ export const CHESTS = /** @type {const} */ ({
       },
 
       forsage: {
-        colorInner: 0xe0c0ff,
-        colorOuter: 0x9100ff,
+        colorInner: 0xe0c0ff, // #e0c0ff
+        colorOuter: 0x9100ff, // #9100ff
       },
     },
   },
 
   /* ---------- Пул источников света ----------*/
   lights: {
-    count: 2, // сколько сундуков одновременно освещены
+    count: 4, // сколько сундуков одновременно освещены
     intensity: 80, // яркость вблизи источника
     range: 120, // радиус действия (м)
     decay: 1, // 1 = линейное затухание 1/d
@@ -1572,7 +1579,7 @@ export const GEMS = /** @type {const} */ ({
 
   /** Реальный свет — пул PointLight'ов на ближайших гемах. */
   lights: {
-    count: 2,
+    count: 3,
     color: 0x4daeff,
     intensity: 150,
     range: 180, // радиус затухания света (м)
