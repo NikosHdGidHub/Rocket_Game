@@ -1,5 +1,5 @@
-// patch4.mjs — эллипс тумана: фиксированное направление +X, без вращения.
-// Запуск: node patch4.mjs
+// patch5.mjs — Dive camera: плавный вид сверху 70° при Δx < Δ(−y).
+// Запуск: node patch5.mjs
 import fs from 'node:fs'
 
 const read = (p) => {
@@ -26,133 +26,130 @@ function replaceOrSkip(s, oldStr, newStr, label) {
 }
 
 // ============================================================
-// 1) config.js — убираем dirMinSpeed / dirSmoothing
+// 1) config.js — блок CAMERA.dive
 // ============================================================
 {
   const { text, isCRLF } = read('scripts/config.js')
   let s = text
 
-  const OLD = `  /** Множитель дальности В СТОРОНЫ (перпендикулярно полёту).*/
-  ellipseSide: 0.6,
+  const OLD = `  /** Максимальный угол наклона (градусы, вид сверху вниз). */
+  maxAngle: 60,`
 
-  /** Множитель дальности НАЗАД.*/
-  ellipseBack: 0.3,
-
-  /**
-   * Минимальная горизонтальная скорость ракеты (м/с) для обновления
-   * направления эллипса. Ниже — направление «замораживается»,
-   * чтобы эллипс не крутился на месте.
-   * [типично] 1–4.
-   */
-  dirMinSpeed: 2.0,
+  const NEW = `  /** Максимальный угол наклона (градусы, вид сверху вниз). */
+  maxAngle: 60,
 
   /**
-   * Скорость сглаживания поворота эллипса (1/с).
-   * 0 = мгновенно, больше = плавнее. Не даёт «щёлкнуть» при резком
-   * развороте ракеты.
-   * [типично] 3–8.
+   * Плавный переход в «вид сверху» при крутом пикировании.
+   *
+   * Условие срабатывания (только в фазе 'fly', только при спуске):
+   *   Δx < Δ(−y)  ⇔  vx < |vy|  ⇔  vx / |vy| < 1
+   * То есть ракета снижается круче 45°.
+   *
+   * Пока условие выполнено — камера плавно наклоняется к elevation (°).
+   * Как только условие пропало — плавно возвращается к обычной формуле
+   * (baseAngle + range·altT).
    */
-  dirSmoothing: 4.0,`
+  dive: {
+    /** Целевой угол к горизонту при активном пикировании (°). */
+    elevation: 70,
 
-  const NEW = `  /**
-   * Множитель дальности В СТОРОНЫ (перпендикулярно оси эллипса).
-   * Ось эллипса ФИКСИРОВАНА вдоль +X — вращение отключено.
-   */
-  ellipseSide: 0.6,
+    /**
+     * Порог входа: vx / |vy| ≤ enterRatio → dive = 1 (полный вид сверху).
+     * 0.8 соответствует углу снижения ≈ 51° (чуть круче 45°).
+     */
+    enterRatio: 0.8,
 
-  /**
-   * Множитель дальности НАЗАД (в −X).
-   * Ось эллипса ФИКСИРОВАНА вдоль +X — вращение отключено.
-   */
-  ellipseBack: 0.3,`
+    /**
+     * Порог выхода: vx / |vy| ≥ exitRatio → dive = 0 (обычная формула).
+     * 1.2 соответствует углу снижения ≈ 40° (уже положе 45°).
+     * Зазор enter/exit даёт гистерезис — без дрожания на границе.
+     */
+    exitRatio: 1.2,
 
-  s = replaceOrSkip(s, OLD, NEW, 'config.js / remove dirMinSpeed & dirSmoothing')
+    /** Скорость сглаживания перехода (1/с). 4 ≈ 0.25 с на 63% пути. */
+    blendSpeed: 4.0,
+  },`
+
+  s = replaceOrSkip(s, OLD, NEW, 'config.js / CAMERA.dive block')
   write('scripts/config.js', s, isCRLF)
 }
 
 // ============================================================
-// 2) fade.js — updateFogEllipse больше не трогает направление
+// 2) state.js — поле cam.dive
 // ============================================================
 {
-  const { text, isCRLF } = read('scripts/views/lod/fade.js')
+  const { text, isCRLF } = read('scripts/state.js')
   let s = text
 
-  const OLD = `export function updateFogEllipse(dt) {
-  fogU.center.value.set(rocketState.pos.x, rocketState.pos.z)
-  const v = rocketState.vel
-  const speed = Math.hypot(v.x, v.z)
+  const OLD = `  pos: new THREE.Vector3(), // сглаженная позиция камеры (текущий physics-тик)
+  prevPos: new THREE.Vector3(), // позиция на предыдущем physics-тике
+  prevLook: new THREE.Vector3(0, 3, 0), // look на предыдущем physics-тике
+  inited: false,`
 
-  if (speed >= CFG.FOG.dirMinSpeed) {
-    const tx = v.x / speed
-    const tz = v.z / speed
-    const k = 1 - Math.exp(-CFG.FOG.dirSmoothing * dt)
-    fogU.dir.value.x += (tx - fogU.dir.value.x) * k
-    fogU.dir.value.y += (tz - fogU.dir.value.y) * k
-    const l = Math.hypot(fogU.dir.value.x, fogU.dir.value.y) || 1
-    fogU.dir.value.x /= l
-    fogU.dir.value.y /= l
+  const NEW = `  pos: new THREE.Vector3(), // сглаженная позиция камеры (текущий physics-тик)
+  prevPos: new THREE.Vector3(), // позиция на предыдущем physics-тике
+  prevLook: new THREE.Vector3(0, 3, 0), // look на предыдущем physics-тике
+  inited: false,
+
+  // «Пикирование»: 0 = обычная формула угла, 1 = вид сверху (70°).
+  // Плавно меняется в updateCameraPhysics при Δx < Δ(−y) в полёте.
+  dive: 0,`
+
+  s = replaceOrSkip(s, OLD, NEW, 'state.js / cam.dive field')
+  write('scripts/state.js', s, isCRLF)
+}
+
+// ============================================================
+// 3) camera.js — расчёт targetDive и подмешивание в elev
+// ============================================================
+{
+  const { text, isCRLF } = read('scripts/core/camera.js')
+  let s = text
+
+  const OLD = `  const alt = Math.max(0, pos.y - gY)
+  const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
+  const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
+  const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180`
+
+  const NEW = `  const alt = Math.max(0, pos.y - gY)
+  const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
+  const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
+  const elevNormal = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
+
+  // ─── DIVE → TOP-DOWN ───
+  // Условие: в фазе полёта, снижаемся (vy < 0) и Δx < Δ(−y), т.е. vx < |vy|.
+  // Гистерезис: ratio = vx/|vy|. Ниже enterRatio — dive=1, выше exitRatio — dive=0,
+  // между — линейный бленд (без дёрганья на 45°).
+  let targetDive = 0
+  if (G.phase === 'fly' && vel.y < 0) {
+    const ratio = vel.x / Math.max(0.001, -vel.y)
+    const D = CFG.CAMERA.dive
+    if (ratio <= D.enterRatio) {
+      targetDive = 1
+    } else if (ratio >= D.exitRatio) {
+      targetDive = 0
+    } else {
+      targetDive = 1 - (ratio - D.enterRatio) / (D.exitRatio - D.enterRatio)
+    }
   }
-}`
 
-  const NEW = `/**
- * Обновляет ЦЕНТР эллиптического тумана под ракетой.
- *
- * Направление эллипса ФИКСИРОВАНО вдоль +X (fogU.dir = (1, 0) в scene.js).
- * Вращение отключено: не зависим от скорости и направления полёта.
- */
-export function updateFogEllipse() {
-  fogU.center.value.set(rocketState.pos.x, rocketState.pos.z)
-}`
+  const kDive = 1 - Math.exp(-CFG.CAMERA.dive.blendSpeed * dt)
+  cam.dive += (targetDive - cam.dive) * kDive
+  if (cam.dive < 0.001) cam.dive = 0
+  if (cam.dive > 0.999) cam.dive = 1
 
-  s = replaceOrSkip(s, OLD, NEW, 'fade.js / updateFogEllipse center-only')
-  write('scripts/views/lod/fade.js', s, isCRLF)
-}
+  // Смешиваем: 0 → формула, 1 → 70° вид сверху.
+  const diveElev = (CFG.CAMERA.dive.elevation * Math.PI) / 180
+  const elev = elevNormal + (diveElev - elevNormal) * cam.dive`
 
-// ============================================================
-// 3) lod/index.js — вызов без dt
-// ============================================================
-{
-  const { text, isCRLF } = read('scripts/views/lod/index.js')
-  let s = text
-
-  s = replaceOrSkip(
-    s,
-    `  updateFogEllipse(dt)`,
-    `  updateFogEllipse()`,
-    'lod/index.js / call without dt'
-  )
-  write('scripts/views/lod/index.js', s, isCRLF)
-}
-
-// ============================================================
-// 4) scene.js — фиксируем комментарий у dir
-// ============================================================
-{
-  const { text, isCRLF } = read('scripts/views/scene.js')
-  let s = text
-
-  const OLD = `export const fogU = {
-  center: { value: new THREE.Vector2(0, 0) },
-  dir: { value: new THREE.Vector2(1, 0) },
-  shapeSide: { value: CFG.FOG.ellipseSide },
-  shapeBack: { value: CFG.FOG.ellipseBack },
-}`
-
-  const NEW = `export const fogU = {
-  center: { value: new THREE.Vector2(0, 0) },
-  // Направление эллипса ФИКСИРОВАНО вдоль +X.
-  // Вращение отключено — значение не мутируется в рантайме.
-  dir: { value: new THREE.Vector2(1, 0) },
-  shapeSide: { value: CFG.FOG.ellipseSide },
-  shapeBack: { value: CFG.FOG.ellipseBack },
-}`
-
-  s = replaceOrSkip(s, OLD, NEW, 'scene.js / fogU.dir comment')
-  write('scripts/views/scene.js', s, isCRLF)
+  s = replaceOrSkip(s, OLD, NEW, 'camera.js / dive blend into elev')
+  write('scripts/core/camera.js', s, isCRLF)
 }
 
 console.log('\n🎉 Готово.')
-console.log('   • Эллипс тумана всегда вытянут вдоль +X')
-console.log('   • Вращение отключено (fogU.dir не мутируется)')
-console.log('   • Удалены CFG.FOG.dirMinSpeed и CFG.FOG.dirSmoothing')
-console.log('   • updateFogEllipse() теперь только ставит центр под ракетой')
+console.log('   • В полёте при Δx < Δ(−y) (круче 45° вниз) камера плавно')
+console.log('     поднимается в вид сверху (70°).')
+console.log('   • Как только ракета выровнялась — плавно возвращается к')
+console.log('     обычной формуле (baseAngle + range·altT).')
+console.log('   • Гистерезис 0.8..1.2 по vx/|vy| — нет дрожания на границе.')
+console.log('   • Скорость перехода: CFG.CAMERA.dive.blendSpeed (1/с).')

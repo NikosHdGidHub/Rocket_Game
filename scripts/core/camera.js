@@ -46,7 +46,33 @@ export function updateCameraPhysics(dt) {
   const alt = Math.max(0, pos.y - gY)
   const altT = Math.min(1, alt / CFG.CAMERA.maxViewHeight)
   const range = CFG.CAMERA.maxAngle - CFG.CAMERA.baseAngle
-  const elev = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
+  const elevNormal = ((CFG.CAMERA.baseAngle + range * altT) * Math.PI) / 180
+
+  // ─── DIVE → TOP-DOWN ───
+  // Условие: в фазе полёта, снижаемся (vy < 0) и Δx < Δ(−y), т.е. vx < |vy|.
+  // Гистерезис: ratio = vx/|vy|. Ниже enterRatio — dive=1, выше exitRatio — dive=0,
+  // между — линейный бленд (без дёрганья на 45°).
+  let targetDive = 0
+  if (G.phase === 'fly' && vel.y < 0) {
+    const ratio = vel.x / Math.max(0.001, -vel.y)
+    const D = CFG.CAMERA.dive
+    if (ratio <= D.enterRatio) {
+      targetDive = 1
+    } else if (ratio >= D.exitRatio) {
+      targetDive = 0
+    } else {
+      targetDive = 1 - (ratio - D.enterRatio) / (D.exitRatio - D.enterRatio)
+    }
+  }
+
+  const kDive = 1 - Math.exp(-CFG.CAMERA.dive.blendSpeed * dt)
+  cam.dive += (targetDive - cam.dive) * kDive
+  if (cam.dive < 0.001) cam.dive = 0
+  if (cam.dive > 0.999) cam.dive = 1
+
+  // Смешиваем: 0 → формула, 1 → 70° вид сверху.
+  const diveElev = (CFG.CAMERA.dive.elevation * Math.PI) / 180
+  const elev = elevNormal + (diveElev - elevNormal) * cam.dive
 
   const R =
     CFG.CAMERA.baseRadius + Math.min(CFG.CAMERA.maxSpeedRadius, speed * CFG.CAMERA.speedRadiusK)

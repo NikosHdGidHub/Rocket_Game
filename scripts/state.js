@@ -72,6 +72,10 @@ export const cam = {
   prevPos: new THREE.Vector3(), // позиция на предыдущем physics-тике
   prevLook: new THREE.Vector3(0, 3, 0), // look на предыдущем physics-тике
   inited: false,
+
+  // «Пикирование»: 0 = обычная формула угла, 1 = вид сверху (70°).
+  // Плавно меняется в updateCameraPhysics при Δx < Δ(−y) в полёте.
+  dive: 0,
 }
 
 /** Ввод — объединённые клавиши/тач/boost. */
