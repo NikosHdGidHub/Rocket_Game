@@ -75,38 +75,7 @@ export function refillFarTiles(camX, camZ) {
   const L = getFarLoadBounds()
   const U = getFarUnloadBounds()
 
-  for (let dx = -L.back; dx <= L.fwd; dx++) {
-    for (let dz = -L.side; dz <= L.side; dz++) {
-      const fx = fxi + dx
-      const fz = fzi + dz
-      const key = fx + ',' + fz
-      const loaded = state.farTiles.get(key)
-      const pending = state.pendingFarTiles.has(key)
-
-      if (loaded && loaded.seg < state.farTileSeg) {
-        if (!pending) {
-          state.pendingFarTiles.add(key)
-          state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
-        }
-        continue
-      }
-
-      if (!loaded && !pending) {
-        state.pendingFarTiles.add(key)
-        state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
-      }
-    }
-  }
-
-  for (const key of state.pendingFarTiles) {
-    const [fxs, fzs] = key.split(',')
-    const fx = +fxs
-    const fz = +fzs
-    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
-      state.pendingFarTiles.delete(key)
-    }
-  }
-
+  // 1) Unload — сначала освобождаем место
   const toUnload = []
   for (const key of state.farTiles.keys()) {
     const [fxs, fzs] = key.split(',')
@@ -117,6 +86,50 @@ export function refillFarTiles(camX, camZ) {
     }
   }
   for (const k of toUnload) unloadFarTile(k)
+
+  // 2) Чистим pending за unload-границей
+  for (const key of state.pendingFarTiles) {
+    const [fxs, fzs] = key.split(',')
+    const fx = +fxs
+    const fz = +fzs
+    if (fx - fxi > U.fwd || fxi - fx > U.back || Math.abs(fz - fzi) > U.side) {
+      state.pendingFarTiles.delete(key)
+    }
+  }
+
+  // 3) Собираем запросы: отсутствующие и «устаревшие по seg» (в обе стороны!)
+  const requests = []
+  for (let dx = -L.back; dx <= L.fwd; dx++) {
+    for (let dz = -L.side; dz <= L.side; dz++) {
+      const fx = fxi + dx
+      const fz = fzi + dz
+      const key = fx + ',' + fz
+      const loaded = state.farTiles.get(key)
+      const pending = state.pendingFarTiles.has(key)
+
+      // Фича: если уже загружен более детальный тайл (seg БОЛЬШЕ целевого),
+      // не перерисовываем. Например, взлетаем на low-altitude (seg=190)
+      // и переходим в high-altitude (farTileSeg=53) — детальный тайл
+      // оставляем. При спуске farTileSeg=190 > loaded.seg=53 → перезапросим.
+      if (loaded && loaded.seg < state.farTileSeg) {
+        if (!pending) requests.push({ fx, fz })
+        continue
+      }
+      if (!loaded && !pending) requests.push({ fx, fz })
+    }
+  }
+
+  // 4) Throttling: не больше MAX_PER_CALL за вызов. Иначе mode-change
+  //    отправляет лавину в один воркер, ответы «стареют», pending
+  //    не закрывается успешно — мерцание и накопление дыр.
+  const MAX_PER_CALL = 6
+  const n = Math.min(requests.length, MAX_PER_CALL)
+  for (let i = 0; i < n; i++) {
+    const { fx, fz } = requests[i]
+    const key = fx + ',' + fz
+    state.pendingFarTiles.add(key)
+    state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
+  }
 }
 
 export function handleFarMessage(data) {
@@ -126,7 +139,15 @@ export function handleFarMessage(data) {
   if (!state.pendingFarTiles.has(key)) return
   state.pendingFarTiles.delete(key)
 
-  if (seg !== state.farTileSeg) return
+  // Ответ грубее, чем нужно сейчас — перезапрашиваем.
+  // Ответ детальнее (seg > farTileSeg) — принимаем как есть,
+  // он лучше текущего целевого. Так совместимо с фичей "не портить
+  // детальные тайлы при взлёте".
+  if (seg < state.farTileSeg) {
+    state.pendingFarTiles.add(key)
+    state.lodWorker.postMessage({ type: 'far', fx, fz, seg: state.farTileSeg })
+    return
+  }
 
   const geo = new THREE.PlaneGeometry(FAR_TILE_SIZE, FAR_TILE_SIZE, seg, seg)
   geo.rotateX(-Math.PI / 2)

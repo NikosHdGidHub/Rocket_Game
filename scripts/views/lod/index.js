@@ -44,6 +44,8 @@ export function init() {
 ================================================================ */
 let _lastFar = { x: NaN, z: NaN }
 let _lastOverlay = { x: NaN, z: NaN }
+let _farCheckTimer = 0
+const FAR_PERIODIC_CHECK = 0.4 // сек
 
 export function update(dt) {
   const camX = camera.position.x
@@ -65,7 +67,16 @@ export function update(dt) {
   const fxi = Math.floor(camX / FAR_TILE_SIZE)
   const fzi = Math.floor(camZ / FAR_TILE_SIZE)
 
-  if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z) {
+  // Периодическая «зачистка дыр»: даже когда камера стоит и режим стабилен,
+  // раз в FAR_PERIODIC_CHECK секунд дозапрашиваем недостающие / устаревшие
+  // тайлы. Нужно из-за throttling в refillFarTiles: за один вызов
+  // отправляется только MAX_PER_CALL запросов, остальные должны
+  // «дозаполняться» в следующих вызовах, а не ждать движения камеры.
+  _farCheckTimer += dt
+  const periodicCheck = _farCheckTimer >= FAR_PERIODIC_CHECK
+  if (periodicCheck) _farCheckTimer = 0
+
+  if (modeChanged || fxi !== _lastFar.x || fzi !== _lastFar.z || periodicCheck) {
     refillFarTiles(camX, camZ)
     _lastFar.x = fxi
     _lastFar.z = fzi
@@ -105,10 +116,19 @@ export function countInitialFar() {
    Debug
 ================================================================ */
 export function getStats() {
+  let stale = 0
+  for (const [, c] of state.farTiles) {
+    // «Stale» — только те, что грубее текущего (нужна дорисовка).
+    // Тайлы детальнее — это фича, не считаем их.
+    if (c.seg < state.farTileSeg) stale++
+  }
   return {
     farTiles: state.farTiles.size,
     overlayChunks: state.overlayChunks.size,
     pendingFar: state.pendingFarTiles.size,
     pendingOverlays: state.pendingOverlays.size,
+    farSeg: state.farTileSeg,
+    farHighMode: state.farHighMode,
+    farStale: stale, // сколько загруженных тайлов с устаревшим seg
   }
 }
