@@ -603,7 +603,7 @@ export const CHUNKS = /** @type {const} */ ({
   loadSide: 5,
 
   /**Высота на которой подгружаются компрессные чанки */
-  preloadAltitude: 1100,
+  preloadAltitude: 1400,
 
   //компромисс подгрузки  чанков в режиме far при alt < altitudeLow
   loadForwardFar: 6,
@@ -631,13 +631,13 @@ export const CHUNKS = /** @type {const} */ ({
 
 export const LOD = /** @type {const} */ ({
   /** Высота над рельефом (м), при которой включается 2D-режим. */
-  changeAltitude: 700,
+  changeAltitude: 1100,
   /** Должна быть меньше changeAltitude */
-  changeBack: 600,
+  changeBack: 1000,
 
   /** Радиус кольца сэмплирования высоты вокруг ракеты (м). */
   sampleRadius: 250,
-  sampleCount: 8,
+  sampleCount: 5,
 
   /** Скорость «затухания» при переходе в 2D (1/с). */
   fadeIn: 6.4,
