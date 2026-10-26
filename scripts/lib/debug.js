@@ -1,6 +1,8 @@
 /* ================================================================
-   debug.js — overlay с FPS-метриками + фасад над window.dbg*.
-   Включается через ?debug в URL или window.__dbgOn = true.
+   debug.js — DEV-ONLY. В production build не попадает.
+   Загружается динамически из main.js только при import.meta.env.DEV.
+
+   Overlay с FPS-метриками (?debug в URL) + фасад над window.dbg*.
 ================================================================ */
 import { renderer } from '../views/scene.js'
 import * as Chunks from '../views/chunks/index.js'

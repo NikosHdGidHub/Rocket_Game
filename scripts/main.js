@@ -24,8 +24,17 @@ import { G, time } from './state.js'
 import * as Abilities from './services/abilities.js'
 import * as Sounds from './lib/sounds.js'
 import * as Sign from './views/sign.js'
-import * as Debug from './lib/debug.js'
 import * as FpsMonitor from './services/fpsMonitor.js'
+
+// DEBUG — noop в prod, real impl подгружается динамически в DEV.
+// import.meta.env.DEV → false в prod-билде, весь блок ниже
+// включая await import(...) выпиливается tree-shaker'ом.
+let Debug = {
+  init: () => {},
+  mark: () => {},
+  frame: () => {},
+  enabled: () => false,
+}
 
 /* ================================================================
    1. Инициализация модулей (порядок важен!)
@@ -79,8 +88,11 @@ Space.init() //  (создаёт звёзды и InstancedMesh сфер)
    2. Первичная загрузка с прогресс-баром.
 ================================================================ */
 async function initialLoad() {
-  Debug.init()
-  window.__dbgChunks = Chunks.getStats
+  if (import.meta.env.DEV) {
+    Debug = await import('./lib/debug.js')
+    Debug.init()
+    window.__dbgChunks = Chunks.getStats
+  }
   const $loading = document.getElementById('loading')
   const $bar = document.getElementById('loadingBar')
   const $text = document.getElementById('loadingText')
