@@ -87,10 +87,17 @@ export function updateCameraPhysics(dt) {
   // В виде сверху (cam.dive → 1) камера дополнительно смещается
   // назад по X. Плавность сдвига совпадает со скоростью наклона,
   // т.к. cam.dive сглаживается через blendSpeed.
+  //
+  // backShiftY компенсирует отъезд по X так, чтобы угол
+  // «камера → ракета» оставался ровно dive.elevation°.
+  // Математика: (vDist + Y) / (hDist + X) = tan(elev)
+  //             при Y = X·tan(elev), т.к. vDist/hDist = tan(elev).
+  const diveElevRad = (CFG.CAMERA.dive.elevation * Math.PI) / 180
   const diveBackX = CFG.CAMERA.dive.backShiftX * cam.dive
+  const diveBackY = CFG.CAMERA.dive.backShiftX * Math.tan(diveElevRad) * cam.dive
 
   const camX = px - hDist * cam.blend - diveBackX
-  const camY = py + vDist
+  const camY = py + vDist + diveBackY
   const camZ = pz + hDist * (1 - cam.blend)
 
   cam.target.set(camX, camY, camZ)
