@@ -25,6 +25,11 @@ export const PHYSICS = {
 
   /** Начальный угол старта, °. */
   launchAngleDeg: 20,
+
+  /** мощность двигателя при полном баке*/
+  fullTankPower: 0.5,
+  /** мощность двигателя при пустом баке*/
+  emptyTankPower: 1.5,
 } as const
 
 /* ================================================================
@@ -281,8 +286,8 @@ export const GEMS = {
   xPosDif: 30,
 
   /** Базовая высота над рельефом (м). */
-  yOffset: 40,
-  yPosDif: 15,
+  yOffset: 128,
+  yPosDif: 120,
 
   /** Разброс по Z (м, ±). Та же механика, что у сундуков. */
   zOffset: 30,
@@ -448,6 +453,20 @@ export const CARDS = [
     once: true,
     condition: 'forsage',
     color: 0xcf33f2,
+    buyPrice: 2,
+    sellPrice: 1,
+  },
+
+  {
+    id: 'jettisonable_tanks',
+    family: 'jettisonable',
+    icon: '🔰',
+    name: 'ТУРБОСТАРТ',
+    variant: 'Отделяемые двигатели',
+    desc_buff: 'Мощность при полном баке ×2', //0.5 * 2 < 1.5
+    effects: [{ stat: 'fullTankPower', mult: 2, isBuff: true }],
+    color: 0xf2e533,
+    once: true,
     buyPrice: 2,
     sellPrice: 1,
   },

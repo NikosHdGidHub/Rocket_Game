@@ -33,6 +33,17 @@ export const hasFlag = (flag) => {
 
 export const launchSpeed = () => CFG.RULES.launchSpeed(G.upgrades) * cardMul('launchSpeed')
 export const maxFuel = () => CFG.RULES.maxFuel(G.upgrades) * cardMul('maxFuel')
+
+export const fullTankPower = () => CFG.GAME.fullTankPower * cardMul('fullTankPower')
+export const emptyTankPower = () => CFG.GAME.emptyTankPower
+
+/** Множитель тяги от остатка топлива: линейно от emptyTankPower (t=0) до fullTankPower (t=1). */
+export const fuelPowerMul = (fuel, maxFuelVal) => {
+  const t = maxFuelVal > 0 ? Math.max(0, Math.min(1, fuel / maxFuelVal)) : 0
+  const full = fullTankPower()
+  const empty = emptyTankPower()
+  return empty + (full - empty) * t
+}
 export const thrustAcc = () => CFG.RULES.thrustAcc(G.upgrades) * cardMul('thrustAcc')
 export const dragCoefAtAngle = (a) => CFG.RULES.dragCoefAtAngle(G.upgrades, a) * cardMul('drag')
 export const airDensity = (y) => CFG.RULES.airDensity(y)

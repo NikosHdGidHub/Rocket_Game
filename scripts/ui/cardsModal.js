@@ -25,6 +25,7 @@ const STAT_LABELS = {
   launchSpeed: { icon: '🦵', name: 'Сила пинка' },
   forsageThrust: { icon: '🚀', name: 'Тяга в форсаже' },
   gravity: { icon: '🌍', name: 'Гравитация' },
+  fullTankPower: { icon: '🔥', name: 'Мощность (полный бак)' },
 }
 
 /* ================================================================

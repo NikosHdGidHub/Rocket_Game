@@ -76,6 +76,8 @@ export function simulate(upgrades, cards, opts = {}) {
   const maxFuelVal = CFG.RULES.maxFuel(upgrades) * cardEffects('maxFuel')
   const thrustAccBase = CFG.RULES.thrustAcc(upgrades) * cardEffects('thrustAcc')
   const forsageThrustMul = cardEffects('forsageThrust')
+  const fullTankPowerBase = CFG.GAME.fullTankPower * cardEffects('fullTankPower')
+  const emptyTankPowerBase = CFG.GAME.emptyTankPower
   const gravityEff = CFG.GAME.gravity * cardEffects('gravity')
   const dragMul = cardEffects('drag')
   const dragCoefAtAngle = (alpha) => CFG.RULES.dragCoefAtAngle(upgrades, alpha) * dragMul
@@ -192,14 +194,17 @@ export function simulate(upgrades, cards, opts = {}) {
       lastThrustActive = false
     }
 
+    const fuelT = maxFuelVal > 0 ? Math.max(0, Math.min(1, fuel / maxFuelVal)) : 0
+    const fuelMul = emptyTankPowerBase + (fullTankPowerBase - emptyTankPowerBase) * fuelT
+
     let appliedThrust = 0
     if (boosting) {
-      appliedThrust += thrustAccBase * engineEff
+      appliedThrust += thrustAccBase * engineEff * fuelMul
       fuel = Math.max(0, fuel - dt)
       boostActiveSeconds += dt
     }
     if (forsageActive) {
-      appliedThrust += thrustAccBase * forsageMult * forsageThrustMul * engineEff
+      appliedThrust += thrustAccBase * forsageMult * forsageThrustMul * engineEff * fuelMul
       forsageActiveSeconds += dt
     }
 

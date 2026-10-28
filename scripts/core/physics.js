@@ -16,7 +16,7 @@ import { saveProgress } from '../services/save.js'
 import { recordGhostSample } from './ghostRecorder.js'
 import {
   GRAVITY, REST_Y, ANG_ACC, ANG_DAMP, ANG_MAX,
-  thrustAcc, hasFlag, cardMul, dragCoefAtAngle, airDensity, gravityMul,
+  thrustAcc, maxFuel, fuelPowerMul, hasFlag, cardMul, dragCoefAtAngle, airDensity, gravityMul,
 } from './formulas.js'
 import { terrainHeight } from '../world/world.js'
 
@@ -54,14 +54,15 @@ export function updateRocketPhysics(dt) {
     const alwaysOn = hasFlag('engineAlwaysOn')
     runtime.boosting = (alwaysOn || input.boost) && G.fuel > 0 && !forsageActive
 
+    const fuelMul = fuelPowerMul(G.fuel, maxFuel())
     let appliedThrust = 0
     if (runtime.boosting) {
-      appliedThrust += thrustAcc() * engineEff
+      appliedThrust += thrustAcc() * engineEff * fuelMul
       G.fuel = Math.max(0, G.fuel - dt)
     }
     if (forsageActive) {
       appliedThrust +=
-        thrustAcc() * Abilities.thrustMultiplier('forsage') * cardMul('forsageThrust') * engineEff
+        thrustAcc() * Abilities.thrustMultiplier('forsage') * cardMul('forsageThrust') * engineEff * fuelMul
     }
 
     if (appliedThrust > 0) {
