@@ -88,50 +88,9 @@ export function resolvePreset(qualitySetting) {
 }
 
 export function apply(presetId) {
-  const preset = CFG.QUALITY_PRESETS[presetId] || CFG.QUALITY_PRESETS.medium
-
-  CFG.RENDERER.antialias = preset.renderer.antialias
-  CFG.RENDERER.pixelRatioCap = preset.renderer.pixelRatioCap
-  CFG.RENDERER.maxChunksPerFrame = preset.renderer.maxChunksPerFrame
-
-  CFG.PROPS.density = preset.props.density
-  CFG.PROPS.maxRenderDistance = preset.props.maxRenderDistance
-
-  CFG.LIGHTS.shadow.enabled = preset.lights.shadow.enabled
-
-  CFG.CHUNKS.segments = preset.chunks.segments
-
-  CFG.FAR_TILES.segments = preset.farTiles.segments
-  CFG.FAR_TILES.segmentsHigh = preset.farTiles.segmentsHigh
-
-  if (typeof preset.overlay.enabled === 'boolean') {
-    CFG.OVERLAY.enabled = preset.overlay.enabled
-  }
-  CFG.OVERLAY.canvasSize = preset.overlay.canvasSize
-
-  CFG.SPACE.stars.count = preset.space.stars.count
-  CFG.SPACE.spheres.maxCount = preset.space.spheres.maxCount
-
-  if (preset.chestBeam) {
-    Object.assign(CFG.CHESTS.beam, preset.chestBeam)
-  }
-
-  // LOD-переход в 2D: высота активации и гистерезис.
-  if (preset.lod) {
-    if (typeof preset.lod.changeAltitude === 'number') {
-      CFG.LOD.changeAltitude = preset.lod.changeAltitude
-    }
-    if (typeof preset.lod.changeBack === 'number') {
-      CFG.LOD.changeBack = preset.lod.changeBack
-    }
-  }
-
-  // Туман в 3D-режиме: дальняя плоскость.
-  if (preset.fog) {
-    if (typeof preset.fog.far3D === 'number') {
-      CFG.FOG.far3D = preset.fog.far3D
-    }
-  }
+  // Тело apply переехало в config.ts::applyQualityPreset,
+  // чтобы config.html мог применять пресеты без импорта lib/.
+  CFG.applyQualityPreset(presetId)
 }
 
 /* ================================================================

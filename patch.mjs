@@ -1,300 +1,435 @@
-// patch8.mjs — LOD.changeAltitude / changeBack / FOG.far3D в QUALITY_PRESETS.
-// Запуск: node patch8.mjs
+// patch.mjs — split scripts/config.js → _config_core.ts + _config_world.ts
+//             + _config_game.ts + config.ts (barrel).
+//
+// Run: node patch.mjs   (из корня проекта)
 import fs from 'node:fs'
+import path from 'node:path'
 
-const read = (p) => {
-  const raw = fs.readFileSync(p, 'utf-8')
-  const isCRLF = raw.includes('\r\n')
-  return { text: raw.replace(/\r\n/g, '\n'), isCRLF }
+const read = (p) => fs.readFileSync(p, 'utf-8')
+const write = (p, content) => {
+  fs.mkdirSync(path.dirname(p), { recursive: true })
+  fs.writeFileSync(p, content, 'utf-8')
 }
-const write = (p, text, isCRLF) =>
-  fs.writeFileSync(p, isCRLF ? text.replace(/\n/g, '\r\n') : text, 'utf-8')
+const exists = (p) => fs.existsSync(p)
+const rename = (a, b) => fs.renameSync(a, b)
 
-function replaceOrSkip(s, oldStr, newStr, label) {
-  if (s.includes(newStr)) {
-    console.log(`⏭️  ${label} — уже применено`)
-    return s
+// ---------- Guard ----------
+if (!exists('scripts/config.js')) {
+  if (exists('scripts/config.ts') && exists('scripts/_config_core.ts')) {
+    console.log('⏭️  Patch already applied')
+    process.exit(0)
   }
-  if (!s.includes(oldStr)) {
-    console.error(`\n❌ Не найден блок: ${label}`)
-    console.error('Искали (первые 500):')
-    console.error(oldStr.slice(0, 500))
+  console.error('❌ scripts/config.js not found (run from project root)')
+  process.exit(1)
+}
+if (exists('scripts/config.ts') && exists('scripts/_config_core.ts')) {
+  console.log('⏭️  Patch already applied')
+  process.exit(0)
+}
+
+// ---------- Read + strip JSDoc {const} casts (валидны в .js, не нужны в .ts) ----------
+const original = read('scripts/config.js')
+
+// CRLF → LF: иначе split(SEP) не находит ни одного разделителя на Windows.
+// Заодно страхует от смешанных переводов строк (часть файла \n, часть \r\n).
+const src = original.replace(/\r\n?/g, '\n').replace(/\/\*\* @type \{const\} \*\//g, '')
+
+// ---------- Split by section header ----------
+// SEP — канонический вид (LF, ровно 64 '='), используется и для split, и для склейки.
+// Терпимый регэксп: 8+ '=', хвостовые пробелы/табы перед \n — чтобы не падать,
+// если в config.js кто-то случайно сдвинет одну '=' или поставит пробел в конце.
+const SEP = '\n/* ================================================================\n'
+const SEP_RE = /\n\/\* ={8,}[ \t]*\n/
+const chunks = src.split(SEP_RE)
+
+// Диагностика: какие секции реально нашли. Помогает, если byTitle упадёт
+// (сразу видно — переименовали заголовок или это CRLF где-то в середине файла).
+if (chunks.length > 1) {
+  console.log(`📑 Найдено секций: ${chunks.length - 1}`)
+  chunks.slice(1).forEach((c) => {
+    const nl = c.indexOf('\n')
+    console.log('   •', c.slice(0, nl).trim())
+  })
+}
+const sections = chunks.map((c, i) => {
+  const nl = c.indexOf('\n')
+  return {
+    index: i,
+    title: i === 0 ? '__FILE_HEADER__' : c.slice(0, nl).trim(),
+    raw: (i === 0 ? '' : SEP) + c,
+  }
+})
+
+function byTitle(prefix) {
+  const s = sections.find((sec) => sec.title.startsWith(prefix))
+  if (!s) {
+    console.error(`❌ Section not found: "${prefix}"`)
     process.exit(1)
   }
-  console.log(`✅ ${label}`)
-  return s.replace(oldStr, newStr)
+  return s
 }
 
-// ============================================================
-// 1) config.js — QUALITY_PRESETS: добавить lod + fog
-// ============================================================
-{
-  const { text, isCRLF } = read('scripts/config.js')
-  let s = text
-
-  const OLD = `export const QUALITY_PRESETS = /** @type {const} */ ({
-  low: {
-    label: 'Низкое',
-    desc: 'Максимум FPS, без теней',
-    renderer: { antialias: false, pixelRatioCap: 0.8, maxChunksPerFrame: 1 },
-    props: { density: 1000, maxRenderDistance: 1000 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 40 },
-    farTiles: { segments: 100, segmentsHigh: 40 },
-    overlay: { enabled: false, canvasSize: 512 },
-    space: { stars: { count: 800 }, spheres: { maxCount: 1024 } },
-    chestBeam: { style: 'cylinder' },
-  },
-  medium: {
-    label: 'Среднее',
-    desc: 'Баланс качества и производительности',
-    renderer: { antialias: false, pixelRatioCap: 1.5, maxChunksPerFrame: 2 },
-    props: { density: 2000, maxRenderDistance: 1500 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 48 },
-    farTiles: { segments: 140, segmentsHigh: 48 },
-    overlay: { enabled: true, canvasSize: 1024 },
-    space: { stars: { count: 1500 }, spheres: { maxCount: 2560 } },
-    chestBeam: { style: 'spiral', quality: 'simple' },
-  },
-  high: {
-    label: 'Высокое',
-    desc: 'Рекомендуется для мощных устройств',
-    renderer: { antialias: true, pixelRatioCap: 1, maxChunksPerFrame: 2 },
-    props: { density: 3200, maxRenderDistance: 1900 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 53 },
-    farTiles: { segments: 190, segmentsHigh: 53 },
-    overlay: { enabled: true, canvasSize: 1024 },
-    space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
-    chestBeam: { style: 'spiral', quality: 'full' },
-  },
-  ultra: {
-    label: 'Ультра',
-    desc: 'Максимум качества (сильный GPU)',
-    renderer: { antialias: true, pixelRatioCap: 2, maxChunksPerFrame: 3 },
-    props: { density: 3800, maxRenderDistance: 2000 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 64 },
-    farTiles: { segments: 220, segmentsHigh: 64 },
-    overlay: { enabled: true, canvasSize: 1536 },
-    space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
-    chestBeam: { style: 'spiral', quality: 'full' },
-  },
-})`
-
-  const NEW = `export const QUALITY_PRESETS = /** @type {const} */ ({
-  low: {
-    label: 'Низкое',
-    desc: 'Максимум FPS, без теней',
-    renderer: { antialias: false, pixelRatioCap: 0.8, maxChunksPerFrame: 1 },
-    props: { density: 1000, maxRenderDistance: 1000 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 40 },
-    farTiles: { segments: 100, segmentsHigh: 40 },
-    overlay: { enabled: false, canvasSize: 512 },
-    space: { stars: { count: 800 }, spheres: { maxCount: 1024 } },
-    chestBeam: { style: 'cylinder' },
-    // 2D-режим наступает раньше (меньше нагрузка на 3D),
-    // туман в 3D ближе (меньше chunk-ов рендерить).
-    lod: { changeAltitude: 900, changeBack: 800 },
-    fog: { far3D: 1400 },
-  },
-  medium: {
-    label: 'Среднее',
-    desc: 'Баланс качества и производительности',
-    renderer: { antialias: false, pixelRatioCap: 1.5, maxChunksPerFrame: 2 },
-    props: { density: 2000, maxRenderDistance: 1500 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 48 },
-    farTiles: { segments: 140, segmentsHigh: 48 },
-    overlay: { enabled: true, canvasSize: 1024 },
-    space: { stars: { count: 1500 }, spheres: { maxCount: 2560 } },
-    chestBeam: { style: 'spiral', quality: 'simple' },
-    lod: { changeAltitude: 1050, changeBack: 950 },
-    fog: { far3D: 1700 },
-  },
-  high: {
-    label: 'Высокое',
-    desc: 'Рекомендуется для мощных устройств',
-    renderer: { antialias: true, pixelRatioCap: 1, maxChunksPerFrame: 2 },
-    props: { density: 3200, maxRenderDistance: 1900 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 53 },
-    farTiles: { segments: 190, segmentsHigh: 53 },
-    overlay: { enabled: true, canvasSize: 1024 },
-    space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
-    chestBeam: { style: 'spiral', quality: 'full' },
-    // Совпадает с дефолтами в CFG.LOD / CFG.FOG (эталон).
-    lod: { changeAltitude: 1100, changeBack: 1000 },
-    fog: { far3D: 2000 },
-  },
-  ultra: {
-    label: 'Ультра',
-    desc: 'Максимум качества (сильный GPU)',
-    renderer: { antialias: true, pixelRatioCap: 2, maxChunksPerFrame: 3 },
-    props: { density: 3800, maxRenderDistance: 2000 },
-    lights: { shadow: { enabled: true } },
-    chunks: { segments: 64 },
-    farTiles: { segments: 220, segmentsHigh: 64 },
-    overlay: { enabled: true, canvasSize: 1536 },
-    space: { stars: { count: 2500 }, spheres: { maxCount: 4096 } },
-    chestBeam: { style: 'spiral', quality: 'full' },
-    // 2D-режим наступает позже (дольше в 3D),
-    // туман в 3D дальше (больше обзор).
-    lod: { changeAltitude: 1300, changeBack: 1150 },
-    fog: { far3D: 2400 },
-  },
-})`
-
-  s = replaceOrSkip(s, OLD, NEW, 'config.js / QUALITY_PRESETS + lod + fog')
-  write('scripts/config.js', s, isCRLF)
-}
-
-// ============================================================
-// 2) config.js — документируем, что LOD/FOG.far3D переопределяются
-// ============================================================
-{
-  const { text, isCRLF } = read('scripts/config.js')
-  let s = text
-
-  // LOD блок
-  const OLD1 = `export const LOD = /** @type {const} */ ({
-  /** Высота над рельефом (м), при которой включается 2D-режим. */
-  changeAltitude: 1100,
-  /** Должна быть меньше changeAltitude */
-  changeBack: 1000,`
-
-  const NEW1 = `export const LOD = /** @type {const} */ ({
+// ---------- Hand-written replacement for GAME ----------
+const GAME_CORE_SRC = `/* ================================================================
+   GAME_CORE — ядро цикла: частота физики, ограничения, коллизии.
+   Объединяется в GAME в config.ts вместе с GAME_GAME.
+================================================================ */
+export const GAME_CORE = {
   /**
-   * Высота над рельефом (м), при которой включается 2D-режим.
-   * ВАЖНО: переопределяется QUALITY_PRESETS[current].lod.changeAltitude
-   * при applyToConfig() (см. lib/settings.js) ДО чтения этого поля.
-   * Значение ниже — это дефолт (= high-пресет).
-   *
-   * Инварианты при правке:
-   *   changeAltitude < altRef2D (3000)          — диапазон 2D-тумана > 0
-   *   changeAltitude < FAR_TILES.altitudeHigh   — 2D включается раньше,
-   *                                                чем far-tiles грубеют
-   *   changeAltitude ≳ CHUNKS.preloadAltitude/2 — успевают предзагружаться
+   * Частота шага физики (Гц).
+   * 60 — быстро, но при 400+ м/с Euler-интеграция даёт заметную ошибку.
+   * 120 — компромисс (рекомендуется).
+   * 240 — максимальная точность, ×2 CPU к физике.
+   * ВАЖНО: калькулятор (calculator/simulation.js) берёт dt отсюда же.
    */
-  changeAltitude: 1100,
+  physicsHz: 120,
+
   /**
-   * Высота (м) деактивации 2D-режима. Гистерезис — должен быть МЕНЬШЕ
-   * changeAltitude. Переопределяется из QUALITY_PRESETS.
+   * Максимальный dt кадра (сек). Верхний предел accumulator —
+   * защита от «спирали смерти» при долгих фризах.
    */
-  changeBack: 1000,`
+  maxFrameDt: 0.1,
 
-  s = replaceOrSkip(s, OLD1, NEW1, 'config.js / LOD docs')
+  /**
+   * Потолок шагов физики за кадр. 0 = авто из maxFrameDt × physicsHz + 2.
+   */
+  maxPhysicsSteps: 0,
 
-  // FOG.far3D
-  const OLD2 = `  // 3D-режим (низко над землёй)
-  near3D: 100,
-  far3D: 2000,`
+  /**
+   * Swept-коллизия: сэмплируем отрезок prevPos → pos и ловим
+   * «пролёт сквозь гору» на высокой горизонтальной скорости.
+   */
+  collision: {
+    swept: true,
+    sweptSamples: 4,
+  },
+}
+`
 
-  const NEW2 = `  // 3D-режим (низко над землёй)
-  //
-  // ВАЖНО: far3D переопределяется QUALITY_PRESETS[current].fog.far3D
-  // при applyToConfig() (см. lib/settings.js) ДО чтения этого поля.
-  // Значение ниже — дефолт (= high-пресет).
-  //
-  // Инварианты при правке:
-  //   far3D > farGround (350) — 3D-туман должен быть шире, чем у земли
-  //   far3D ≲ farGround2D (2200) — иначе при активации 2D произойдёт
-  //                              видимый «dip» дальности тумана
-  //   far3D < CAMERA.far (15000) — обрезание не упирается в плоскость
-  near3D: 100,
-  far3D: 2000,`
+const GAME_GAME_SRC = `/* ================================================================
+   GAME_GAME — игровой баланс и параметры полёта.
+   Объединяется в GAME в config.ts вместе с GAME_CORE.
+================================================================ */
+export const GAME_GAME = {
+  /** Гравитация (м/с²). 9.8 — как в реальности. */
+  gravity: 9.8,
 
-  s = replaceOrSkip(s, OLD2, NEW2, 'config.js / FOG.far3D docs')
-  write('scripts/config.js', s, isCRLF)
+  /** Высота ракеты над землёй в состоянии покоя (м). */
+  restY: 0.95,
+
+  /** Пауза (с) между «камера вернулась к стартовой позиции» */
+  prekickDelay: 0.3,
+
+  /** Порог «камера вернулась» (м). */
+  prekickCamTolerance: 2.0,
+
+  /** Начальный угол старта (радианы). 20° — оптимально для дальности. */
+  launchAngle: (20 * Math.PI) / 180,
+
+  /** Снос траектории в плоскости XZ (радианы). */
+  flightYaw: Math.atan(1 / 100),
+
+  /** Аэродинамическая стабилизация (рад/с). */
+  aeroAlign: 0.2,
+
+  /** Минимальная скорость (м/с), ниже которой стабилизация отключается. */
+  aeroAlignMinSpeed: 5.0,
+
+  /** Угловое ускорение от клавиши W/S (рад/с²). */
+  angAcc: 5.0,
+
+  /** Вязкое затухание угловой скорости (1/с). */
+  angDamp: 0.8,
+
+  /** Потолок угловой скорости (рад/с). */
+  angMax: 18.0,
+
+  /** Плотность воздуха по высоте (экспоненциальное падение). */
+  airHeight: 6000,
+
+  /** Высота отключения двигателей. */
+  airEngineHeight: 10000,
+
+  /** Общая сложность игры (0.75 - 2.0). */
+  upgrade_cost_diff: 1.4,
+
+  /** Сколько монет у игрока на старте. */
+  initialCoins: 5,
+
+  /** Рекорд дистанции на старте (м). */
+  initialBest: 0,
+
+  /** Начальные уровни апгрейдов. Каждый начинается с 1. */
+  initialUpgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
+}
+`
+
+const RULES_PARAMS_SRC = `/* ================================================================
+   RULES_PARAMS — параметры формул (чистые данные для config.html).
+   Исполняемые функции RULES собираются в config.ts.
+================================================================ */
+export const RULES_PARAMS = {
+  launchSpeed: { base: 20, mult: 6 },
+  maxFuel: { base: 1.8, mult: 1.758 },
+  thrustAcc: { base: 12, mult: 3.0 },
+
+  /**
+   * Коэффициент сопротивления воздуха в зависимости от угла атаки.
+   * aligned, broadside, backward — Cd при α = 0°, 90°, 180°.
+   * aeroScale — как апгрейд «Аэродинамика» снижает Cd.
+   */
+  drag: {
+    aligned: 0.0025,
+    broadside: 0.0155,
+    backward: 0.0055,
+    aeroScale: 0.45,
+  },
+}
+`
+
+// ---------- Section → target file map ----------
+const worldSections = [
+  byTitle('МИР И SEED'),
+  byTitle('НЕБО'),
+  byTitle('СВЕТ'),
+  byTitle('ТУМАН'),
+  byTitle('СМЕНА ДНЯ И НОЧИ'),
+  byTitle('РЕЛЬЕФ'),
+  byTitle('ЦВЕТА РЕЛЬЕФА ПО ВЫСОТЕ'),
+  byTitle('ТЕКСТУРА ЗЕМЛИ'),
+  byTitle('ЧАНКИ 3D'),
+  byTitle('LOD'),
+  byTitle('ДАЛЬНИЕ ТАЙЛЫ'),
+  byTitle('OVERLAY'),
+  byTitle('ПРОПСЫ'),
+  byTitle('КОСМОС'),
+  byTitle('SIGN'),
+]
+
+const coreSections = [
+  byTitle('RENDERER'),
+  byTitle('КАМЕРА'),
+  byTitle('SAVE'),
+  byTitle('UI'),
+  byTitle('ЗВУКИ'),
+  byTitle('GPU_HINT'),
+  byTitle('QUALITY_PRESETS'),
+  byTitle('FPS'),
+]
+
+const gameSections = [
+  byTitle('БОСС'),
+  byTitle('РАКЕТА'),
+  byTitle('АПГРЕЙДЫ'),
+  byTitle('СУНДУКИ'),
+  byTitle('ГЕМЫ'),
+  byTitle('СПОСОБНОСТИ'),
+  byTitle('ДОСТИЖЕНИЯ'),
+]
+
+const CORE_HEADER = `/* ================================================================
+   _config_core.ts — настройки ядра игры.
+   Секции: RENDERER, CAMERA, SAVE, GAME_CORE, UI, SOUNDS, GPU_HINT,
+   QUALITY_PRESETS, FPS.
+
+   ФАЙЛ СОДЕРЖИТ ТОЛЬКО ДАННЫЕ — никакой логики.
+   ================================================================ */
+
+`
+
+const WORLD_HEADER = `/* ================================================================
+   _config_world.ts — настройки мира.
+   Секции: WORLD_SEED, SKY, LIGHTS, FOG, DAYNIGHT, TERRAIN,
+   TERRAIN_STOPS, GROUND_TEX, TERRAIN_COLOR_NOISE, CHUNKS, LOD,
+   FAR_TILES, OVERLAY, PROPS, SPACE, SIGN.
+
+   ФАЙЛ СОДЕРЖИТ ТОЛЬКО ДАННЫЕ — никакой логики.
+   ================================================================ */
+
+`
+
+const GAME_HEADER = `/* ================================================================
+   _config_game.ts — игровые параметры, баланс, карточки, способности.
+   Секции: GAME_GAME, BOSS, ROCKET, UPGRADES, RULES_PARAMS, CHESTS,
+   GEMS, CARDS, ABILITIES, ACHIEVEMENTS.
+
+   ФАЙЛ СОДЕРЖИТ ТОЛЬКО ДАННЫЕ — исполняемые RULES собираются в config.ts.
+   ================================================================ */
+
+`
+
+const coreFile = CORE_HEADER + coreSections.map((s) => s.raw).join('') + '\n' + GAME_CORE_SRC
+const worldFile = WORLD_HEADER + worldSections.map((s) => s.raw).join('') + '\n'
+const gameFile =
+  GAME_HEADER +
+  GAME_GAME_SRC +
+  '\n' +
+  gameSections.map((s) => s.raw).join('') +
+  '\n' +
+  RULES_PARAMS_SRC
+
+// ---------- Barrel ----------
+const BARREL = `/* ================================================================
+   config.ts — баррель: объединяет 3 конфига и собирает RULES.
+
+   Экспортирует те же символы, что и старый scripts/config.js,
+   чтобы все существующие импорты \`import * as CFG from '../config.js'\`
+   продолжали работать (Vite резолвит config.js → config.ts).
+
+   Дополнительно:
+   • GAME = { ...GAME_CORE, ...GAME_GAME } — тот же объект, что раньше.
+   • RULES — исполняемые функции, построенные из RULES_PARAMS + GAME.
+   • applyQualityPreset(presetId) — применяет пресет к CFG.
+     Вызывается из lib/quality.js → lib/settings.js.
+   ================================================================ */
+
+import { RENDERER, QUALITY_PRESETS, GAME_CORE } from './_config_core.js'
+import {
+  CHUNKS,
+  PROPS,
+  LIGHTS,
+  FAR_TILES,
+  OVERLAY,
+  SPACE,
+  LOD,
+  FOG,
+} from './_config_world.js'
+import { CHESTS, GAME_GAME, RULES_PARAMS } from './_config_game.js'
+
+export * from './_config_core.js'
+export * from './_config_world.js'
+export * from './_config_game.js'
+
+// ─── Объединённый GAME (тот же набор полей, что и раньше) ───
+export const GAME = { ...GAME_CORE, ...GAME_GAME }
+
+// ─── Исполняемые RULES, собранные из RULES_PARAMS + GAME ───
+export const RULES = {
+  launchSpeed: (u: { power: number }) =>
+    RULES_PARAMS.launchSpeed.base + u.power * RULES_PARAMS.launchSpeed.mult,
+
+  maxFuel: (u: { fuel: number }) =>
+    RULES_PARAMS.maxFuel.base + (u.fuel - 1) * RULES_PARAMS.maxFuel.mult,
+
+  thrustAcc: (u: { thrust: number }) =>
+    RULES_PARAMS.thrustAcc.base + (u.thrust - 1) * RULES_PARAMS.thrustAcc.mult,
+
+  drag: RULES_PARAMS.drag,
+
+  dragCoefAtAngle: (u: { aero: number }, alpha: number) => {
+    const D = RULES_PARAMS.drag
+    const c = Math.cos(alpha)
+    const a = D.broadside
+    const b = (D.aligned - D.backward) / 2
+    const c2 = D.aligned - a - b
+    const base = a + b * c + c2 * c * c
+    const scale = 1 / (1 + (u.aero - 1) * D.aeroScale)
+    return base * scale
+  },
+
+  airDensity: (y: number) => Math.exp(-Math.max(0, y) / GAME.airHeight),
+
+  upgradeCost: (u: { base: number; growth: number }, lvl: number) =>
+    Math.floor(u.base * Math.pow(u.growth * GAME.upgrade_cost_diff, lvl - 1)),
 }
 
-// ============================================================
-// 3) quality.js — apply() применяет новые поля
-// ============================================================
-{
-  const { text, isCRLF } = read('scripts/lib/quality.js')
-  let s = text
+// ─── Применение пресета графики (как раньше в lib/quality.js) ───
+export function applyQualityPreset(presetId: string): void {
+  const preset =
+    (QUALITY_PRESETS as Record<string, typeof QUALITY_PRESETS.medium>)[presetId] ||
+    QUALITY_PRESETS.medium
 
-  const OLD = `  if (preset.chestBeam) {
-    Object.assign(CFG.CHESTS.beam, preset.chestBeam)
+  RENDERER.antialias = preset.renderer.antialias
+  RENDERER.pixelRatioCap = preset.renderer.pixelRatioCap
+  RENDERER.maxChunksPerFrame = preset.renderer.maxChunksPerFrame
+
+  PROPS.density = preset.props.density
+  PROPS.maxRenderDistance = preset.props.maxRenderDistance
+
+  LIGHTS.shadow.enabled = preset.lights.shadow.enabled
+
+  CHUNKS.segments = preset.chunks.segments
+
+  FAR_TILES.segments = preset.farTiles.segments
+  FAR_TILES.segmentsHigh = preset.farTiles.segmentsHigh
+
+  if (typeof preset.overlay.enabled === 'boolean') {
+    OVERLAY.enabled = preset.overlay.enabled
   }
-}`
+  OVERLAY.canvasSize = preset.overlay.canvasSize
 
-  const NEW = `  if (preset.chestBeam) {
-    Object.assign(CFG.CHESTS.beam, preset.chestBeam)
+  SPACE.stars.count = preset.space.stars.count
+  SPACE.spheres.maxCount = preset.space.spheres.maxCount
+
+  if (preset.chestBeam) {
+    Object.assign(CHESTS.beam, preset.chestBeam as any)
   }
 
-  // LOD-переход в 2D: высота активации и гистерезис.
   if (preset.lod) {
     if (typeof preset.lod.changeAltitude === 'number') {
-      CFG.LOD.changeAltitude = preset.lod.changeAltitude
+      LOD.changeAltitude = preset.lod.changeAltitude
     }
     if (typeof preset.lod.changeBack === 'number') {
-      CFG.LOD.changeBack = preset.lod.changeBack
+      LOD.changeBack = preset.lod.changeBack
     }
   }
 
-  // Туман в 3D-режиме: дальняя плоскость.
   if (preset.fog) {
     if (typeof preset.fog.far3D === 'number') {
-      CFG.FOG.far3D = preset.fog.far3D
+      FOG.far3D = preset.fog.far3D
     }
   }
-}`
-
-  s = replaceOrSkip(s, OLD, NEW, 'quality.js / apply lod + fog')
-  write('scripts/lib/quality.js', s, isCRLF)
 }
+`
 
-// ============================================================
-// 4) quality.js — describeDiff() показывает новые отличия
-// ============================================================
+write('scripts/_config_core.ts', coreFile)
+write('scripts/_config_world.ts', worldFile)
+write('scripts/_config_game.ts', gameFile)
+write('scripts/config.ts', BARREL)
+
+// ---------- Patch quality.js ----------
 {
-  const { text, isCRLF } = read('scripts/lib/quality.js')
-  let s = text
-
-  const OLD = `  if (a.overlay.enabled !== b.overlay.enabled) {
-    lines.push(
-      \`2D-лес (overlay): \${a.overlay.enabled ? 'вкл' : 'выкл'} → \${b.overlay.enabled ? 'вкл' : 'выкл'}\`
-    )
-  } else if (a.overlay.enabled && a.overlay.canvasSize !== b.overlay.canvasSize) {
-    lines.push(\`Текстура леса (2D): \${a.overlay.canvasSize}px → \${b.overlay.canvasSize}px\`)
-  }
-
-  return lines
+  const qPath = 'scripts/lib/quality.js'
+  let q = read(qPath)
+  const NEW_APPLY = `export function apply(presetId) {
+  // Тело apply переехало в config.ts::applyQualityPreset,
+  // чтобы config.html мог применять пресеты без импорта lib/.
+  CFG.applyQualityPreset(presetId)
 }`
 
-  const NEW = `  if (a.overlay.enabled !== b.overlay.enabled) {
-    lines.push(
-      \`2D-лес (overlay): \${a.overlay.enabled ? 'вкл' : 'выкл'} → \${b.overlay.enabled ? 'вкл' : 'выкл'}\`
-    )
-  } else if (a.overlay.enabled && a.overlay.canvasSize !== b.overlay.canvasSize) {
-    lines.push(\`Текстура леса (2D): \${a.overlay.canvasSize}px → \${b.overlay.canvasSize}px\`)
+  if (q.includes('CFG.applyQualityPreset(presetId)')) {
+    console.log('⏭️  quality.js: apply() уже делегирует')
+  } else {
+    const re = /export function apply\(presetId\) \{[\s\S]*?\n\}/
+    if (re.test(q)) {
+      q = q.replace(re, NEW_APPLY)
+      write(qPath, q)
+      console.log('✅ quality.js: apply() → CFG.applyQualityPreset')
+    } else {
+      console.warn('⚠️  quality.js: не нашли export function apply() — пропускаем')
+    }
   }
-
-  // LOD: высота перехода в 2D-режим.
-  if (a.lod && b.lod && a.lod.changeAltitude !== b.lod.changeAltitude) {
-    lines.push(
-      \`Высота перехода в 2D: \${a.lod.changeAltitude} м → \${b.lod.changeAltitude} м\`
-    )
-  }
-
-  // Туман в 3D: дальняя плоскость.
-  if (a.fog && b.fog && a.fog.far3D !== b.fog.far3D) {
-    lines.push(\`Дальность тумана (3D): \${a.fog.far3D} м → \${b.fog.far3D} м\`)
-  }
-
-  return lines
-}`
-
-  s = replaceOrSkip(s, OLD, NEW, 'quality.js / describeDiff lod + fog')
-  write('scripts/lib/quality.js', s, isCRLF)
 }
 
-console.log('\n🎉 Готово.')
-console.log('   • QUALITY_PRESETS получили секции lod + fog')
-console.log('   • Quality.apply() применяет их к CFG.LOD / CFG.FOG')
-console.log('   • describeDiff() показывает что изменится при смене пресета')
-console.log('   • Добавлены комментарии с инвариантами в config.js')
+// ---------- Backup old config.js ----------
+rename('scripts/config.js', 'scripts/config.js.bak')
+
+// ---------- Report ----------
+console.log('')
+console.log('🎉 Готово.')
+console.log('')
+console.log('Создано:')
+console.log('  scripts/_config_core.ts    (~20 секций)')
+console.log('  scripts/_config_world.ts   (~15 секций)')
+console.log('  scripts/_config_game.ts    (~10 секций)')
+console.log('  scripts/config.ts          ← баррель')
+console.log('')
+console.log('Изменено:')
+console.log('  scripts/lib/quality.js     apply() → CFG.applyQualityPreset')
+console.log('')
+console.log('Переименовано:')
+console.log('  scripts/config.js → scripts/config.js.bak (можно удалить)')
+console.log('')
+console.log('Проверь:')
+console.log('  npm run dev                 # игра')
+console.log('  localhost:5173/calculator/  # калькулятор')
