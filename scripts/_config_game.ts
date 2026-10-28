@@ -133,15 +133,11 @@ export const RULES_PARAMS = {
    specialChests — сундук создавался дважды (второй перекрывал первый).
    Теперь xPositions — только «обычные», specialChests — только спец.
    allPositions = объединение, вычисляется один раз при загрузке. */
-export const CHESTS = {
+export const CHESTS_BASE = {
   enabled: true,
 
   xPositions: [3000, 5000, 8000, 12000, 17000, 23000, 30000, 38000],
   specialChests: { 6000: 'forsage', 15000: 'forsage' },
-
-  /** Единый отсортированный список ВСЕХ X. Используется везде, где
-      раньше был CHESTS.xPositions: initChests, ачивки, прогресс-бар. */
-  allPositions: [3000, 5000, 6000, 8000, 12000, 15000, 17000, 23000, 30000, 38000],
 
   /** Z-координата сундука — детерминированная. */
   zOffset: 30,
@@ -195,8 +191,8 @@ export const CHESTS = {
     maxDistance: 3000,
     fadeStart: 700,
     fadeEnd: 2200,
-    style: 'spiral',
-    quality: 'full',
+    style: 'По умолчанию: spiral — устанавливается в пресетах',
+    quality: 'По умолчанию: full — устанавливается в пресетах',
 
     cylinder: {
       radialSegments: 12,
@@ -274,7 +270,12 @@ export const CHESTS = {
 
   /** Лимит одного семейства (family). Один и тот же вариант можно получить дважды. */
   cardTypeLimit: 2,
-}
+} as const
+
+// Длина allPositions — вычисляется в config.ts, здесь только число
+// (используется ACHIEVEMENTS для target).
+const _chestsAllPosLen =
+  CHESTS_BASE.xPositions.length + Object.keys(CHESTS_BASE.specialChests).length
 
 /* ================================================================
    ГЕМЫ — валюта карточек. Левитируют над землёй, собираются в полёте.
@@ -632,7 +633,7 @@ export const ACHIEVEMENTS = [
     tier: 'medium',
     name: 'Коллекционер',
     desc: 'Открыть все сундуки',
-    target: CHESTS.allPositions.length,
+    target: _chestsAllPosLen,
   },
 
   {
@@ -677,7 +678,7 @@ export const ACHIEVEMENTS = [
     tier: 'hard',
     name: 'Спринтер',
     desc: 'Собрать все сундуки за 25 минут',
-    target: CHESTS.allPositions.length,
+    target: _chestsAllPosLen,
     timeLimit: 1500000,
   },
 ] as const

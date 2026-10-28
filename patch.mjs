@@ -1,412 +1,314 @@
-// patch3.mjs — v2: as const, no formulas, GAME split into
-//   GAME_CORE + PHYSICS + CONTROL + GAME_START.
-// Run: node patch3.mjs
+// patch5.mjs — v3:
+//  1) allPositions → вычисляется в config.ts (не в _config_game.ts).
+//  2) applyQualityPreset создаёт НОВЫЕ объекты (let-биндинги), не мутирует.
+//  3) Virtual-поля (перезаписываемые пресетами) — строки-маркеры.
+//  4) as const на всех секциях.
+// Run: node patch5.mjs
 import fs from 'node:fs'
-import path from 'node:path'
 
-const read = (p) => fs.readFileSync(p, 'utf-8')
-const write = (p, content) => {
-  fs.mkdirSync(path.dirname(p), { recursive: true })
-  fs.writeFileSync(p, content, 'utf-8')
+const read = (p) => {
+  const raw = fs.readFileSync(p, 'utf-8')
+  return { text: raw.replace(/\r\n/g, '\n'), crlf: raw.includes('\r\n') }
 }
-const exists = (p) => fs.existsSync(p)
-
-// ---------- Guard ----------
-if (!exists('scripts/config.js.bak')) {
-  console.error('❌ scripts/config.js.bak not found. Run patch.mjs first.')
-  process.exit(1)
+const save = (p, { text, crlf }) => {
+  fs.writeFileSync(p, crlf ? text.replace(/\n/g, '\r\n') : text, 'utf-8')
 }
-// ---------- Read original (with @type {const}), strip annotations ----------
-const original = read('scripts/config.js.bak')
-// config.js.bak — байт-копия исходного config.js, а он CRLF.
-// split(SEP) на CRLF не находит разделителей → sections = 1 (__HEADER__).
-// Нормализуем ДО split — тот же приём, что и в patch.mjs.
-const src = original.replace(/\r\n?/g, '\n').replace(/\/\*\* @type \{const\} \*\//g, '')
 
-// ---------- Split sections ----------
-const SEP = '\n/* ================================================================\n'
-const chunks = src.split(SEP)
-
-const sections = chunks.map((c, i) => {
-  if (i === 0) return { title: '__HEADER__', raw: c }
-  const nl = c.indexOf('\n')
-  return { title: c.slice(0, nl).trim(), raw: SEP + c }
-})
-
-function getSection(prefix) {
-  const s = sections.find((sec) => sec.title.startsWith(prefix))
-  if (!s) {
-    console.error(`❌ Section not found: "${prefix}"`)
+function replaceOrDie(obj, oldStr, newStr, label) {
+  if (!obj.text.includes(oldStr)) {
+    console.error(`\n❌ Not found: ${label}`)
+    console.error('Looking for:')
+    console.error(oldStr.slice(0, 400))
     process.exit(1)
   }
-  return s
+  obj.text = obj.text.replace(oldStr, newStr)
 }
 
-// ---------- addAsConst: insert " as const" at end of a specific export ----------
-function addAsConst(raw, name) {
-  const prefix = `export const ${name} = `
-  const start = raw.indexOf(prefix)
-  if (start === -1) return raw
-  const exprStart = start + prefix.length
+// ============================================================
+//  _config_core.ts — RENDERER virtuals + as const
+// ============================================================
+{
+  const f = read('scripts/_config_core.ts')
 
-  let i = exprStart
-  let depth = 0
-  let inStr = false
-  let strCh = ''
+  replaceOrDie(
+    f,
+    '  antialias: false,\n\n  /**\n   * Ограничение pixel ratio',
+    "  antialias: 'По умолчанию: false — устанавливается в пресетах',\n\n  /**\n   * Ограничение pixel ratio",
+    'RENDERER.antialias'
+  )
+  replaceOrDie(
+    f,
+    '  pixelRatioCap: 2,\n\n  /**\n   * Экспозиция ACES',
+    "  pixelRatioCap: 'По умолчанию: 2 — устанавливается в пресетах',\n\n  /**\n   * Экспозиция ACES",
+    'RENDERER.pixelRatioCap'
+  )
+  replaceOrDie(
+    f,
+    '  maxChunksPerFrame: 2,\n}',
+    "  maxChunksPerFrame: 'По умолчанию: 2 — устанавливается в пресетах',\n} as const",
+    'RENDERER.maxChunksPerFrame + as const'
+  )
 
-  while (i < raw.length) {
-    const ch = raw[i]
-    if (inStr) {
-      if (ch === '\\') {
-        i += 2
-        continue
-      }
-      if (ch === strCh) {
-        inStr = false
-        i++
-        continue
-      }
-      i++
-      continue
+  save('scripts/_config_core.ts', f)
+  console.log('✅ _config_core.ts: RENDERER virtuals + as const')
+}
+
+// ============================================================
+//  _config_world.ts — virtuals + as const на 8 секциях
+// ============================================================
+{
+  const f = read('scripts/_config_world.ts')
+
+  // LIGHTS.shadow.enabled
+  replaceOrDie(
+    f,
+    '  shadow: {\n    enabled: true, // ← включаем',
+    "  shadow: {\n    enabled: 'По умолчанию: true — устанавливается в пресетах',",
+    'LIGHTS.shadow.enabled'
+  )
+
+  // FOG.far3D
+  replaceOrDie(
+    f,
+    '  near3D: 100,\n  far3D: 2000,',
+    "  near3D: 100,\n  far3D: 'По умолчанию: 2000 — устанавливается в пресетах',",
+    'FOG.far3D'
+  )
+
+  // CHUNKS.segments
+  replaceOrDie(
+    f,
+    '  segments: 53,\n\n  /** Сколько чанков грузить ВПЕРЁД',
+    "  segments: 'По умолчанию: 53 — устанавливается в пресетах',\n\n  /** Сколько чанков грузить ВПЕРЁД",
+    'CHUNKS.segments'
+  )
+
+  // LOD.changeAltitude / changeBack
+  replaceOrDie(
+    f,
+    '  changeAltitude: 1100,',
+    "  changeAltitude: 'По умолчанию: 1100 — устанавливается в пресетах',",
+    'LOD.changeAltitude'
+  )
+  replaceOrDie(
+    f,
+    '  changeBack: 1000,',
+    "  changeBack: 'По умолчанию: 1000 — устанавливается в пресетах',",
+    'LOD.changeBack'
+  )
+
+  // FAR_TILES.segments / segmentsHigh
+  replaceOrDie(
+    f,
+    '  /** Сегментов на сторону дальнего тайла (сетка). 120 - 200*/\n  segments: 190,',
+    "  /** Сегментов на сторону дальнего тайла (сетка). 120 - 200*/\n  segments: 'По умолчанию: 190 — устанавливается в пресетах',",
+    'FAR_TILES.segments'
+  )
+  replaceOrDie(
+    f,
+    '  segmentsHigh: 53,',
+    "  segmentsHigh: 'По умолчанию: 53 — устанавливается в пресетах',",
+    'FAR_TILES.segmentsHigh'
+  )
+
+  // OVERLAY.enabled / canvasSize
+  replaceOrDie(
+    f,
+    '/**Показывать точечные деревья в 2D-режиме.*/\n  enabled: true,',
+    "/**Показывать точечные деревья в 2D-режиме.*/\n  enabled: 'По умолчанию: true — устанавливается в пресетах',",
+    'OVERLAY.enabled'
+  )
+  replaceOrDie(
+    f,
+    '  canvasSize: 1024,',
+    "  canvasSize: 'По умолчанию: 1024 — устанавливается в пресетах',",
+    'OVERLAY.canvasSize'
+  )
+
+  // PROPS.density / maxRenderDistance
+  replaceOrDie(
+    f,
+    '  /** Плотность попыток на чанк. Количество объектов на чанк */\n  density: 3500,',
+    "  /** Плотность попыток на чанк. Количество объектов на чанк */\n  density: 'По умолчанию: 3500 — устанавливается в пресетах',",
+    'PROPS.density'
+  )
+  replaceOrDie(
+    f,
+    '  maxRenderDistance: 2000,',
+    "  maxRenderDistance: 'По умолчанию: 2000 — устанавливается в пресетах',",
+    'PROPS.maxRenderDistance'
+  )
+
+  // SPACE.stars.count / spheres.maxCount
+  replaceOrDie(
+    f,
+    '    count: 2500,',
+    "    count: 'По умолчанию: 2500 — устанавливается в пресетах',",
+    'SPACE.stars.count'
+  )
+  replaceOrDie(
+    f,
+    '    maxCount: 4096,',
+    "    maxCount: 'По умолчанию: 4096 — устанавливается в пресетах',",
+    'SPACE.spheres.maxCount'
+  )
+
+  // Add "as const" to mutable sections (find the last `\n}\n` before next block)
+  for (const name of ['LIGHTS', 'FOG', 'CHUNKS', 'LOD', 'FAR_TILES', 'OVERLAY', 'PROPS', 'SPACE']) {
+    const re = new RegExp(`(export const ${name} = \\{[\\s\\S]*?)\\n\\}\\n`)
+    if (re.test(f.text)) {
+      f.text = f.text.replace(re, '$1\n} as const\n')
+    } else {
+      console.warn(`⚠️  Could not add as const to ${name}`)
     }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      inStr = true
-      strCh = ch
-      i++
-      continue
-    }
-    if (ch === '/' && raw[i + 1] === '/') {
-      while (i < raw.length && raw[i] !== '\n') i++
-      continue
-    }
-    if (ch === '/' && raw[i + 1] === '*') {
-      i += 2
-      while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) i++
-      i += 2
-      continue
-    }
-    if (ch === '(' || ch === '[' || ch === '{') {
-      depth++
-      i++
-      continue
-    }
-    if (ch === ')' || ch === ']' || ch === '}') {
-      depth--
-      i++
-      if (depth === 0) return raw.slice(0, i) + ' as const' + raw.slice(i)
-      continue
-    }
-    if (depth === 0 && (ch === '\n' || ch === ';')) {
-      let endPos = i
-      while (endPos > exprStart && /\s/.test(raw[endPos - 1])) endPos--
-      return raw.slice(0, endPos) + ' as const' + raw.slice(endPos)
-    }
-    i++
   }
-  return raw
+
+  save('scripts/_config_world.ts', f)
+  console.log('✅ _config_world.ts: virtuals + as const на 8 секциях')
 }
 
-// ---------- Helper: apply transform + optional as const ----------
-function fixSection(title, transformRaw, asConstNames = []) {
-  const sec = getSection(title)
-  let raw = transformRaw ? transformRaw(sec.raw) : sec.raw
-  for (const name of asConstNames) raw = addAsConst(raw, name)
-  return raw
+// ============================================================
+//  _config_game.ts — CHESTS → CHESTS_BASE, virtuals, allPositions removed
+// ============================================================
+{
+  const f = read('scripts/_config_game.ts')
+
+  // 1) Rename CHESTS → CHESTS_BASE
+  replaceOrDie(
+    f,
+    'export const CHESTS = {',
+    'export const CHESTS_BASE = {',
+    'CHESTS → CHESTS_BASE'
+  )
+
+  // 2) Remove allPositions block (with its comment)
+  const ALL_POS_BLOCK = `  /** Единый отсортированный список ВСЕХ X. Используется везде, где
+      раньше был CHESTS.xPositions: initChests, ачивки, прогресс-бар. */
+  allPositions: [3000, 5000, 6000, 8000, 12000, 15000, 17000, 23000, 30000, 38000],
+
+`
+  replaceOrDie(f, ALL_POS_BLOCK, '', 'CHESTS.allPositions block removal')
+
+  // 3) beam virtuals
+  replaceOrDie(
+    f,
+    "    style: 'spiral',\n    quality: 'full',",
+    "    style: 'По умолчанию: spiral — устанавливается в пресетах',\n    quality: 'По умолчанию: full — устанавливается в пресетах',",
+    'CHESTS.beam.style/quality'
+  )
+
+  // 4) ACHIEVEMENTS: replace CHESTS.allPositions.length BEFORE rename cascade
+  //    (после шага 1 осталось "CHESTS_BASE.allPositions.length" — его и меняем)
+  if (f.text.includes('CHESTS_BASE.allPositions.length')) {
+    f.text = f.text.replace(/CHESTS_BASE\.allPositions\.length/g, '_chestsAllPosLen')
+  } else if (f.text.includes('CHESTS.allPositions.length')) {
+    f.text = f.text.replace(/CHESTS\.allPositions\.length/g, '_chestsAllPosLen')
+  }
+
+  // 5) Add `as const` to CHESTS_BASE and append _chestsAllPosLen after it
+  //    Find closing `\n}` followed by `\n\n/* =` (next section = ГЕМЫ)
+  const chestsCloseRe = /(export const CHESTS_BASE = \{[\s\S]*?)\n\}\n(\n\/\* =)/
+  if (!chestsCloseRe.test(f.text)) {
+    console.error('❌ Could not locate CHESTS_BASE closing brace')
+    process.exit(1)
+  }
+  f.text = f.text.replace(
+    chestsCloseRe,
+    `$1\n} as const\n\n// Длина allPositions — вычисляется в config.ts, здесь только число\n// (используется ACHIEVEMENTS для target).\nconst _chestsAllPosLen =\n  CHESTS_BASE.xPositions.length + Object.keys(CHESTS_BASE.specialChests).length\n$2`
+  )
+
+  save('scripts/_config_game.ts', f)
+  console.log('✅ _config_game.ts: CHESTS_BASE, virtuals, _chestsAllPosLen, as const')
 }
 
-// ---------- Specific formula fixes ----------
-const terrainRaw = fixSection(
-  'РЕЛЬЕФ',
-  (r) => r.replace('growthRate: 1 / 10000,', 'growthRate: 0.0001,'),
-  ['TERRAIN']
-)
-
-const rocketRaw = fixSection(
-  'РАКЕТА',
-  (r) => {
-    let s = r
-    s = s.replace('recordingTimeLimit: 5 * 60,', 'recordingTimeLimit: 300,')
-    s = s.replace('minSamplesLimit: 3 * 6 * 30,', 'minSamplesLimit: 540,')
-    return s
-  },
-  ['ROCKET']
-)
-
-const achRaw = fixSection(
-  'ДОСТИЖЕНИЯ',
-  (r) => r.replace('timeLimit: 25 * 60 * 1000,', 'timeLimit: 1500000,'),
-  ['ACHIEVEMENTS']
-)
-
-// CHESTS: remove private consts, inline all arrays (no as const — beam mutable)
-const chestsRaw = fixSection('СУНДУКИ', (r) => {
-  let s = r
-  s = s.replace(/const _chestX = \[[\s\S]*?\]\n+/, '')
-  s = s.replace(/const _specialChests = \{[\s\S]*?\}\n+/, '')
-  s = s.replace(
-    'xPositions: _chestX,',
-    'xPositions: [3000, 5000, 8000, 12000, 17000, 23000, 30000, 38000],'
-  )
-  s = s.replace(
-    'specialChests: _specialChests,',
-    "specialChests: { 6000: 'forsage', 15000: 'forsage' },"
-  )
-  s = s.replace(
-    /allPositions: \[\.\.\._chestX, \.\.\.Object\.keys\(_specialChests\)\.map\(Number\)\]\.sort\(\(a, b\) => a - b\),/,
-    'allPositions: [3000, 5000, 6000, 8000, 12000, 15000, 17000, 23000, 30000, 38000],'
-  )
-  return s
-})
-
-// ---------- New sections ----------
-const GAME_CORE_SECTION = `
-
-/* ================================================================
-   GAME_CORE — ядро игрового цикла: частота физики, коллизии,
-   параметры покоя и старта полёта.
-================================================================ */
-export const GAME_CORE = ({
-  /** Частота шага физики (Гц). */
-  physicsHz: 120,
-
-  /** Максимальный dt кадра (сек). */
-  maxFrameDt: 0.1,
-
-  /** Потолок шагов физики за кадр. 0 = авто. */
-  maxPhysicsSteps: 0,
-
-  /** Swept-коллизия. */
-  collision: {
-    swept: true,
-    sweptSamples: 4,
-  },
-
-  /** Высота ракеты над землёй в состоянии покоя (м). */
-  restY: 0.95,
-
-  /** Пауза (с) перед стартом. */
-  prekickDelay: 0.3,
-
-  /** Порог «камера вернулась» (м). */
-  prekickCamTolerance: 2.0,
-
-  /** Отношение 1 м по Z на flightYawRatio м по X. */
-  flightYawRatio: 100,
-}) as const
-`
-
-const PHYSICS_SECTION = `
-
-/* ================================================================
-   PHYSICS — физика полёта.
-================================================================ */
-export const PHYSICS = ({
-  /** Гравитация (м/с²). */
-  gravity: 9.8,
-
-  /** Плотность воздуха по высоте. */
-  airHeight: 6000,
-
-  /** Высота отключения двигателей. */
-  airEngineHeight: 10000,
-
-  /** Начальный угол старта, °. */
-  launchAngleDeg: 20,
-}) as const
-`
-
-const CONTROL_SECTION = `
-
-/* ================================================================
-   CONTROL — управление и аэродинамика.
-================================================================ */
-export const CONTROL = ({
-  /** Аэродинамическая стабилизация (рад/с). */
-  aeroAlign: 0.2,
-
-  /** Минимальная скорость стабилизации. */
-  aeroAlignMinSpeed: 5.0,
-
-  /** Угловое ускорение от W/S (рад/с²). */
-  angAcc: 5.0,
-
-  /** Вязкое затухание (1/с). */
-  angDamp: 0.8,
-
-  /** Потолок угловой скорости (рад/с). */
-  angMax: 18.0,
-}) as const
-`
-
-const GAME_START_SECTION = `
-
-/* ================================================================
-   GAME_START — стартовые значения игрока и сложность.
-================================================================ */
-export const GAME_START = ({
-  /** Общая сложность игры. */
-  upgrade_cost_diff: 1.4,
-
-  /** Монет на старте. */
-  initialCoins: 5,
-
-  /** Рекорд на старте (м). */
-  initialBest: 0,
-
-  /** Начальные уровни апгрейдов. */
-  initialUpgrades: { power: 1, aero: 1, fuel: 1, thrust: 1 },
-}) as const
-`
-
-const RULES_PARAMS_SECTION = `
-
-/* ================================================================
-   RULES_PARAMS — параметры формул (данные для config.html).
-   Исполняемые функции RULES собираются в config.ts.
-================================================================ */
-export const RULES_PARAMS = ({
-  launchSpeed: { base: 20, mult: 6 },
-  maxFuel: { base: 1.8, mult: 1.758 },
-  thrustAcc: { base: 12, mult: 3.0 },
-  drag: {
-    aligned: 0.0025,
-    broadside: 0.0155,
-    backward: 0.0055,
-    aeroScale: 0.45,
-  },
-}) as const
-`
-
-// ================================================================
-//  _config_core.ts
-// ================================================================
-const CORE_HEADER = `/* ================================================================
-   _config_core.ts — настройки ядра игры.
-   Секции: RENDERER, CAMERA, SAVE, GAME_CORE, UI, SOUNDS, GPU_HINT,
-           QUALITY_PRESETS, FPS.
-
-   ФАЙЛ СОДЕРЖИТ ТОЛЬКО ДАННЫЕ. Никаких формул.
-   Всё, что требует вычислений, собирается в config.ts.
-
-   Правило as const:
-   • Применяется к секциям, которые не мутируются в рантайме.
-   • RENDERER мутируется в applyQualityPreset(), поэтому БЕЗ as const.
-================================================================ */
-`
-
-const coreFile =
-  CORE_HEADER +
-  getSection('RENDERER').raw +
-  fixSection('КАМЕРА', null, ['CAMERA']) +
-  fixSection('SAVE', null, ['SAVE']) +
-  GAME_CORE_SECTION +
-  fixSection('UI', null, ['UI']) +
-  fixSection('ЗВУКИ', null, ['SOUNDS']) +
-  fixSection('GPU_HINT', null, ['GPU_HINT']) +
-  fixSection('QUALITY_PRESETS', null, ['QUALITY_PRESETS']) +
-  fixSection('FPS', null, ['FPS'])
-
-// ================================================================
-//  _config_world.ts
-// ================================================================
-const WORLD_HEADER = `/* ================================================================
-   _config_world.ts — настройки мира.
-   Секции: WORLD_SEED, SKY, LIGHTS, FOG, DAYNIGHT, TERRAIN,
-           TERRAIN_STOPS, GROUND_TEX, TERRAIN_COLOR_NOISE, CHUNKS,
-           LOD, FAR_TILES, OVERLAY, PROPS, SPACE, SIGN.
-
-   ФАЙЛ СОДЕРЖИТ ТОЛЬКО ДАННЫЕ. Никаких формул.
-
-   Правило as const:
-   • Применяется к неизменяемым данным.
-   • LIGHTS, FOG, CHUNKS, LOD, FAR_TILES, OVERLAY, PROPS, SPACE —
-     мутируются в applyQualityPreset(), поэтому БЕЗ as const.
-================================================================ */
-`
-
-const worldFile =
-  WORLD_HEADER +
-  fixSection('МИР И SEED', null, ['WORLD_SEED']) +
-  fixSection('НЕБО', null, ['SKY']) +
-  getSection('СВЕТ').raw + // mutable
-  getSection('ТУМАН').raw + // mutable
-  fixSection('СМЕНА ДНЯ И НОЧИ', null, ['DAYNIGHT']) +
-  terrainRaw +
-  fixSection('ЦВЕТА РЕЛЬЕФА ПО ВЫСОТЕ', null, ['TERRAIN_STOPS']) +
-  fixSection('ТЕКСТУРА ЗЕМЛИ', null, ['GROUND_TEX', 'TERRAIN_COLOR_NOISE']) +
-  getSection('ЧАНКИ 3D').raw + // mutable
-  getSection('LOD').raw + // mutable
-  getSection('ДАЛЬНИЕ ТАЙЛЫ').raw + // mutable
-  getSection('OVERLAY').raw + // mutable
-  getSection('ПРОПСЫ').raw + // mutable
-  getSection('КОСМОС').raw + // mutable
-  fixSection('SIGN', null, ['SIGN'])
-
-// ================================================================
-//  _config_game.ts
-// ================================================================
-const GAME_HEADER = `/* ================================================================
-   _config_game.ts — игровые параметры, баланс, карточки, способности.
-   Секции: PHYSICS, CONTROL, GAME_START, UPGRADES, RULES_PARAMS,
-           CHESTS, GEMS, CARDS, ABILITIES, ACHIEVEMENTS, BOSS, ROCKET.
-
-   ФАЙЛ СОДЕРЖИТ ТОЛЬКО ДАННЫЕ. Функции RULES собираются в config.ts.
-
-   Правило as const:
-   • Применяется к неизменяемым данным.
-   • CHESTS мутируется в applyQualityPreset() (beam), поэтому БЕЗ as const.
-================================================================ */
-`
-
-const gameFile =
-  GAME_HEADER +
-  PHYSICS_SECTION +
-  CONTROL_SECTION +
-  GAME_START_SECTION +
-  fixSection('АПГРЕЙДЫ', null, ['UPGRADES']) +
-  RULES_PARAMS_SECTION +
-  chestsRaw + // mutable (no as const)
-  fixSection('ГЕМЫ', null, ['GEMS', 'CARDS']) +
-  fixSection('СПОСОБНОСТИ', null, ['ABILITIES']) +
-  achRaw +
-  fixSection('БОСС', null, ['BOSS']) +
-  rocketRaw
-
-// ================================================================
-//  config.ts (barrel)
-// ================================================================
-const BARREL = `/* ================================================================
-   config.ts — баррель: объединяет три конфига и собирает GAME/RULES.
+// ============================================================
+//  config.ts — full rewrite
+// ============================================================
+{
+  const BARREL = `/* ================================================================
+   config.ts — barrel: объединяет три конфига, собирает GAME/RULES,
+   вычисляет CHESTS.allPositions и применяет графические пресеты.
 
    Экспортирует те же символы, что и старый scripts/config.js,
    чтобы импорты \`import * as CFG from '../config.js'\` продолжали
    работать (Vite резолвит config.js → config.ts).
 
-   Дополнительно:
-   • GAME = { ...GAME_CORE, ...PHYSICS, ...CONTROL, ...GAME_START }
-     + вычисленные launchAngle и flightYaw.
-   • RULES — исполняемые функции из RULES_PARAMS + GAME.
-   • applyQualityPreset(presetId) — применяет пресет к CFG.
+   ПРИНЦИП:
+   — В _config_*.ts — только данные + \`as const\`.
+   — Всё, что вычисляется (GAME, RULES, CHESTS.allPositions,
+     виртуальные поля из пресетов), собирается здесь.
+   — applyQualityPreset() НЕ мутирует исходные объекты:
+     он создаёт новые и переприсваивает let-биндинги.
+     Это даёт возможность держать \`as const\` на _config_*.ts
+     и при этом иметь живые (перезаписываемые) экспорты здесь.
    ================================================================ */
 
-import { GAME_CORE, RENDERER, QUALITY_PRESETS } from './_config_core.js'
 import {
-  LIGHTS,
-  FOG,
-  CHUNKS,
-  LOD,
-  FAR_TILES,
-  OVERLAY,
-  PROPS,
-  SPACE,
+  RENDERER as _RENDERER,
+  QUALITY_PRESETS,
+  GAME_CORE,
+} from './_config_core.js'
+import {
+  LIGHTS as _LIGHTS,
+  FOG as _FOG,
+  CHUNKS as _CHUNKS,
+  LOD as _LOD,
+  FAR_TILES as _FAR_TILES,
+  OVERLAY as _OVERLAY,
+  PROPS as _PROPS,
+  SPACE as _SPACE,
 } from './_config_world.js'
-import { PHYSICS, CONTROL, GAME_START, RULES_PARAMS, CHESTS } from './_config_game.js'
+import {
+  CHESTS_BASE,
+  PHYSICS,
+  CONTROL,
+  GAME_START,
+  RULES_PARAMS,
+} from './_config_game.js'
 
-export * from './_config_core.js'
-export * from './_config_world.js'
-export * from './_config_game.js'
+// ---------- Static re-exports (as const, никогда не мутируются) ----------
+export {
+  CAMERA, SAVE, GAME_CORE, UI, SOUNDS, GPU_HINT, QUALITY_PRESETS, FPS,
+} from './_config_core.js'
+export {
+  WORLD_SEED, SKY, DAYNIGHT, TERRAIN, TERRAIN_STOPS, GROUND_TEX,
+  TERRAIN_COLOR_NOISE, SIGN,
+} from './_config_world.js'
+export {
+  PHYSICS, CONTROL, GAME_START, UPGRADES, RULES_PARAMS,
+  GEMS, CARDS, ABILITIES, ACHIEVEMENTS, BOSS, ROCKET,
+} from './_config_game.js'
 
-// ---- GAME = core + physics + control + start + computed ----
+// ---------- Mutable configs ----------
+// Исходные значения _config_*.ts содержат виртуальные строки-маркеры
+// для полей, которые переопределяются пресетом (например,
+// RENDERER.antialias = "По умолчанию: false — устанавливается в пресетах").
+//
+// applyQualityPreset() переприсваивает эти биндинги новыми объектами
+// с реальными значениями. Порядок гарантирует settings.js: он
+// импортируется первым в main.js и в top-level вызывает applyToConfig().
+//
+// Тип \`any\` намеренно скрывает строки-маркеры от потребителей
+// (все потребители — .js, TS их всё равно не проверяет, но \`any\`
+// страхует будущую миграцию на .ts).
+export let RENDERER: any = _RENDERER
+export let LIGHTS: any = _LIGHTS
+export let FOG: any = _FOG
+export let CHUNKS: any = _CHUNKS
+export let LOD: any = _LOD
+export let FAR_TILES: any = _FAR_TILES
+export let OVERLAY: any = _OVERLAY
+export let PROPS: any = _PROPS
+export let SPACE: any = _SPACE
+
+// ---------- CHESTS = CHESTS_BASE + вычисленный allPositions ----------
+const _allPositions = [
+  ...CHESTS_BASE.xPositions,
+  ...Object.keys(CHESTS_BASE.specialChests).map(Number),
+].sort((a, b) => a - b)
+export let CHESTS: any = { ...CHESTS_BASE, allPositions: _allPositions }
+
+// ---------- GAME = GAME_CORE + PHYSICS + CONTROL + GAME_START ----------
 const { flightYawRatio, ...gameCoreRest } = GAME_CORE
 const { launchAngleDeg, ...physicsRest } = PHYSICS
 
@@ -419,7 +321,7 @@ export const GAME = {
   launchAngle: (launchAngleDeg * Math.PI) / 180,
 }
 
-// ---- RULES = pure functions ----
+// ---------- RULES — исполняемые функции из RULES_PARAMS ----------
 export const RULES = {
   launchSpeed: (u: { power: number }) =>
     RULES_PARAMS.launchSpeed.base + u.power * RULES_PARAMS.launchSpeed.mult,
@@ -449,91 +351,78 @@ export const RULES = {
     Math.floor(u.base * Math.pow(u.growth * GAME.upgrade_cost_diff, lvl - 1)),
 }
 
-// ---- applyQualityPreset ----
+// ---------- applyQualityPreset ----------
+// Создаёт НОВЫЕ объекты для каждой секции, затронутой пресетом,
+// и переприсваивает let-биндинги. Исходные объекты из _config_*.ts
+// не мутируются (они \`as const\` — мутация вообще невозможна).
 export function applyQualityPreset(presetId: string): void {
-  // Приводим через unknown: union QUALITY_PRESETS слишком узкий
-  // (у low.chestBeam нет quality, у medium — есть).
   const PRESETS = QUALITY_PRESETS as unknown as Record<string, any>
   const preset = PRESETS[presetId] || PRESETS.medium
 
-  RENDERER.antialias = preset.renderer.antialias
-  RENDERER.pixelRatioCap = preset.renderer.pixelRatioCap
-  RENDERER.maxChunksPerFrame = preset.renderer.maxChunksPerFrame
-
-  PROPS.density = preset.props.density
-  PROPS.maxRenderDistance = preset.props.maxRenderDistance
-
-  LIGHTS.shadow.enabled = preset.lights.shadow.enabled
-
-  CHUNKS.segments = preset.chunks.segments
-
-  FAR_TILES.segments = preset.farTiles.segments
-  FAR_TILES.segmentsHigh = preset.farTiles.segmentsHigh
-
-  if (typeof preset.overlay.enabled === 'boolean') {
-    OVERLAY.enabled = preset.overlay.enabled
+  RENDERER = {
+    ...RENDERER,
+    antialias: preset.renderer.antialias,
+    pixelRatioCap: preset.renderer.pixelRatioCap,
+    maxChunksPerFrame: preset.renderer.maxChunksPerFrame,
   }
-  OVERLAY.canvasSize = preset.overlay.canvasSize
 
-  SPACE.stars.count = preset.space.stars.count
-  SPACE.spheres.maxCount = preset.space.spheres.maxCount
+  LIGHTS = {
+    ...LIGHTS,
+    shadow: { ...LIGHTS.shadow, enabled: preset.lights.shadow.enabled },
+  }
 
-  if (preset.chestBeam) {
-    Object.assign(CHESTS.beam, preset.chestBeam)
+  CHUNKS = { ...CHUNKS, segments: preset.chunks.segments }
+
+  FAR_TILES = {
+    ...FAR_TILES,
+    segments: preset.farTiles.segments,
+    segmentsHigh: preset.farTiles.segmentsHigh,
+  }
+
+  OVERLAY = {
+    ...OVERLAY,
+    enabled: preset.overlay.enabled,
+    canvasSize: preset.overlay.canvasSize,
+  }
+
+  PROPS = {
+    ...PROPS,
+    density: preset.props.density,
+    maxRenderDistance: preset.props.maxRenderDistance,
+  }
+
+  SPACE = {
+    ...SPACE,
+    stars: { ...SPACE.stars, count: preset.space.stars.count },
+    spheres: { ...SPACE.spheres, maxCount: preset.space.spheres.maxCount },
   }
 
   if (preset.lod) {
-    if (typeof preset.lod.changeAltitude === 'number') {
-      LOD.changeAltitude = preset.lod.changeAltitude
-    }
-    if (typeof preset.lod.changeBack === 'number') {
-      LOD.changeBack = preset.lod.changeBack
-    }
+    LOD = { ...LOD, ...preset.lod }
   }
-
   if (preset.fog) {
-    if (typeof preset.fog.far3D === 'number') {
-      FOG.far3D = preset.fog.far3D
-    }
+    FOG = { ...FOG, ...preset.fog }
+  }
+  if (preset.chestBeam) {
+    CHESTS = { ...CHESTS, beam: { ...CHESTS.beam, ...preset.chestBeam } }
   }
 }
 `
 
-// ---------- Write ----------
-write('scripts/_config_core.ts', coreFile)
-write('scripts/_config_world.ts', worldFile)
-write('scripts/_config_game.ts', gameFile)
-write('scripts/config.ts', BARREL)
-
-// ---------- Verify quality.js ----------
-{
-  const qPath = 'scripts/lib/quality.js'
-  if (exists(qPath)) {
-    const q = read(qPath)
-    if (!q.includes('CFG.applyQualityPreset(presetId)')) {
-      console.warn('⚠️  quality.js: apply() не делегирует в CFG.applyQualityPreset')
-      console.warn('   Смотри patch-fix.mjs / patch.mjs')
-    }
-  }
+  save('scripts/config.ts', { text: BARREL, crlf: false })
+  console.log('✅ config.ts: full rewrite (let-exports + applyQualityPreset non-mutating)')
 }
 
 console.log('')
 console.log('🎉 Готово.')
 console.log('')
-console.log('Перезаписано:')
-console.log('  scripts/_config_core.ts')
-console.log('  scripts/_config_world.ts')
-console.log('  scripts/_config_game.ts')
-console.log('  scripts/config.ts')
+console.log('Что изменилось:')
+console.log('  • _config_*.ts: virtual-поля (перезаписываемые пресетом) — строки-маркеры;')
+console.log('    на всех секциях — as const.')
+console.log('  • _config_game.ts: CHESTS → CHESTS_BASE (без allPositions);')
+console.log('    _chestsAllPosLen — локальный computed для ACHIEVEMENTS.')
+console.log('  • config.ts: все mutable-секции теперь let + any;')
+console.log('    CHESTS.allPositions считается здесь;')
+console.log('    applyQualityPreset() создаёт новые объекты, не мутирует.')
 console.log('')
-console.log('Изменения:')
-console.log('  • as const — на неизменяемых секциях (mutable = без as const)')
-console.log('  • Формулы → литералы:')
-console.log('      growthRate: 1/10000            → 0.0001')
-console.log('      recordingTimeLimit: 5*60        → 300')
-console.log('      minSamplesLimit: 3*6*30         → 540')
-console.log('      timeLimit: 25*60*1000           → 1500000')
-console.log('      allPositions                    → литеральный массив')
-console.log('  • launchAngle / flightYaw вычисляются в config.ts')
-console.log('  • GAME = GAME_CORE + PHYSICS + CONTROL + GAME_START')
-console.log('  • RULES_PARAMS (данные) + RULES (функции в config.ts)')
+console.log('Проверь: npm run dev + localhost:5173/calculator/')
