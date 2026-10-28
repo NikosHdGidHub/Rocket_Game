@@ -1,29 +1,48 @@
 /* ================================================================
-   config.ts — баррель: объединяет 3 конфига и собирает RULES.
+   config.ts — баррель: объединяет три конфига и собирает GAME/RULES.
 
    Экспортирует те же символы, что и старый scripts/config.js,
-   чтобы все существующие импорты `import * as CFG from '../config.js'`
-   продолжали работать (Vite резолвит config.js → config.ts).
+   чтобы импорты `import * as CFG from '../config.js'` продолжали
+   работать (Vite резолвит config.js → config.ts).
 
    Дополнительно:
-   • GAME = { ...GAME_CORE, ...GAME_GAME } — тот же объект, что раньше.
-   • RULES — исполняемые функции, построенные из RULES_PARAMS + GAME.
+   • GAME = { ...GAME_CORE, ...PHYSICS, ...CONTROL, ...GAME_START }
+     + вычисленные launchAngle и flightYaw.
+   • RULES — исполняемые функции из RULES_PARAMS + GAME.
    • applyQualityPreset(presetId) — применяет пресет к CFG.
-     Вызывается из lib/quality.js → lib/settings.js.
    ================================================================ */
 
-import { RENDERER, QUALITY_PRESETS, GAME_CORE } from './_config_core.js'
-import { CHUNKS, PROPS, LIGHTS, FAR_TILES, OVERLAY, SPACE, LOD, FOG } from './_config_world.js'
-import { CHESTS, GAME_GAME, RULES_PARAMS } from './_config_game.js'
+import { GAME_CORE, RENDERER, QUALITY_PRESETS } from './_config_core.js'
+import {
+  LIGHTS,
+  FOG,
+  CHUNKS,
+  LOD,
+  FAR_TILES,
+  OVERLAY,
+  PROPS,
+  SPACE,
+} from './_config_world.js'
+import { PHYSICS, CONTROL, GAME_START, RULES_PARAMS, CHESTS } from './_config_game.js'
 
 export * from './_config_core.js'
 export * from './_config_world.js'
 export * from './_config_game.js'
 
-// ─── Объединённый GAME (тот же набор полей, что и раньше) ───
-export const GAME = { ...GAME_CORE, ...GAME_GAME }
+// ---- GAME = core + physics + control + start + computed ----
+const { flightYawRatio, ...gameCoreRest } = GAME_CORE
+const { launchAngleDeg, ...physicsRest } = PHYSICS
 
-// ─── Исполняемые RULES, собранные из RULES_PARAMS + GAME ───
+export const GAME = {
+  ...gameCoreRest,
+  ...physicsRest,
+  ...CONTROL,
+  ...GAME_START,
+  flightYaw: Math.atan(1 / flightYawRatio),
+  launchAngle: (launchAngleDeg * Math.PI) / 180,
+}
+
+// ---- RULES = pure functions ----
 export const RULES = {
   launchSpeed: (u: { power: number }) =>
     RULES_PARAMS.launchSpeed.base + u.power * RULES_PARAMS.launchSpeed.mult,
@@ -53,10 +72,10 @@ export const RULES = {
     Math.floor(u.base * Math.pow(u.growth * GAME.upgrade_cost_diff, lvl - 1)),
 }
 
-// ─── Применение пресета графики (как раньше в lib/quality.js) ───
+// ---- applyQualityPreset ----
 export function applyQualityPreset(presetId: string): void {
-  // Приводим через unknown: union-тип QUALITY_PRESETS слишком узкий
-  // (у low.chestBeam нет quality, у medium — есть). Для редактора это ок.
+  // Приводим через unknown: union QUALITY_PRESETS слишком узкий
+  // (у low.chestBeam нет quality, у medium — есть).
   const PRESETS = QUALITY_PRESETS as unknown as Record<string, any>
   const preset = PRESETS[presetId] || PRESETS.medium
 
@@ -83,7 +102,7 @@ export function applyQualityPreset(presetId: string): void {
   SPACE.spheres.maxCount = preset.space.spheres.maxCount
 
   if (preset.chestBeam) {
-    Object.assign(CHESTS.beam, preset.chestBeam as any)
+    Object.assign(CHESTS.beam, preset.chestBeam)
   }
 
   if (preset.lod) {
