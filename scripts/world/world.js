@@ -164,7 +164,7 @@ export function terrainBase(x, z) {
   const gs = CFG.TERRAIN.growthStart
   const gp = CFG.TERRAIN.growthPeak
   const ge = CFG.TERRAIN.growthEnd
-  const gRate = CFG.TERRAIN.growthRate
+  const gRate = CFG.TERRAIN.growthRate / 10000
 
   let growth
   if (gp <= 0 || x < gp) {

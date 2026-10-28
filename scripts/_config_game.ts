@@ -128,11 +128,6 @@ export const RULES_PARAMS = {
    СУНДУКИ — статичные точки на земле, дают редкие карточки.
    ================================================================ */
 
-/* ---------- Объединённый список ----------
-   Дублирующиеся X раньше ломали: если X есть и в xPositions, и в
-   specialChests — сундук создавался дважды (второй перекрывал первый).
-   Теперь xPositions — только «обычные», specialChests — только спец.
-   allPositions = объединение, вычисляется один раз при загрузке. */
 export const CHESTS_BASE = {
   enabled: true,
 
@@ -272,8 +267,7 @@ export const CHESTS_BASE = {
   cardTypeLimit: 2,
 } as const
 
-// Длина allPositions — вычисляется в config.ts, здесь только число
-// (используется ACHIEVEMENTS для target).
+/** Длина allPositions —  (используется ACHIEVEMENTS для target). */
 const _chestsAllPosLen =
   CHESTS_BASE.xPositions.length + Object.keys(CHESTS_BASE.specialChests).length
 
