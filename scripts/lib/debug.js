@@ -4,7 +4,7 @@
 
    Overlay с FPS-метриками (?debug в URL) + фасад над window.dbg*.
 ================================================================ */
-import { renderer } from '../views/scene.js'
+import { renderer, scene } from '../views/scene.js'
 import * as Chunks from '../views/chunks/index.js'
 import * as Lod from '../views/lod/index.js'
 import * as DayNight from '../views/daynight.js'
@@ -35,6 +35,32 @@ const _timers = {
 const _frameTimes = []
 const _fpsWindow = 60
 let _lastUpdate = 0
+
+/* ================================================================
+   MEMORY HISTORY — rolling window ~6 сек (24 обновления по 250 мс).
+   Дельта к самому старому сэмплу показывает, растёт ли метрика.
+================================================================ */
+const _memHist = { geo: [], tex: [], prog: [], kids: [] }
+const MEM_WINDOW = 24
+
+function _pushHist(arr, v) {
+  arr.push(v)
+  if (arr.length > MEM_WINDOW) arr.shift()
+}
+
+function _deltaOf(arr) {
+  if (arr.length < 2) return 0
+  return arr[arr.length - 1] - arr[0]
+}
+
+/** Форматирует дельту с цветом. warnThresh — порог, после которого
+ *  рост подсвечивается жёлтым (вероятная утечка). */
+function _memDelta(d, warnThresh) {
+  if (d === 0) return ''
+  const sign = d > 0 ? '+' : ''
+  const color = d > warnThresh ? '#ff9f1a' : d < 0 ? '#7dffa0' : '#c8c8c8'
+  return ` <span style="color:${color}">${sign}${d}</span>`
+}
 
 /* ================================================================
    OVERLAY
@@ -83,10 +109,20 @@ export function frame(realDtMs) {
   const calls = info.render.calls
   const tris = info.render.triangles
 
+  // ─── Memory / scene ───
+  const mem = info.memory
+  const progN = info.programs ? info.programs.length : 0
+  const kidsN = scene.children.length
+
+  _pushHist(_memHist.geo, mem.geometries)
+  _pushHist(_memHist.tex, mem.textures)
+  _pushHist(_memHist.prog, progN)
+  _pushHist(_memHist.kids, kidsN)
+
   const total = _timers.total
   const pct = (v) => (total > 0 ? Math.round((v / total) * 100) + '%' : '—')
 
-  let text =
+  let html =
     `FPS:   ${fps.toFixed(1)}   (avg ${avg.toFixed(1)}ms, max ${max.toFixed(1)}ms)\n` +
     `Frame: ${total.toFixed(1)}ms\n` +
     `┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n` +
@@ -101,19 +137,28 @@ export function frame(realDtMs) {
     `render   ${_timers.render.toFixed(2)}ms ${pct(_timers.render)}\n` +
     `┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n` +
     `draw calls: ${calls}\n` +
-    `triangles:  ${(tris / 1000).toFixed(0)}k`
+    `triangles:  ${(tris / 1000).toFixed(0)}k\n` +
+    `┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n` +
+    `geometries: ${mem.geometries}${_memDelta(_deltaOf(_memHist.geo), 10)}\n` +
+    `textures:   ${mem.textures}${_memDelta(_deltaOf(_memHist.tex), 3)}\n` +
+    `programs:   ${progN}${_memDelta(_deltaOf(_memHist.prog), 1)}\n` +
+    `scene kids: ${kidsN}${_memDelta(_deltaOf(_memHist.kids), 30)}`
 
   try {
     const stats = window.__dbgChunks?.()
     if (stats) {
-      text +=
-        `\nchunks: ${stats.chunks}/${stats.persistentLoaded}\n` +
+      html +=
+        `\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n` +
+        `chunks: ${stats.chunks}/${stats.persistentLoaded}\n` +
         `pool:   ${stats.poolBusy}/${stats.poolSize} busy\n` +
-        `pending: ${stats.pending}`
+        `pending: ${stats.pending}\n` +
+        `propsCache: ${stats.propsCache}`
     }
   } catch (_) {}
 
-  _root.textContent = text
+  // innerHTML — чтобы работали <span style="color:..."> для дельт.
+  // Все вставляемые значения — числа из наших же модулей. Безопасно.
+  _root.innerHTML = html
 }
 
 /* ================================================================
