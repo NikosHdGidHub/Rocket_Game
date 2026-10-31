@@ -19,6 +19,14 @@ const _col = new THREE.Color()
 function hexToRgb(hex) {
   return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]
 }
+
+/* Цвета для overlay — по ключам OVERLAY.colors. deadTree/кусты/камни
+   в overlay не рисуются: с высоты не различимы. */
+const OVERLAY_RGB = {}
+for (const [kind, hex] of Object.entries(CFG.OVERLAY.colors)) {
+  OVERLAY_RGB[kind] = hexToRgb(hex)
+}
+
 function makeDiscOffsets(sizePx) {
   const R = (sizePx - 1) / 2
   const offsets = []
@@ -155,8 +163,7 @@ function generateOverlay(ox, oz, canvasSize) {
 
   const pix = new Uint8ClampedArray(W * W * 4)
   const O = CFG.OVERLAY
-  const PINE_RGB = hexToRgb(O.colors.pine)
-  const OAK_RGB = hexToRgb(O.colors.oak)
+
   const DISC = makeDiscOffsets(O.pointSize)
   const JIT = O.colorJitter
   const MERGE = O.mergeAlpha
@@ -173,7 +180,8 @@ function generateOverlay(ox, oz, canvasSize) {
 
       for (let k = 0; k < items.length; k++) {
         const it = items[k]
-        if (it.kind !== 'pine' && it.kind !== 'oak') continue
+        const base = OVERLAY_RGB[it.kind]
+        if (!base) continue // deadTree, кусты, камни — с высоты не рисуем
 
         const px = ((it.x - baseX) * pxPerM) | 0
         const py = ((it.z - baseZ) * pxPerM) | 0
@@ -183,7 +191,6 @@ function generateOverlay(ox, oz, canvasSize) {
         const rnd01 = (h & 1023) / 1023
         const factor = 1 + (rnd01 * 2 - 1) * JIT
 
-        const base = it.kind === 'pine' ? PINE_RGB : OAK_RGB
         const cr = clamp255(base[0] * factor) | 0
         const cg = clamp255(base[1] * factor) | 0
         const cb = clamp255(base[2] * factor) | 0

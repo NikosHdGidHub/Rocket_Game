@@ -11,7 +11,7 @@ import { TEMPLATES } from '../../world/props.js'
 import { terrainHeight, heightToTerrainColor, terrainBrightnessNoise } from '../../world/world.js'
 import { propMat } from './props.js'
 import { CHUNK_SIZE, CHUNK_SEG } from './constants.js'
-
+import { KINDS, shadowRadiusOf } from '../../world/props.js'
 
 const GROUND_TILE_LOCAL = CFG.GROUND_TEX.tile
 const _dummyObj = new THREE.Object3D()
@@ -90,16 +90,11 @@ export function makeChunkMesh(cx, cz, items) {
   const shSoft = CFG.PROPS.shadow.softness
   const shDist = CFG.PROPS.shadow.offset
 
-  const treeRadius = (kind) => {
-    if (kind === 'pine') return 1.6
-    if (kind === 'oak') return 1.8
-    if (kind === 'bush') return 0.8
-    return 0
-  }
+  // shadowRadiusOf(kind) — из world/props.js (0 = не отбрасывает)
 
   for (let k = 0; k < items.length; k++) {
     const it = items[k]
-    const baseR = treeRadius(it.kind)
+    const baseR = shadowRadiusOf(it.kind)
     if (baseR <= 0) continue
 
     const R = baseR * it.scale * shScale
@@ -205,8 +200,11 @@ export function makeChunkMesh(cx, cz, items) {
    SYNC PATH — spawnChunkProps
 ================================================================ */
 export function spawnChunkProps(cx, cz, items, sampleH) {
-  const groups = { pine: [], oak: [], bush: [], rock: [] }
+  const groups = {}
+  for (const kind of KINDS) groups[kind] = []
+
   for (const it of items) {
+    if (!groups[it.kind]) continue // неизвестный kind — молча пропускаем
     groups[it.kind].push({
       x: it.x,
       y: sampleH(it.x, it.z),
@@ -217,9 +215,9 @@ export function spawnChunkProps(cx, cz, items, sampleH) {
   }
 
   const meshes = []
-  for (const kind of ['pine', 'oak', 'bush', 'rock']) {
+  for (const kind of KINDS) {
     const list = groups[kind]
-    if (list.length === 0) continue
+    if (!list || list.length === 0) continue
 
     const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, list.length)
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
@@ -240,6 +238,28 @@ export function spawnChunkProps(cx, cz, items, sampleH) {
     meshes.push(inst)
   }
 
+  return meshes
+}
+
+export function spawnPropsFromWorker(propMatrices) {
+  const meshes = []
+  for (const kind of KINDS) {
+    const data = propMatrices[kind]
+    if (!data || data.length === 0) continue
+    const count = data.length / 16
+
+    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, count)
+    inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    inst.castShadow = false
+    inst.receiveShadow = false
+    inst.frustumCulled = true
+
+    inst.instanceMatrix.array.set(data)
+    inst.instanceMatrix.needsUpdate = true
+
+    scene.add(inst)
+    meshes.push(inst)
+  }
   return meshes
 }
 
@@ -266,26 +286,4 @@ export function buildMeshFromWorker(cx, cz, data) {
   mesh.position.set(cxw, 0, czw)
   mesh.receiveShadow = true
   return mesh
-}
-
-export function spawnPropsFromWorker(propMatrices) {
-  const meshes = []
-  for (const kind of ['pine', 'oak', 'bush', 'rock']) {
-    const data = propMatrices[kind]
-    if (data.length === 0) continue
-    const count = data.length / 16
-
-    const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, count)
-    inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
-    inst.castShadow = false
-    inst.receiveShadow = false
-    inst.frustumCulled = true
-
-    inst.instanceMatrix.array.set(data)
-    inst.instanceMatrix.needsUpdate = true
-
-    scene.add(inst)
-    meshes.push(inst)
-  }
-  return meshes
 }

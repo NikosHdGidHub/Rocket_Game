@@ -16,6 +16,7 @@ import * as THREE from 'three'
 import * as CFG from '../config.js'
 import { computeChunkProps } from '../world/chunkProps.js'
 import { terrainHeight, heightToTerrainColor, terrainBrightnessNoise } from '../world/world.js'
+import { KINDS, shadowRadiusOf } from '../world/props.js'
 
 const CHUNK_SIZE = CFG.CHUNKS.size
 let CHUNK_SEG = CFG.CHUNKS.segments
@@ -47,16 +48,15 @@ self.onmessage = (e) => {
     const meshData = makeMeshData(cx, cz, items)
     const propMatrices = buildPropMatrices(cx, cz, items, meshData.heights)
 
-    self.postMessage({ cx, cz, ...meshData, propMatrices }, [
+    const transfers = [
       meshData.heights.buffer,
       meshData.normals.buffer,
       meshData.colors.buffer,
       meshData.uvs.buffer,
-      propMatrices.pine.buffer,
-      propMatrices.oak.buffer,
-      propMatrices.bush.buffer,
-      propMatrices.rock.buffer,
-    ])
+    ]
+    for (const kind of KINDS) transfers.push(propMatrices[kind].buffer)
+
+    self.postMessage({ cx, cz, ...meshData, propMatrices }, transfers)
   } catch (err) {
     console.error('[chunkWorker] error', cx, cz, err)
   }
@@ -121,17 +121,10 @@ function makeMeshData(cx, cz, items) {
   const shSoft = CFG.PROPS.shadow.softness
   const shDist = CFG.PROPS.shadow.offset
 
-  const treeRadius = (kind) => {
-    if (kind === 'pine') return 1.6
-    if (kind === 'oak') return 1.8
-    if (kind === 'bush') return 0.8
-    return 0
-  }
-
   const shadowB = new Float32Array(VPR * VPR).fill(1)
 
   for (const it of items) {
-    const baseR = treeRadius(it.kind)
+    const baseR = shadowRadiusOf(it.kind)
     if (baseR <= 0) continue
     const R = baseR * it.scale * shScale
     if (R <= 0) continue
@@ -220,20 +213,19 @@ function buildPropMatrices(cx, cz, items, heights) {
     )
   }
 
-  const groups = { pine: [], oak: [], bush: [], rock: [] }
+  const groups = {}
+  for (const kind of KINDS) groups[kind] = []
+
   for (const it of items) {
+    if (!groups[it.kind]) continue
     const y = sampleHeight(it.x, it.z)
     const s = it.scale
     const c = Math.cos(it.rotY) * s
     const sn = Math.sin(it.rotY) * s
-    // Матрица 4×4 (column-major): scale·rotY + translation
     groups[it.kind].push(c, 0, -sn, 0, 0, s, 0, 0, sn, 0, c, 0, it.x, y, it.z, 1)
   }
 
-  return {
-    pine: new Float32Array(groups.pine),
-    oak: new Float32Array(groups.oak),
-    bush: new Float32Array(groups.bush),
-    rock: new Float32Array(groups.rock),
-  }
+  const out = {}
+  for (const kind of KINDS) out[kind] = new Float32Array(groups[kind])
+  return out
 }

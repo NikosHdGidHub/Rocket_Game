@@ -5,6 +5,7 @@
    Используется:
      • chunks.js (main thread) — для getProps() (overlay-текстуры)
      • workers/chunkWorker.js  — для генерации 3D-чанков
+     • workers/lodWorker.js    — для overlay в 2D-режиме
 ================================================================ */
 import * as CFG from '../config.js'
 import {
@@ -15,6 +16,24 @@ import {
   collectForestSpheres,
   forestDensityFromSpheres,
 } from './world.js'
+
+/* ---------- Порядок выбора вида (из CFG.PROPS.thresholds) ----------
+   Первое условие r < TH[kind] побеждает. Последний порог = 1.0,
+   поэтому fallback недостижим в норме; на всякий случай возвращаем
+   последний ключ.
+------------------------------------------------------------------ */
+const KIND_ORDER = Object.keys(CFG.PROPS.thresholds)
+const KIND_META = CFG.PROPS.kinds
+
+function pickKind(r) {
+  let last = KIND_ORDER[0]
+  for (let i = 0; i < KIND_ORDER.length; i++) {
+    const k = KIND_ORDER[i]
+    if (r < CFG.PROPS.thresholds[k]) return k
+    last = k
+  }
+  return last
+}
 
 export function computeChunkProps(cx, cz, count) {
   const COUNT = count ?? CFG.PROPS.density
@@ -27,10 +46,11 @@ export function computeChunkProps(cx, cz, count) {
   const baseZ = cz * CHUNK_SIZE
 
   const items = []
-  const TH = CFG.PROPS.thresholds
   const SC = CFG.PROPS.scales
   const VEG_MAX_H = CFG.PROPS.vegMaxHeight
   const VEG_MIN_H = CFG.PROPS.vegMinHeight
+  const ROCK_LOWLAND_FREQ = CFG.PROPS.rockLowlandFrequency
+  const ROCK_BIAS = CFG.PROPS.rockScaleBias
 
   const SAFE_R = CFG.PROPS.safeRadius
   const SAFE_R2 = SAFE_R * SAFE_R
@@ -47,16 +67,15 @@ export function computeChunkProps(cx, cz, count) {
     const relX = wx + 2.6
     const relZ = wz
 
+    // Базовый круг вокруг босса — не ставим ничего.
     if (relX * relX + relZ * relZ < SAFE_R2) continue
 
     const r = rng()
-    let kind
-    if (r < TH.pine) kind = 'pine'
-    else if (r < TH.oak) kind = 'oak'
-    else if (r < TH.bush) kind = 'bush'
-    else kind = 'rock'
+    const kind = pickKind(r)
+    const category = KIND_META[kind]?.category || 'rock'
 
-    if (kind === 'pine' || kind === 'oak' || kind === 'bush') {
+    // Деревья и кусты — ещё и эллипс вперёд от старта.
+    if (category === 'tree' || category === 'shrub') {
       const aX = relX >= 0 ? SAFE_TREES_FWD : SAFE_TREES_BACK
       const ex = relX / aX
       const ez = relZ / SAFE_TREES_SIDE
@@ -64,19 +83,23 @@ export function computeChunkProps(cx, cz, count) {
     }
 
     const h = terrainHeight(wx, wz)
-    if (kind !== 'rock') {
+
+    if (category === 'rock') {
+      // На низкой равнине камни редкие, выше vegMaxHeight — везде.
+      if (h <= VEG_MAX_H && rng() > ROCK_LOWLAND_FREQ) continue
+    } else {
+      // Деревья/кусты: только в «лесных пятнах» и в диапазоне высот.
       const density = forestDensityFromSpheres(wx, wz, spheres)
       if (density <= 0) continue
       if (rng() > density) continue
       if (h > VEG_MAX_H || h < VEG_MIN_H) continue
-    } else {
-      if (h <= VEG_MAX_H && rng() > CFG.PROPS.rockLowlandFrequency) continue
     }
 
     const scale =
-      kind === 'rock'
-        ? SC.rock[0] + (SC.rock[1] - SC.rock[0]) * Math.pow(rng(), CFG.PROPS.rockScaleBias)
+      category === 'rock'
+        ? SC.rock[0] + (SC.rock[1] - SC.rock[0]) * Math.pow(rng(), ROCK_BIAS)
         : SC.tree[0] + rng() * (SC.tree[1] - SC.tree[0])
+
     const rotY = rng() * 6.28
 
     items.push({ x: wx, z: wz, kind, scale, rotY })

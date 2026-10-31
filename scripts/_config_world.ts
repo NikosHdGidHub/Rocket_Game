@@ -790,7 +790,7 @@ export const PROPS = {
     boulder: 0.89,
     sharpRock: 0.94,
     stonePile: 0.97,
-    // flatRock — fallback (последние 3%)
+    flatRock: 1.0,
   },
 
   /** Диапазоны масштабов. tree — для деревьев и кустов, rock — для камней. */
