@@ -16,6 +16,12 @@ import { KINDS, shadowRadiusOf } from '../../world/props.js'
 const GROUND_TILE_LOCAL = CFG.GROUND_TEX.tile
 const _dummyObj = new THREE.Object3D()
 
+/** Минимум инстансов в группе, чтобы создавать отдельный InstancedMesh.
+ *  Ниже — 1–2 объекта дешевле не рисовать вовсе, чем платить draw call.
+ *  Редкие виды (deadTree 5%, sharpRock 4%, flatRock 6%) на маленьких
+ *  чанках часто выпадают 1–2 раза — теперь эти группы пропускаются. */
+const MIN_INSTANCES = 3
+
 /* ================================================================
    SYNC PATH — makeChunkMesh
 ================================================================ */
@@ -204,7 +210,7 @@ export function spawnChunkProps(cx, cz, items, sampleH) {
   for (const kind of KINDS) groups[kind] = []
 
   for (const it of items) {
-    if (!groups[it.kind]) continue // неизвестный kind — молча пропускаем
+    if (!groups[it.kind]) continue
     groups[it.kind].push({
       x: it.x,
       y: sampleH(it.x, it.z),
@@ -217,7 +223,7 @@ export function spawnChunkProps(cx, cz, items, sampleH) {
   const meshes = []
   for (const kind of KINDS) {
     const list = groups[kind]
-    if (!list || list.length === 0) continue
+    if (!list || list.length < MIN_INSTANCES) continue
 
     const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, list.length)
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)
@@ -247,6 +253,7 @@ export function spawnPropsFromWorker(propMatrices) {
     const data = propMatrices[kind]
     if (!data || data.length === 0) continue
     const count = data.length / 16
+    if (count < MIN_INSTANCES) continue
 
     const inst = new THREE.InstancedMesh(TEMPLATES[kind], propMat, count)
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage)

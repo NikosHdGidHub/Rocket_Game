@@ -812,7 +812,9 @@ export const PROPS = {
     deadBranch: 0x4a3a2a,
     spruce: 0x1e5a2a,
     // новые — камни
+    boulder: 0x7a7568,
     sharpRock: 0x5f5a50,
+    stonePile: 0x8a8479,
     flatRock: 0x9a9489,
   },
 
