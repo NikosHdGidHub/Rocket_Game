@@ -45,7 +45,29 @@ function isConverged(collection, target) {
 }
 
 /**
- * Выгрузить до batch 3D-чанков, которые сейчас вне preload-границ.
+ * Границы, за которыми чанк считается невидимым.
+ * Зависят от режима:
+ *   • lod.fade > 0.5 (2D или префетч при спуске) — far-bounds.
+ *     Тайлы земли рисует farTiles, 3D-чанки не нужны (кроме preload).
+ *   • lod.fade ≤ 0.5 (нормальный 3D-полёт) — near-bounds.
+ */
+function getUnloadBounds() {
+  if (lod.fade > 0.5) {
+    return {
+      fwd: CFG.CHUNKS.loadForwardFar,
+      back: CFG.CHUNKS.loadBackFar,
+      side: CFG.CHUNKS.loadSideFar,
+    }
+  }
+  return {
+    fwd: CFG.CHUNKS.loadForward,
+    back: CFG.CHUNKS.loadBack,
+    side: CFG.CHUNKS.loadSide,
+  }
+}
+
+/**
+ * Выгрузить до batch 3D-чанков, которые сейчас вне unload-границ.
  * Возвращает true, если остались ещё кандидаты (нужен ещё кадр).
  *
  * ВАЖНО: каждый вызов пересчитывает bounds из ТЕКУЩЕГО положения камеры.
@@ -59,9 +81,7 @@ function stepUnload(batch) {
   const cxi = Math.floor(camX / CS)
   const czi = Math.floor(camZ / CS)
 
-  const LF = CFG.CHUNKS.loadForwardFar
-  const LB = CFG.CHUNKS.loadBackFar
-  const LS = CFG.CHUNKS.loadSideFar
+  const B = getUnloadBounds()
   const M = CFG.CHUNKS.unloadMargin
 
   let unloaded = 0
@@ -70,7 +90,7 @@ function stepUnload(batch) {
     if (PERSISTENT_CHUNKS.has(key)) continue
     const dx = c.cx - cxi
     const dz = c.cz - czi
-    if (dx < -(LB + M) || dx > LF + M || Math.abs(dz) > LS + M) {
+    if (dx < -(B.back + M) || dx > B.fwd + M || Math.abs(dz) > B.side + M) {
       if (unloaded < batch) {
         unloadChunk(key)
         unloaded++
@@ -178,9 +198,10 @@ export function updateLOD(dt) {
   const farConverged = isConverged(state.farTiles, farTarget)
 
   // --- Фаза 2: unload 3D-чанков ---
-  // Только в 2D (внизу 3D-чанки нужны) и только после far reveal.
+  // В 2D — только после far reveal (последовательные фазы).
+  // В 3D — всегда (обычная работа, чанки позади камеры не нужны).
   let unloadDone = true
-  if (farConverged && lod.in2D) {
+  if (!lod.in2D || farConverged) {
     unloadDone = !stepUnload(reveal.unloadBatch)
   }
 
