@@ -645,6 +645,8 @@ export const OVERLAY = {
   colors: {
     pine: 0x074c21, // сосна — тёмно-зелёный
     oak: 0x135708, // дуб — светлее
+    birch: 0x2f8f2a,
+    spruce: 0x0a3a18,
   },
 
   /**Разброс яркости каждой точки.*/
@@ -747,26 +749,78 @@ export const PROPS = {
   safeRadiusTrees: 150,
 
   /**
-   * Пороги вероятностей (r — случайное 0..1):
-   *   r < pine  → сосна
-   *   r < oak   → дуб
-   *   r < bush  → куст
-   *   иначе     → камень
-   * [влияет] соотношение типов в лесу.
-   * Проверка: pine < oak < bush.
+   * Каталог типов пропсов.
+   * category  — 'tree' | 'shrub' | 'rock' (для safe-зон, density и т.п.)
+   * shadowR   — радиус запекаемой тени; 0 = не отбрасывает
+   *
+   * Ключи должны совпадать с BUILDERS в world/props.js.
    */
-  thresholds: { pine: 0.45, oak: 0.6, bush: 0.82 },
+  kinds: {
+    // ── деревья ──
+    pine: { category: 'tree', shadowR: 1.6 },
+    oak: { category: 'tree', shadowR: 1.8 },
+    birch: { category: 'tree', shadowR: 1.4 },
+    deadTree: { category: 'tree', shadowR: 0.6 },
+    spruce: { category: 'tree', shadowR: 1.4 },
+    // ── кусты ──
+    bush: { category: 'shrub', shadowR: 0.8 },
+    // ── камни ──
+    rock: { category: 'rock', shadowR: 0 },
+    boulder: { category: 'rock', shadowR: 0 },
+    sharpRock: { category: 'rock', shadowR: 0 },
+    stonePile: { category: 'rock', shadowR: 0 },
+    flatRock: { category: 'rock', shadowR: 0 },
+  },
 
   /**
-   * Диапазоны масштабов (min, max).
-   * Каждый пропс получает случайный scale в этом диапазоне.
+   * Кумулятивные пороги выбора вида.
+   * Логика: r = rng(); первое условие r < TH[key] → этот kind.
+   * ВАЖНО: суммарно должны идти по возрастанию.
+   * Последний kind — fallback (если ни один порог не сработал).
+   * Сейчас: 20/14/9/3/7 — деревья, 22 — куст, 25 — камни.
    */
+  thresholds: {
+    pine: 0.2,
+    oak: 0.34,
+    birch: 0.43,
+    deadTree: 0.46, // редкий (3%)
+    spruce: 0.53,
+    bush: 0.75,
+    rock: 0.83,
+    boulder: 0.89,
+    sharpRock: 0.94,
+    stonePile: 0.97,
+    // flatRock — fallback (последние 3%)
+  },
+
+  /** Диапазоны масштабов. tree — для деревьев и кустов, rock — для камней. */
   scales: {
     tree: [0.9, 1.95], // деревья и кусты
     rock: [0.9, 8.0], // камни крупнее
   },
+
   /** Степень неравномерности для размера камней.*/
   rockScaleBias: 10,
+
+  colors: {
+    // старые
+    trunk: 0x7a4a24,
+    pine: 0x2f7d32,
+    oak: 0x3f9440,
+    bush: 0x2f7d32,
+    rock: 0x8a8479,
+    // новые — деревья
+    birchTrunk: 0xe6e6e6,
+    birchLeaves: 0x6ebc50,
+    deadTrunk: 0x5a4a3a,
+    deadBranch: 0x4a3a2a,
+    spruce: 0x1e5a2a,
+    // новые — камни
+    boulder: 0x7a7568,
+    sharpRock: 0x5f5a50,
+    stonePile: 0x8a8479,
+    flatRock: 0x9a9489,
+  },
 
   shadow: {
     /**
@@ -791,13 +845,6 @@ export const PROPS = {
     softness: 2.0,
   },
 
-  colors: {
-    trunk: 0x7a4a24, // ствол — коричневый
-    pine: 0x2f7d32, // сосна — тёмно-зелёный
-    oak: 0x3f9440, // дуб — светлее
-    bush: 0x2f7d32, // куст
-    rock: 0x8a8479, // камень — серый
-  },
   material: {
     roughness: 0.92,
     metalness: 0,

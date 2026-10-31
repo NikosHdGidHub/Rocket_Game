@@ -19,6 +19,10 @@ export function setGeoColor(geo, hex) {
   return geo
 }
 
+/* ================================================================
+   ДЕРЕВЬЯ
+================================================================ */
+
 export function buildPineTemplate() {
   const C = CFG.PROPS.colors
   const geos = []
@@ -26,7 +30,6 @@ export function buildPineTemplate() {
   const trunk = new THREE.CylinderGeometry(0.18, 0.28, h, 6)
   trunk.translate(0, h / 2, 0)
   geos.push(setGeoColor(trunk, C.trunk))
-
   for (let i = 0; i < 3; i++) {
     const r = 1.55 - i * 0.32
     const lh = 1.8 - i * 0.15
@@ -44,7 +47,6 @@ export function buildOakTemplate() {
   const trunk = new THREE.CylinderGeometry(0.22, 0.34, th, 6)
   trunk.translate(0, th / 2, 0)
   geos.push(setGeoColor(trunk, C.trunk))
-
   const blobs = [
     [0.0, th + 0.9, 0.0, 1.15],
     [0.6, th + 1.3, -0.4, 0.95],
@@ -58,6 +60,68 @@ export function buildOakTemplate() {
   }
   return mergeGeometries(geos)
 }
+
+/** Берёза: тонкий белый ствол, разреженная крона (3 шара, ниже и легче дуба). */
+export function buildBirchTemplate() {
+  const C = CFG.PROPS.colors
+  const geos = []
+  const th = 3.2
+  const trunk = new THREE.CylinderGeometry(0.14, 0.22, th, 6)
+  trunk.translate(0, th / 2, 0)
+  geos.push(setGeoColor(trunk, C.birchTrunk))
+  const blobs = [
+    [0.0, th + 0.7, 0.0, 0.85],
+    [0.5, th + 1.1, -0.3, 0.65],
+    [-0.4, th + 1.0, 0.4, 0.7],
+  ]
+  for (const [x, y, z, r] of blobs) {
+    const s = new THREE.SphereGeometry(r, 7, 5)
+    s.translate(x, y, z)
+    geos.push(setGeoColor(s, C.birchLeaves))
+  }
+  return mergeGeometries(geos)
+}
+
+/** Сухое дерево: голый ствол + три обломка веток. */
+export function buildDeadTreeTemplate() {
+  const C = CFG.PROPS.colors
+  const geos = []
+  const th = 3.5
+  const trunk = new THREE.CylinderGeometry(0.15, 0.3, th, 5)
+  trunk.translate(0, th / 2, 0)
+  geos.push(setGeoColor(trunk, C.deadTrunk))
+  const branches = [
+    { y: th * 0.55, angle: 0.7, len: 1.2 },
+    { y: th * 0.72, angle: -0.9, len: 0.9 },
+    { y: th * 0.86, angle: 0.3, len: 0.8 },
+  ]
+  for (const b of branches) {
+    const g = new THREE.CylinderGeometry(0.06, 0.11, b.len, 4)
+    g.translate(0, b.len / 2, 0)
+    g.rotateZ(b.angle)
+    g.translate(0, b.y, 0)
+    geos.push(setGeoColor(g, C.deadBranch))
+  }
+  return mergeGeometries(geos)
+}
+
+/** Ель: один узкий конус — по силуэту отличается от 3-ярусной сосны. */
+export function buildSpruceTemplate() {
+  const C = CFG.PROPS.colors
+  const geos = []
+  const h = 4.5
+  const trunk = new THREE.CylinderGeometry(0.16, 0.24, h, 6)
+  trunk.translate(0, h / 2, 0)
+  geos.push(setGeoColor(trunk, C.trunk))
+  const cone = new THREE.ConeGeometry(1.1, h * 0.9, 8)
+  cone.translate(0, h * 0.7, 0)
+  geos.push(setGeoColor(cone, C.spruce))
+  return mergeGeometries(geos)
+}
+
+/* ================================================================
+   КУСТЫ
+================================================================ */
 
 export function buildBushTemplate() {
   const C = CFG.PROPS.colors
@@ -75,15 +139,95 @@ export function buildBushTemplate() {
   return mergeGeometries(geos)
 }
 
+/* ================================================================
+   КАМНИ
+================================================================ */
+
 export function buildRockTemplate() {
   const g = new THREE.IcosahedronGeometry(1, 0)
   g.scale(1, 0.75, 1)
   return setGeoColor(g, CFG.PROPS.colors.rock)
 }
 
-export const TEMPLATES = {
-  pine: buildPineTemplate(),
-  oak: buildOakTemplate(),
-  bush: buildBushTemplate(),
-  rock: buildRockTemplate(),
+/** Валун: icosahedron детализации 1 — округлый, сглаженный. */
+export function buildBoulderTemplate() {
+  const g = new THREE.IcosahedronGeometry(1, 1)
+  g.scale(1.1, 0.85, 1.0)
+  return setGeoColor(g, CFG.PROPS.colors.boulder)
+}
+
+/** Острый монолит: пентагональный конус. */
+export function buildSharpRockTemplate() {
+  const g = new THREE.ConeGeometry(0.8, 2.2, 5)
+  g.translate(0, 1.1, 0)
+  return setGeoColor(g, CFG.PROPS.colors.sharpRock)
+}
+
+/** Пирамидка из четырёх камней. */
+export function buildStonePileTemplate() {
+  const C = CFG.PROPS.colors
+  const geos = []
+  const stones = [
+    [0.0, 0.35, 0.0, 0.5],
+    [0.45, 0.25, 0.3, 0.35],
+    [-0.35, 0.3, -0.2, 0.4],
+    [0.1, 0.55, -0.1, 0.3],
+  ]
+  for (const [x, y, z, r] of stones) {
+    const g = new THREE.IcosahedronGeometry(r, 0)
+    g.scale(1, 0.7, 1)
+    g.translate(x, y, z)
+    geos.push(setGeoColor(g, C.stonePile))
+  }
+  return mergeGeometries(geos)
+}
+
+/** Плоская плита. */
+export function buildFlatRockTemplate() {
+  const g = new THREE.IcosahedronGeometry(1, 0)
+  g.scale(1.4, 0.25, 1.0)
+  return setGeoColor(g, CFG.PROPS.colors.flatRock)
+}
+
+/* ================================================================
+   BUILDERS + TEMPLATES (единый источник правды о видах)
+================================================================ */
+
+export const BUILDERS = {
+  pine: buildPineTemplate,
+  oak: buildOakTemplate,
+  birch: buildBirchTemplate,
+  deadTree: buildDeadTreeTemplate,
+  spruce: buildSpruceTemplate,
+  bush: buildBushTemplate,
+  rock: buildRockTemplate,
+  boulder: buildBoulderTemplate,
+  sharpRock: buildSharpRockTemplate,
+  stonePile: buildStonePileTemplate,
+  flatRock: buildFlatRockTemplate,
+}
+
+/** Собираем TEMPLATES один раз при импорте модуля. */
+export const TEMPLATES = {}
+for (const kind of Object.keys(CFG.PROPS.kinds)) {
+  const builder = BUILDERS[kind]
+  if (!builder) {
+    console.warn(`[props] Нет builder для kind="${kind}" — пропускаю`)
+    continue
+  }
+  TEMPLATES[kind] = builder()
+}
+
+/* ================================================================
+   Категории — производные от CFG.PROPS.kinds
+================================================================ */
+export const KIND_META = CFG.PROPS.kinds
+export const KINDS = Object.keys(TEMPLATES)
+export const ROCK_KINDS = KINDS.filter((k) => KIND_META[k].category === 'rock')
+export const TREE_KINDS = KINDS.filter((k) => KIND_META[k].category === 'tree')
+export const SHRUB_KINDS = KINDS.filter((k) => KIND_META[k].category === 'shrub')
+
+/** Радиус запекаемой тени, 0 = не отбрасывает. */
+export function shadowRadiusOf(kind) {
+  return KIND_META[kind]?.shadowR || 0
 }
