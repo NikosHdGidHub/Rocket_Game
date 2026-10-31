@@ -3,7 +3,10 @@
    Одна merged geometry на тип, цвет через vertex colors.
 ================================================================ */
 import * as THREE from 'three'
-import { mergeGeometries as mergeGeometriesRaw } from 'three/addons/utils/BufferGeometryUtils.js'
+import {
+  mergeGeometries as mergeGeometriesRaw,
+  mergeVertices,
+} from 'three/addons/utils/BufferGeometryUtils.js'
 import * as CFG from '../config.js'
 
 export function setGeoColor(geo, hex) {
@@ -22,24 +25,36 @@ export function setGeoColor(geo, hex) {
 /* ================================================================
    mergeGeometries — безопасная обёртка.
 
-   Родной mergeGeometries из three/addons падает (возвращает null),
-   если смешать indexed и non-indexed геометрии в одном вызове.
-   А у нас в шаблонах встречаются оба семейства:
-     • Cylinder / Sphere / Cone / Box  → indexed
-     • Icosahedron / Octahedron        → non-indexed
-   Поэтому перед merge приводим всё к non-indexed. Для low-poly
-   шаблонов vertex count растёт незначительно и в InstancedMesh
-   не дублируется.
+   Родной mergeGeometries из three/addons требует, чтобы ВСЕ входные
+   геометрии были либо indexed, либо non-indexed — смешивать нельзя.
+   У нас в шаблонах встречаются оба семейства:
+     • Cylinder / Sphere / Cone / Box  → indexed (мало вершин)
+     • Icosahedron / Octahedron        → non-indexed (много дублей)
+
+   Приводим всё к INDEXED через mergeVertices. Это сжимает
+   non-indexed до уникальных вершин, а не раздувает indexed до
+   non-indexed, как делал предыдущий вариант.
+
+   Эффект: vertex count шаблона остаётся минимальным (у `pine`
+   ~74 вершины вместо ~444 в non-indexed версии).
 ================================================================ */
 function mergeGeometries(geos) {
   if (!geos || geos.length === 0) return null
-  if (geos.length === 1) return geos[0]
+
+  // Одиночная геометрия — тоже приводим к indexed, если ещё нет.
+  if (geos.length === 1) {
+    const g = geos[0]
+    if (g.index !== null) return g
+    const indexed = mergeVertices(g)
+    g.dispose()
+    return indexed
+  }
 
   const normalized = geos.map((g) => {
-    if (g.index === null) return g
-    const n = g.toNonIndexed()
+    if (g.index !== null) return g
+    const indexed = mergeVertices(g)
     g.dispose()
-    return n
+    return indexed
   })
 
   return mergeGeometriesRaw(normalized)
@@ -177,14 +192,14 @@ export function buildRockTemplate() {
 
 export function buildSharpRockTemplate() {
   const C = CFG.PROPS.colors
-  const base = new THREE.IcosahedronGeometry(1, 1)
+  const base = new THREE.IcosahedronGeometry(1, 0) // ← было 1, стало 0
   base.scale(1.0, 0.9, 1.0)
   setGeoColor(base, C.boulder)
 
-  const moss = new THREE.SphereGeometry(0.75, 6, 4)
+  const moss = new THREE.SphereGeometry(0.75, 5, 3) // ← было (6, 4)
   moss.scale(1.0, 0.35, 1.0)
   moss.translate(0, 0.7, 0)
-  setGeoColor(moss, C.oak) // любой зелёный
+  setGeoColor(moss, C.oak)
 
   return mergeGeometries([base, moss])
 }
@@ -198,10 +213,6 @@ export function buildFlatRockTemplate() {
 
 /* ================================================================
    BUILDERS + TEMPLATES (единый источник правды о видах)
-================================================================ */
-
-/* ================================================================
-   BUILDERS + TEMPLATES
 ================================================================ */
 export const BUILDERS = {
   pine: buildPineTemplate,
