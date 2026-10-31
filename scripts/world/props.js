@@ -3,7 +3,7 @@
    Одна merged geometry на тип, цвет через vertex colors.
 ================================================================ */
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeGeometries as mergeGeometriesRaw } from 'three/addons/utils/BufferGeometryUtils.js'
 import * as CFG from '../config.js'
 
 export function setGeoColor(geo, hex) {
@@ -17,6 +17,32 @@ export function setGeoColor(geo, hex) {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
   return geo
+}
+
+/* ================================================================
+   mergeGeometries — безопасная обёртка.
+
+   Родной mergeGeometries из three/addons падает (возвращает null),
+   если смешать indexed и non-indexed геометрии в одном вызове.
+   А у нас в шаблонах встречаются оба семейства:
+     • Cylinder / Sphere / Cone / Box  → indexed
+     • Icosahedron / Octahedron        → non-indexed
+   Поэтому перед merge приводим всё к non-indexed. Для low-poly
+   шаблонов vertex count растёт незначительно и в InstancedMesh
+   не дублируется.
+================================================================ */
+function mergeGeometries(geos) {
+  if (!geos || geos.length === 0) return null
+  if (geos.length === 1) return geos[0]
+
+  const normalized = geos.map((g) => {
+    if (g.index === null) return g
+    const n = g.toNonIndexed()
+    g.dispose()
+    return n
+  })
+
+  return mergeGeometriesRaw(normalized)
 }
 
 /* ================================================================
@@ -149,53 +175,18 @@ export function buildRockTemplate() {
   return setGeoColor(g, CFG.PROPS.colors.rock)
 }
 
-/** Валун: icosahedron детализации 1 — округлый, сглаженный. */
-export function buildBoulderTemplate() {
-  const g = new THREE.IcosahedronGeometry(1, 1)
-  g.scale(1.1, 0.85, 1.0)
-  return setGeoColor(g, CFG.PROPS.colors.boulder)
-}
-
-/** Острый монолит: пентагональный конус. */
 export function buildSharpRockTemplate() {
-  const g = new THREE.ConeGeometry(0.8, 2.2, 5)
-  g.translate(0, 1.1, 0)
-  return setGeoColor(g, CFG.PROPS.colors.sharpRock)
-}
-
-/** Пирамидка из четырёх камней. */
-/** Навал обломков: 5 камней разных размеров, лежат навалом,
- *  без вертикальной симметрии. Читается как осыпь или камнепад. */
-export function buildStonePileTemplate() {
   const C = CFG.PROPS.colors
-  const geos = []
+  const base = new THREE.IcosahedronGeometry(1, 1)
+  base.scale(1.0, 0.9, 1.0)
+  setGeoColor(base, C.boulder)
 
-  // Формат: { x, y, z, r, scaleY, rotY, rotX }
-  // Ключевые принципы:
-  //   • НЕТ «одного камня сверху» — все лежат «в куче» на уровне земли
-  //   • размеры сильно разные (r: 0.22..0.55)
-  //   • каждый повёрнут вокруг Y по-своему
-  //   • лёгкий наклон по X — как будто камни лежат на склоне
-  //   • перекрываются — куча, а не композиция
-  const stones = [
-    { x: 0.0, y: 0.28, z: 0.0, r: 0.55, sy: 0.6, rotY: 0.4, rotX: 0.1 },
-    { x: 0.62, y: 0.18, z: 0.28, r: 0.38, sy: 0.7, rotY: 1.7, rotX: -0.2 },
-    { x: -0.52, y: 0.2, z: -0.1, r: 0.42, sy: 0.65, rotY: 3.1, rotX: 0.3 },
-    { x: 0.1, y: 0.15, z: -0.55, r: 0.3, sy: 0.75, rotY: 4.5, rotX: -0.1 },
-    { x: -0.25, y: 0.38, z: 0.35, r: 0.24, sy: 0.8, rotY: 5.8, rotX: 0.2 },
-  ]
+  const moss = new THREE.SphereGeometry(0.75, 6, 4)
+  moss.scale(1.0, 0.35, 1.0)
+  moss.translate(0, 0.7, 0)
+  setGeoColor(moss, C.oak) // любой зелёный
 
-  for (const s of stones) {
-    const g = new THREE.IcosahedronGeometry(s.r, 0)
-    // Сплющиваем по Y — камни лежат, а не стоят.
-    g.scale(1.15, s.sy, 1.0)
-    g.rotateX(s.rotX)
-    g.rotateY(s.rotY)
-    g.translate(s.x, s.y, s.z)
-    geos.push(setGeoColor(g, C.stonePile))
-  }
-
-  return mergeGeometries(geos)
+  return mergeGeometries([base, moss])
 }
 
 /** Плоская плита. */
@@ -209,6 +200,9 @@ export function buildFlatRockTemplate() {
    BUILDERS + TEMPLATES (единый источник правды о видах)
 ================================================================ */
 
+/* ================================================================
+   BUILDERS + TEMPLATES
+================================================================ */
 export const BUILDERS = {
   pine: buildPineTemplate,
   oak: buildOakTemplate,
@@ -217,13 +211,10 @@ export const BUILDERS = {
   spruce: buildSpruceTemplate,
   bush: buildBushTemplate,
   rock: buildRockTemplate,
-  boulder: buildBoulderTemplate,
   sharpRock: buildSharpRockTemplate,
-  stonePile: buildStonePileTemplate,
   flatRock: buildFlatRockTemplate,
 }
 
-/** Собираем TEMPLATES один раз при импорте модуля. */
 export const TEMPLATES = {}
 for (const kind of Object.keys(CFG.PROPS.kinds)) {
   const builder = BUILDERS[kind]
@@ -231,7 +222,16 @@ for (const kind of Object.keys(CFG.PROPS.kinds)) {
     console.warn(`[props] Нет builder для kind="${kind}" — пропускаю`)
     continue
   }
-  TEMPLATES[kind] = builder()
+  try {
+    const geo = builder()
+    if (!geo) {
+      console.error(`[props] "${kind}": builder вернул null — пропускаю`)
+      continue
+    }
+    TEMPLATES[kind] = geo
+  } catch (err) {
+    console.error(`[props] "${kind}": исключение при сборке — пропускаю`, err)
+  }
 }
 
 /* ================================================================

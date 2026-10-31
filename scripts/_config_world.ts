@@ -696,7 +696,7 @@ export const PROPS = {
   vegMinHeight: -10,
 
   /** Частота камней в НИЗИНАХ (высота ≤ vegMaxHeight).*/
-  rockLowlandFrequency: 0.13,
+  rockLowlandFrequency: 0.12,
 
   /**
    * Размер ячейки детерминированной сетки, в которой рождается
@@ -766,9 +766,7 @@ export const PROPS = {
     bush: { category: 'shrub', shadowR: 0.8 },
     // ── камни ──
     rock: { category: 'rock', shadowR: 0 },
-    boulder: { category: 'rock', shadowR: 0 },
     sharpRock: { category: 'rock', shadowR: 0 },
-    stonePile: { category: 'rock', shadowR: 0 },
     flatRock: { category: 'rock', shadowR: 0 },
   },
 
@@ -782,15 +780,13 @@ export const PROPS = {
   thresholds: {
     pine: 0.2,
     oak: 0.34,
-    birch: 0.43,
-    deadTree: 0.46, // редкий (3%)
-    spruce: 0.53,
-    bush: 0.75,
-    rock: 0.83,
-    boulder: 0.89,
-    sharpRock: 0.94,
-    stonePile: 0.97,
-    flatRock: 1.0,
+    birch: 0.52,
+    deadTree: 0.57, // 5
+    spruce: 0.64, //7
+    bush: 0.82, // 18
+    rock: 0.95, // 12%
+    sharpRock: 0.96, // 1%
+    flatRock: 1.0, // 4%
   },
 
   /** Диапазоны масштабов. tree — для деревьев и кустов, rock — для камней. */
