@@ -164,21 +164,37 @@ export function buildSharpRockTemplate() {
 }
 
 /** Пирамидка из четырёх камней. */
+/** Навал обломков: 5 камней разных размеров, лежат навалом,
+ *  без вертикальной симметрии. Читается как осыпь или камнепад. */
 export function buildStonePileTemplate() {
   const C = CFG.PROPS.colors
   const geos = []
+
+  // Формат: { x, y, z, r, scaleY, rotY, rotX }
+  // Ключевые принципы:
+  //   • НЕТ «одного камня сверху» — все лежат «в куче» на уровне земли
+  //   • размеры сильно разные (r: 0.22..0.55)
+  //   • каждый повёрнут вокруг Y по-своему
+  //   • лёгкий наклон по X — как будто камни лежат на склоне
+  //   • перекрываются — куча, а не композиция
   const stones = [
-    [0.0, 0.35, 0.0, 0.5],
-    [0.45, 0.25, 0.3, 0.35],
-    [-0.35, 0.3, -0.2, 0.4],
-    [0.1, 0.55, -0.1, 0.3],
+    { x: 0.0, y: 0.28, z: 0.0, r: 0.55, sy: 0.6, rotY: 0.4, rotX: 0.1 },
+    { x: 0.62, y: 0.18, z: 0.28, r: 0.38, sy: 0.7, rotY: 1.7, rotX: -0.2 },
+    { x: -0.52, y: 0.2, z: -0.1, r: 0.42, sy: 0.65, rotY: 3.1, rotX: 0.3 },
+    { x: 0.1, y: 0.15, z: -0.55, r: 0.3, sy: 0.75, rotY: 4.5, rotX: -0.1 },
+    { x: -0.25, y: 0.38, z: 0.35, r: 0.24, sy: 0.8, rotY: 5.8, rotX: 0.2 },
   ]
-  for (const [x, y, z, r] of stones) {
-    const g = new THREE.IcosahedronGeometry(r, 0)
-    g.scale(1, 0.7, 1)
-    g.translate(x, y, z)
+
+  for (const s of stones) {
+    const g = new THREE.IcosahedronGeometry(s.r, 0)
+    // Сплющиваем по Y — камни лежат, а не стоят.
+    g.scale(1.15, s.sy, 1.0)
+    g.rotateX(s.rotX)
+    g.rotateY(s.rotY)
+    g.translate(s.x, s.y, s.z)
     geos.push(setGeoColor(g, C.stonePile))
   }
+
   return mergeGeometries(geos)
 }
 
